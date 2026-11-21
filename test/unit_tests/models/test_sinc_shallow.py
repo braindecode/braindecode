@@ -22,3 +22,12 @@ def test_sinc_shallow_depthwise_batch_norm_input_is_contiguous():
         handle.remove()
 
     assert batch_norm_inputs_are_contiguous == [True]
+
+
+def test_sinc_shallow_activation_none_defaults_to_elu():
+    model = SincShallowNet(
+        n_chans=4, n_outputs=2, n_times=200, sfreq=100, activation=None
+    )
+    assert isinstance(model.temporal_aggregation[1], torch.nn.ELU)
+    out = model(torch.randn(2, 4, 200))
+    assert out.shape == (2, 2)

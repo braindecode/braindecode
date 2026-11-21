@@ -8,7 +8,7 @@
 
 import os
 import os.path as op
-import urllib
+import urllib.request
 
 import mne
 import numpy as np

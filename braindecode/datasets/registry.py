@@ -9,15 +9,17 @@ without direct imports (avoiding circular dependencies).
 #
 # License: BSD (3-clause)
 
-from typing import Any, Dict, Type
+from typing import Any, Dict, Type, TypeVar
 
 from braindecode.util import _warn_orphaned_api
+
+_DatasetT = TypeVar("_DatasetT", bound=type)
 
 # Global registry mapping dataset class names to classes
 _DATASET_REGISTRY: Dict[str, Type] = {}
 
 
-def register_dataset(cls: Type) -> Type:
+def register_dataset(cls: _DatasetT) -> _DatasetT:
     """
     Decorator to register a dataset class in the global registry.
 

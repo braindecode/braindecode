@@ -266,6 +266,9 @@ Bug fixes
 - Speed up documentation builds (``make html-noplot`` no longer hangs with ``-j auto`` on macOS),
   fix the duplicate ``Parameters`` section in :class:`braindecode.datasets.BNCI2014_001`, and
   cache unchanged Sphinx-Gallery outputs in CI (:gh:`1752` by `Bruno Aristimunha`_).
+- Fix ``SincShallowNet(activation=None)``, dense ``TIDNet`` layer registration,
+  ``_EEGNeuralNet.get_iterator(drop_index=...)``, ``ft_surrogate`` tensor dtypes,
+  ``SleepPhysionetChallenge2018`` ``urllib.request``, and ``BBCIDataset`` init (:gh:`1751` by `Bruno Aristimunha`_).
 - Documentation: list all pre-trained models under ``braindecode[hub]`` in the API
   reference, deduplicate the DataTables assets and apply an accessible light/dark
   category palette on the models summary table, drop the render-blocking Google Fonts
@@ -628,6 +631,9 @@ Bug fixes
 Code health
 ============
 
+- Replace ``mypy`` and ``isort`` with Astral ``ty`` and consolidated ``ruff`` hooks,
+  enable ``sys.monitoring`` coverage, drop dead ``setup.cfg`` sections, and preserve
+  class types through ``@register_dataset`` and :class:`~braindecode.models.EEGModuleMixin` (:gh:`1751` by `Bruno Aristimunha`_).
 - The test suite peaks lower: smaller inputs where no assertion depends on size,
   shared read-only data, freed TorchScript, compile and reference-cycle memory
   (:gh:`1713` by `Bruno Aristimunha`_).

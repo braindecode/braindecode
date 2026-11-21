@@ -54,6 +54,8 @@ def _select_array(X, indices):
 class _EEGNeuralNet(NeuralNet, abc.ABC):
     signal_args_set_ = False
     _warned_drop_last_ = False
+    cropped: bool = False
+    _last_window_inds_: Any = None
 
     @property
     def log(self):
@@ -350,7 +352,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             X = X.get_data(units="uV")
         return super().get_dataset(X, y)
 
-    def get_iterator(self, dataset, training=False):
+    def get_iterator(self, dataset, training=False, drop_index=True):
         iterator = super().get_iterator(dataset, training=training)
         # Warn (once per fit) if drop_last would discard every training batch,
         # e.g. a training set smaller than batch_size. This silently skips

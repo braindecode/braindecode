@@ -97,7 +97,7 @@ def _infer_convert_fmt(raw: "mne.io.BaseRaw") -> Optional[str]:
     return _EXT_TO_CONVERT_FMT.get(ext)
 
 
-def _validate_consistent_format(raws: list) -> str:
+def _validate_consistent_format(raws: list) -> str | None:
     """
     Validate that all Raw objects have the same file format.
 

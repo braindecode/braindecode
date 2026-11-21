@@ -43,7 +43,9 @@ def _generic_lfilter_core_loop(
 try:
     # torchaudio's own choice: its C++ op when the extension is built, else the
     # Python loop above. Using it keeps the scripted recursion identical.
-    from torchaudio.functional.filtering import _lfilter_core_loop
+    from torchaudio.functional.filtering import (
+        _lfilter_core_loop,  # ty: ignore[missing-module-member]
+    )
 except ImportError:  # pragma: no cover - torchaudio versions without it
     _lfilter_core_loop = _generic_lfilter_core_loop
 

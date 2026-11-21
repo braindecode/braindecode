@@ -91,7 +91,7 @@ tests = [
     'pytest-timeout',
     'codecov',
     'pytest_cases',
-    'mypy',
+    'ty>=0.0.107',
     'ipython',
     "transformers>=4.57.0",
     "bids_validator",
@@ -151,19 +151,87 @@ exclude = [] # exclude packages matching these glob patterns (empty by default)
 namespaces = false # to disable scanning PEP 420 namespaces (true by default)
 
 [tool.ruff]
-lint.ignore-init-module-imports = true
 line-length = 88
 target-version = "py311"
 
+[tool.ruff.format]
+exclude = ["test/**", ".github/**", "scripts/**", "benchmarks/**", "CONTRIBUTING.md"]
 
-[tool.isort]
-skip = [".gitignore"]
-skip_glob = ["test/*", "examples/*"]
-py_version = 311
-profile = "black"
-sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
-known_first_party = ["braindecode"]
-lines_between_sections = 1
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "D", "NPY201"]
+ignore = [
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D105",
+    "D107",
+    "D203",
+    "D205",
+    "D213",
+    "D400",
+    "D415",
+    "D417",
+    "E402",
+    "E501",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["braindecode"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401"]
+"!{docs,examples}/**" = ["D", "E712", "E741", "F541", "F841"]
+
+[tool.ty.environment]
+python-version = "3.11"
+
+[tool.ty.src]
+include = ["braindecode", "test", "examples"]
+
+[tool.ty.terminal]
+error-on-warning = false
+output-format = "concise"
+
+[tool.ty.rules]
+# Promote dynamic/erased base classes (e.g. `: Type` on mixins/decorators) to hard errors.
+unsupported-base = "error"
+
+# Optional extras (moabb, sae_lens, timescoring), hardware SDKs (flash_attn,
+# habana_frameworks), and isolated pre-commit environments without torch/mne installed.
+import-not-found = "ignore"
+
+# Legacy gradual-typing noise from PyTorch Module.__getattr__ -> Tensor | Module
+# (register_buffer / dynamic submodules), MNE dynamic FIFF BunchConstNamed constants,
+# optional EEGModuleMixin geometry attributes, and NumPy ArrayLike / pytest parametrize unions.
+invalid-argument-type = "ignore"
+not-callable = "ignore"
+missing-union-attribute = "ignore"
+not-subscriptable = "ignore"
+missing-attribute = "ignore"
+lost-keyword-for-regular-parameter = "ignore"  # PyTorch `def forward(self, x)` vs `input`
+unused-type-ignore-comment = "ignore"  # Retain existing `# type: ignore` directives
+unused-ignore-comment = "ignore"  # Allow `# ty: ignore` on optional-dep imports in isolated CI
+
+# Low-volume legacy typing debt kept visible as non-blocking warnings for incremental cleanup.
+unsupported-operator = "warn"
+no-matching-overload = "warn"
+invalid-assignment = "warn"
+not-iterable = "warn"
+incompatible-method-override = "warn"
+invalid-explicit-return = "warn"
+incompatible-attribute-override = "warn"
+
+[[tool.ty.overrides]]
+include = ["test/**"]
+
+[tool.ty.overrides.rules]
+# Heterogeneous model-registry dicts in test_pretrained_compat.py and __torch_dispatch__ tuple unpacking.
+unknown-argument = "warn"
+index-out-of-bounds = "warn"
+
+[tool.coverage.run]
+core = "sysmon"
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
