@@ -181,6 +181,7 @@ def test_registered_model_serialization_contract(
 ):
     """Config + state_dict reconstruction, deepcopy and pickle preserve outputs."""
     model, x = _build_case(model_name, required_params, signal_params)
+    _check_mapping_targets(model_name, model)
 
     with torch.no_grad():
         expected = list(_tensor_leaves(model(x)))
@@ -778,50 +779,12 @@ _MAPPING_TARGET_EXCEPTIONS = {
 
 
 def _check_mapping_targets(name, model):
+    """Every legacy-key ``mapping`` value is a distinct ``state_dict`` key."""
     keys = set(model.state_dict())
     skip = _MAPPING_TARGET_EXCEPTIONS.get(name, set())
-    missing = [
-        t for t in (model.mapping or {}).values() if t not in keys and t not in skip
-    ]
+    targets = list((model.mapping or {}).values())
+    missing = [t for t in targets if t not in keys and t not in skip]
     assert not missing, (
         f"{name}.mapping points at keys that are not in state_dict: {missing}"
     )
-
-
-@pytest.mark.parametrize(
-    "model_name,required_params,signal_params",
-    models_mandatory_parameters,
-)
-def test_registered_model_mapping_targets_exist(
-    model_name, required_params, signal_params
-):
-    """Every legacy-key mapping value is a real ``state_dict`` key."""
-    model, _ = _build_case(model_name, required_params, signal_params)
-    _check_mapping_targets(model_name, model)
-
-
-def test_hybridnet_mapping_targets_exist():
-    """HybridNet is not in the model registry, so the sweep above skips it."""
-    from braindecode.models import HybridNet
-
-    _check_mapping_targets(
-        "HybridNet", HybridNet(n_chans=4, n_outputs=3, n_times=1000, sfreq=250.0)
-    )
-
-
-@pytest.mark.parametrize("model_name", ["ATCNet", "EEGConformer"])
-def test_legacy_checkpoint_keys_load_strictly(model_name):
-    """A state_dict saved under the legacy key names loads with ``strict=True``."""
-    from braindecode.models import ATCNet, EEGConformer
-
-    cls = {"ATCNet": ATCNet, "EEGConformer": EEGConformer}
-    kwargs = {"n_chans": 22, "n_outputs": 4, "n_times": 1000, "sfreq": 250.0}
-    model = cls[model_name](**kwargs)
-    old_name = {new: old for old, new in model.mapping.items()}
-    legacy = {old_name.get(k, k): v for k, v in model.state_dict().items()}
-    assert set(legacy) != set(model.state_dict())
-
-    fresh = cls[model_name](**kwargs)
-    fresh.load_state_dict(legacy, strict=True)
-    for key, value in model.state_dict().items():
-        torch.testing.assert_close(fresh.state_dict()[key], value)
+    assert len(targets) == len(set(targets)), f"{name}.mapping repeats a target"

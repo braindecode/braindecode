@@ -38,11 +38,6 @@ class HybridNet(nn.Module):
         drop_prob: float = 0.5,
     ):
         super().__init__()
-        self.mapping = {
-            "final_conv.weight": "final_layer.0.weight",
-            "final_conv.bias": "final_layer.0.bias",
-        }
-
         deep_model = Deep4Net(
             n_chans=n_chans,
             n_outputs=n_outputs,

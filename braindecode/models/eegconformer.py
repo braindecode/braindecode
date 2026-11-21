@@ -237,11 +237,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        self.mapping = {
-            "classification_head.fc.6.weight": "final_layer.weight",
-            "classification_head.fc.6.bias": "final_layer.bias",
-        }
-
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if not (self.n_chans <= 64):
             warnings.warn(
