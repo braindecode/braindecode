@@ -31,6 +31,9 @@ Enhancements
 - Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
   foundation model that reads electrode positions through a coordinate-driven
   spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
+- The encoders of :class:`braindecode.models.SAMBA` are on the Hugging Face Hub at
+  ``braindecode/samba-2s-pretrained`` and ``braindecode/samba-100s-pretrained``
+  (:gh:`1739` by `Bruno Aristimunha`_).
 - Foundation models raise a ``ValueError`` with both channel counts, through
   :func:`braindecode.functional.check_n_chans`, when the input does not have the
   channels they were built for (:gh:`1605` by `Julien Gadonneix`_).
