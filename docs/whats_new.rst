@@ -251,6 +251,12 @@ Requirements
 Bug fixes
 ==========
 
+- Fix the docstrings of :class:`braindecode.augmentation.SensorsRotation` (and its X, Y and Z
+  variants), :class:`braindecode.datasets.EEGWindowsDataset` and
+  :class:`braindecode.augmentation.Transform`, which documented ``max_degree``, ``windows`` and
+  ``operation`` as constructor arguments. The real arguments are ``max_degrees`` and ``raw``,
+  and ``operation`` is a class attribute (:gh:`0000` by
+  `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.Pratibha2` returns the feature dict, not the logits, when it
   is compiled with ``torch.jit.script`` and called with ``return_features=True``
   (:gh:`1710` by `Bruno Aristimunha`_).
