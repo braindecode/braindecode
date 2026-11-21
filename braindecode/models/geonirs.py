@@ -22,6 +22,7 @@ from braindecode.functional import (
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import fnirs_channel_order, fnirs_split_hbo_hbr
+from braindecode.modules import FeedForwardBlock
 
 
 class GeoNIRS(EEGModuleMixin, nn.Module):
@@ -80,8 +81,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
           g_c = [\mathrm{mid}_c, \Delta_c], \qquad
           \mathrm{mid}_c = \frac{s_c + d_c}{2}, \qquad \Delta_c = d_c - s_c,
 
-      centred on the montage and divided by a fixed scale of 25.46 mm. An MLP
-      and one Transformer layer over the channels give :math:`G`.
+      centred on the montage and divided by ``geometry_scale``, 25.46 mm by
+      default. An MLP and one Transformer layer over the channels give
+      :math:`G`.
 
       *Role.* The only identity of a channel: there is no channel index
       embedding.
@@ -112,9 +114,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     - ``GeoNIRS.hbo_projection``, ``GeoNIRS.hbr_projection``
       **Chromophore projections** (§2.4)
 
-      *Operations.* Residual blocks that change the width of each token along
-      ``projection_dims``, from :math:`D` to :math:`F`, without mixing latent
-      channels or patches.
+      *Operations.* Residual blocks that change the width of each token from
+      :math:`D` to :math:`F` through the widths of ``projection_dims``,
+      without mixing latent channels or patches.
 
       *Role.* :math:`Z^O` and :math:`Z^R`, the tokens of the read-out.
 
@@ -171,7 +173,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     ``braindecode/geonirs-base-pretrained`` (the defaults) and
     ``braindecode/geonirs-large-pretrained`` (``embed_dim=384``, ``depth=6``,
     ``num_heads=12``, ``feature_dim=128`` and
-    ``projection_dims=(384, 192, 96, 128)``). GeoNIRS-Base was pretrained on 8
+    ``projection_dims=(192, 96)``). GeoNIRS-Base was pretrained on 8
     datasets (383.30 h) and has 4,443,462 parameters without the head;
     GeoNIRS-Large on 22 datasets (827.04 h), with 24,394,310. Both
     repositories hold the encoder, so ``from_pretrained`` builds the head for
@@ -220,16 +222,28 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         Hidden width of the geometry MLP; ``None`` is ``embed_dim`` (Table 6).
     geometry_heads : int or None, default=None
         Heads of the geometry Transformer layer; ``None`` is ``num_heads``.
+    geometry_mlp_ratio : float, default=2.0
+        Feed-forward width of the geometry Transformer layer, over
+        ``embed_dim`` (fixed at 2 in the reference).
+    geometry_scale : float, default=0.02546058255683924
+        Scale, in metres, that divides the centred source and detector
+        coordinates of ``chs_info``: 25.46 mm, the ``GEOMETRY_SCALE_M`` of the
+        authors' ``scripts/build_fair_input.py`` (81f8995). A ``geometry``
+        argument of :meth:`forward` is taken as given.
     n_latent_channels : int, default=16
         Learnable latent queries, :math:`M`.
     compressor_heads : int or None, default=None
         Heads of the compressor's attention; ``None`` is ``num_heads``.
+    compressor_mlp_ratio : float, default=2.0
+        Width of the compressor's feed-forward block, over ``embed_dim``
+        (fixed at 2 in the reference).
     feature_dim : int, default=64
         Token width after the projections, :math:`F` (Table 6).
-    projection_dims : tuple of int, default=(192, 128, 96, 64)
-        Token widths of the chromophore projections, from ``embed_dim`` to
-        ``feature_dim``, one residual block per step (Table 6 of the paper).
-        GeoNIRS-Large uses ``(384, 192, 96, 128)``.
+    projection_dims : tuple of int, default=(128, 96)
+        Inner token widths of the chromophore projections: the residual blocks
+        run over ``(embed_dim, *projection_dims, feature_dim)``, one block per
+        step, 192 -> 128 -> 96 -> 64 by default (Table 6 of the paper).
+        GeoNIRS-Large uses ``(192, 96)``.
     use_channel_geometry : bool, default=True
         Add the geometry :math:`G` to the keys of the compressor. ``False``
         builds no geometry encoder: the "w/o Geometry" variant of Table 4.
@@ -248,6 +262,16 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         Appendix B.1.2.
     activation : type[nn.Module], default=nn.GELU
         Activation of the backbone; GELU in the reference.
+    time_embedding_init_std : float, default=0.02
+        Standard deviation of the initial temporal position embeddings (the
+        reference's ``time_embedding_init_std``).
+    latent_init_std : float, default=0.02
+        Standard deviation of the initial latent queries (fixed at 0.02 in the
+        reference).
+    residual_init_scale : float, default=0.1
+        Initial value of the learnable weight of the update path of each
+        projection block, so that a block starts close to its linear skip
+        (fixed at 0.1 in the reference).
 
     References
     ----------
@@ -274,10 +298,13 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         mlp_ratio: float = 4.0,
         geometry_hidden_dim: int | None = None,
         geometry_heads: int | None = None,
+        geometry_mlp_ratio: float = 2.0,
+        geometry_scale: float = 0.02546058255683924,
         n_latent_channels: int = 16,
         compressor_heads: int | None = None,
+        compressor_mlp_ratio: float = 2.0,
         feature_dim: int = 64,
-        projection_dims: tuple[int, ...] = (192, 128, 96, 64),
+        projection_dims: tuple[int, ...] = (128, 96),
         use_channel_geometry: bool = True,
         pool: Literal["flatten", "mean_std"] = "flatten",
         channel_order: Literal["stacked", "interleaved"] | None = None,
@@ -285,6 +312,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         head_drop_prob: float = 0.1,
         minimum_patch_valid_fraction: float = 0.8,
         activation: type[nn.Module] = nn.GELU,
+        time_embedding_init_std: float = 0.02,
+        latent_init_std: float = 0.02,
+        residual_init_scale: float = 0.1,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -328,22 +358,15 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
                     f"embed_dim ({embed_dim}) must be divisible by {name} "
                     f"({n_heads}): a head takes embed_dim / {name} features."
                 )
-        # The projections take the tokens from embed_dim to feature_dim
-        if (
-            not projection_dims
-            or projection_dims[0] != embed_dim
-            or projection_dims[-1] != feature_dim
-        ):
-            raise ValueError(
-                f"projection_dims must start at embed_dim ({embed_dim}) and end "
-                f"at feature_dim ({feature_dim}), got {tuple(projection_dims)}."
-            )
         # A fraction above 1 would drop every patch and give all-zero tokens
         if not 0.0 <= minimum_patch_valid_fraction <= 1.0:
             raise ValueError(
                 "minimum_patch_valid_fraction must be in [0, 1], got "
                 f"{minimum_patch_valid_fraction}."
             )
+        # A scale of 0 divides the coordinates by zero: NaN geometry tokens
+        if geometry_scale <= 0.0:
+            raise ValueError(f"geometry_scale must be positive, got {geometry_scale}.")
         # Where the HbO and HbR rows are; raises when chs_info does not list
         # HbO/HbR pairs
         self.channel_order = fnirs_channel_order(self._chs_info, channel_order)
@@ -362,6 +385,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             depth=depth,
             mlp_ratio=mlp_ratio,
             drop_prob=drop_prob,
+            init_std=time_embedding_init_std,
             activation=activation,
         )
         self.hbr_encoder = _TemporalEncoder(
@@ -372,6 +396,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             depth=depth,
             mlp_ratio=mlp_ratio,
             drop_prob=drop_prob,
+            init_std=time_embedding_init_std,
             activation=activation,
         )
 
@@ -383,6 +408,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
                 embed_dim=self.embed_dim,
                 hidden_dim=self.geometry_hidden_dim,
                 num_heads=self.geometry_heads,
+                mlp_ratio=geometry_mlp_ratio,
                 drop_prob=drop_prob,
                 activation=activation,
             )
@@ -392,24 +418,35 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             embed_dim=self.embed_dim,
             n_latent_channels=self.n_latent_channels,
             num_heads=self.compressor_heads,
+            mlp_ratio=compressor_mlp_ratio,
             drop_prob=drop_prob,
+            init_std=latent_init_std,
             activation=activation,
         )
 
-        # Chromophore projections: Z^O and Z^R, from D to F along
-        # projection_dims
+        # Chromophore projections: Z^O and Z^R, from D to F through the widths
+        # of projection_dims
+        widths = (embed_dim, *projection_dims, feature_dim)
         self.hbo_projection = _ChromophoreProjection(
-            dims=projection_dims, drop_prob=drop_prob, activation=activation
+            dims=widths,
+            drop_prob=drop_prob,
+            init_scale=residual_init_scale,
+            activation=activation,
         )
         self.hbr_projection = _ChromophoreProjection(
-            dims=projection_dims, drop_prob=drop_prob, activation=activation
+            dims=widths,
+            drop_prob=drop_prob,
+            init_scale=residual_init_scale,
+            activation=activation,
         )
 
         # Geometry g_c of the pairs of chs_info, used when forward gets no
         # geometry. Derived from chs_info, so not saved with the weights.
         self.register_buffer(
             "default_geometry",
-            torch.from_numpy(_optode_geometry(self._chs_info, self.channel_order)),
+            torch.from_numpy(
+                _optode_geometry(self._chs_info, self.channel_order, geometry_scale)
+            ),
             persistent=False,
         )
 
@@ -673,10 +710,10 @@ class _TemporalEncoder(nn.Module):
         Feed-forward width of the Transformer, over ``embed_dim``.
     drop_prob : float
         Dropout of the Transformer.
+    init_std : float
+        Standard deviation of the initial positional embedding.
     activation : type[nn.Module], default=nn.GELU
         Activation of the Transformer.
-    init_std : float, default=0.02
-        Standard deviation of the initial positional embedding.
     """
 
     def __init__(
@@ -688,8 +725,8 @@ class _TemporalEncoder(nn.Module):
         depth: int,
         mlp_ratio: float,
         drop_prob: float,
+        init_std: float,
         activation: type[nn.Module] = nn.GELU,
-        init_std: float = 0.02,
     ):
         super().__init__()
         self.init_std = init_std
@@ -816,6 +853,8 @@ class _GeometryEncoder(nn.Module):
         Hidden width of the MLP.
     num_heads : int
         Heads of the Transformer.
+    mlp_ratio : float
+        Feed-forward width of the Transformer, over ``embed_dim``.
     drop_prob : float
         Dropout of the Transformer.
     activation : type[nn.Module], default=nn.GELU
@@ -824,8 +863,6 @@ class _GeometryEncoder(nn.Module):
         Size of :math:`g_c`: three midpoint and three offset coordinates.
     depth : int, default=1
         Layers of the Transformer.
-    mlp_ratio : float, default=2.0
-        Feed-forward width of the Transformer, over ``embed_dim``.
     """
 
     def __init__(
@@ -833,11 +870,11 @@ class _GeometryEncoder(nn.Module):
         embed_dim: int,
         hidden_dim: int,
         num_heads: int,
+        mlp_ratio: float,
         drop_prob: float,
         activation: type[nn.Module] = nn.GELU,
         geometry_dim: int = 6,
         depth: int = 1,
-        mlp_ratio: float = 2.0,
     ):
         super().__init__()
 
@@ -926,7 +963,7 @@ class _ChannelCompressorAttention(nn.Module):
        chromophores, ``(batch * n_patches, heads, n_latent_channels, 2 *
        head_dim)``;
     4. per chromophore, an output projection with a residual on the queries,
-       a LayerNorm and a residual feed-forward block, ``(batch,
+       a LayerNorm and a residual pre-norm feed-forward block, ``(batch,
        n_latent_channels, n_patches, embed_dim)``, zero at a patch without a
        valid pair.
 
@@ -942,14 +979,14 @@ class _ChannelCompressorAttention(nn.Module):
         Learnable latent queries, :math:`M`.
     num_heads : int
         Attention heads, each of width :math:`d_h` = ``embed_dim / num_heads``.
+    mlp_ratio : float
+        Width of the feed-forward block, over ``embed_dim``.
     drop_prob : float
         Dropout on the attention weights and in the feed-forward block.
+    init_std : float
+        Standard deviation of the initial latent queries.
     activation : type[nn.Module], default=nn.GELU
         Activation of the feed-forward block.
-    mlp_ratio : float, default=2.0
-        Width of the feed-forward block, over ``embed_dim``.
-    init_std : float, default=0.02
-        Standard deviation of the initial latent queries.
     """
 
     def __init__(
@@ -957,10 +994,10 @@ class _ChannelCompressorAttention(nn.Module):
         embed_dim: int,
         n_latent_channels: int,
         num_heads: int,
+        mlp_ratio: float,
         drop_prob: float,
+        init_std: float,
         activation: type[nn.Module] = nn.GELU,
-        mlp_ratio: float = 2.0,
-        init_std: float = 0.02,
     ):
         super().__init__()
         self.head_dim = embed_dim // num_heads
@@ -978,16 +1015,19 @@ class _ChannelCompressorAttention(nn.Module):
         self.q_proj = nn.Linear(embed_dim, embed_dim)
         self.k_proj = nn.Linear(embed_dim, embed_dim)
         self.v_proj = nn.Linear(embed_dim, embed_dim)
-        # Output projection, LayerNorm and feed-forward block
+        # Output projection, LayerNorm and attention dropout
         self.out_proj = nn.Linear(embed_dim, embed_dim)
         self.attn_dropout = nn.Dropout(drop_prob)
         self.out_norm = nn.LayerNorm(embed_dim)
-        self.ffn = nn.Sequential(
-            nn.LayerNorm(embed_dim),
-            nn.Linear(embed_dim, round(embed_dim * mlp_ratio)),
-            activation(),
-            nn.Dropout(drop_prob),
-            nn.Linear(round(embed_dim * mlp_ratio), embed_dim),
+        # Pre-norm feed-forward block: its LayerNorm, then embed_dim ->
+        # round(embed_dim * mlp_ratio) -> embed_dim
+        self.ffn_norm = nn.LayerNorm(embed_dim)
+        self.ffn = FeedForwardBlock(
+            emb_size=embed_dim,
+            expansion=1,
+            drop_p=drop_prob,
+            activation=activation,
+            hidden_features=round(embed_dim * mlp_ratio),
         )
 
         # One attention per patch: the patches join the batch axis, for the
@@ -1167,8 +1207,10 @@ class _ChannelCompressorAttention(nn.Module):
         x = latents + x
         x = self.out_norm(x)
 
-        # Feed-forward block with its residual connection
-        update = self.ffn(x)
+        # Pre-norm feed-forward block with its residual connection
+        # (batch * P, M, D)
+        update = self.ffn_norm(x)
+        update = self.ffn(update)
         x = x + update
 
         # Zero the patches without a valid pair
@@ -1190,6 +1232,8 @@ class _ChromophoreProjection(nn.Module):
         Token widths, from ``embed_dim`` to ``feature_dim``.
     drop_prob : float
         Dropout inside each residual block.
+    init_scale : float
+        Initial value of the learnable ``residual_scale`` of each block.
     activation : type[nn.Module], default=nn.GELU
         Activation inside each residual block.
     """
@@ -1198,6 +1242,7 @@ class _ChromophoreProjection(nn.Module):
         self,
         dims: Sequence[int],
         drop_prob: float,
+        init_scale: float,
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
@@ -1209,6 +1254,7 @@ class _ChromophoreProjection(nn.Module):
                     input_dim=input_dim,
                     output_dim=output_dim,
                     drop_prob=drop_prob,
+                    init_scale=init_scale,
                     activation=activation,
                 )
                 for input_dim, output_dim in zip(dims[:-1], dims[1:])
@@ -1257,11 +1303,11 @@ class _ResidualProjectionBlock(nn.Module):
         Output width.
     drop_prob : float
         Dropout between the two layers of the update.
-    activation : type[nn.Module], default=nn.GELU
-        Activation between the two layers of the update.
-    init_scale : float, default=0.1
+    init_scale : float
         Initial value of the learnable ``residual_scale``: the block starts
         close to its linear skip.
+    activation : type[nn.Module], default=nn.GELU
+        Activation between the two layers of the update.
     """
 
     def __init__(
@@ -1269,8 +1315,8 @@ class _ResidualProjectionBlock(nn.Module):
         input_dim: int,
         output_dim: int,
         drop_prob: float,
+        init_scale: float,
         activation: type[nn.Module] = nn.GELU,
-        init_scale: float = 0.1,
     ):
         super().__init__()
         self.init_scale = init_scale
@@ -1385,14 +1431,7 @@ class _ValidMeanStd(nn.Module):
         return x
 
 
-# Reference scale of the geometry coordinates, 25.46 mm in metres:
-# GEOMETRY_SCALE_M of the authors' scripts/build_fair_input.py (81f8995)
-_GEOMETRY_SCALE_M = 25.460582556839242 / 1000.0
-
-
-def _optode_geometry(
-    chs_info, channel_order: str, scale: float = _GEOMETRY_SCALE_M
-) -> np.ndarray:
+def _optode_geometry(chs_info, channel_order: str, scale: float) -> np.ndarray:
     """Geometry vector :math:`g_c` of each HbO/HbR pair of ``chs_info``, as
     the authors build it for a downstream dataset.
 

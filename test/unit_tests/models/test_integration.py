@@ -618,8 +618,6 @@ def test_if_models_with_embedding_parameter(model):
     # Test if the model that have embedding parameters works changing the default
     # embedding value
     model_name = model.__class__.__name__
-    if model_name == "GeoNIRS":
-        pytest.skip("GeoNIRS: projection_dims starts at embed_dim, so both change.")
     # first step is to inspect the models parameters
     params = inspect.signature(model.__init__).parameters
 

@@ -8,7 +8,7 @@ from braindecode.models import GeoNIRS
 from braindecode.models.util import _fnirs_chs_info
 
 SMALL = dict(chs_info=_fnirs_chs_info(2), n_outputs=2, embed_dim=32, num_heads=4,
-             depth=1, n_latent_channels=4, feature_dim=8, projection_dims=(32, 16, 8))
+             depth=1, n_latent_channels=4, feature_dim=8, projection_dims=(16,))
 NAN = float("nan")
 
 
@@ -55,6 +55,38 @@ def test_geonirs_mean_std_over_valid_patches():
     assert not features[3].any()
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"geometry_mlp_ratio": 4.0},
+        {"geometry_scale": 0.05},
+        {"compressor_mlp_ratio": 4.0},
+        {"time_embedding_init_std": 0.2},
+        {"latent_init_std": 0.2},
+        {"residual_init_scale": 0.5},
+    ],
+)
+def test_geonirs_block_parameters_reach_the_blocks(kwargs):
+    """Each of these parameters, alone, changes the seeded tokens of both
+    chromophores."""
+    x = torch.randn(2, 4, 60)
+    tokens = []
+    for extra in ({}, kwargs):
+        torch.manual_seed(0)
+        model = GeoNIRS(n_times=60, **SMALL, **extra).eval()
+        with torch.no_grad():
+            tokens.append(model.encode(x)["foundation"])
+    for chromophore in (0, 1):  # (batch, 2, M, P, F): HbO, then HbR
+        assert not torch.equal(tokens[0][:, chromophore], tokens[1][:, chromophore])
+
+
+@pytest.mark.parametrize("scale", [0.0, -0.025])
+def test_geonirs_refuses_a_non_positive_geometry_scale(scale):
+    """A zero scale would divide the coordinates by zero and give NaN tokens."""
+    with pytest.raises(ValueError, match="geometry_scale must be positive"):
+        GeoNIRS(n_times=60, geometry_scale=scale, **SMALL)
+
+
 # features[0, :5] (HbO tokens) and features[0, -5:] (HbR tokens) of the authors'
 # geonirs_base.pt and geonirs_large.pt
 # (GeoNIRS@81f8995) on the input of the test, loaded as released
@@ -63,10 +95,10 @@ def test_geonirs_mean_std_over_valid_patches():
 @pytest.mark.parametrize(
     "repo_id, revision, expected, expected_hbr",
     [
-        ("braindecode/geonirs-base-pretrained", "a483f904180dce2c0fdc6dd48917b95498913d9a",
+        ("braindecode/geonirs-base-pretrained", "REHOST_PENDING",  # pin after re-host
          [0.067987166, -0.007574921, -0.350337952, 0.147298455, -0.141785607],
          [-0.119261660, 0.040913288, -0.013012240, -0.140069067, 0.107298315]),
-        ("braindecode/geonirs-large-pretrained", "f51061d599032f726ba6732083bce2dbc7c3fcd1",
+        ("braindecode/geonirs-large-pretrained", "REHOST_PENDING",  # pin after re-host
          [-3.116364002, -2.744976997, -0.223239779, -1.097928047, -0.808620572],
          [2.245513439, -1.460690856, 0.737670124, 2.605016947, -0.031923484]),
     ],
