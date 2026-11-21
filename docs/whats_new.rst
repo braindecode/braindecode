@@ -630,6 +630,9 @@ Bug fixes
   8-13 Hz band at 250 Hz) and depended on future samples only. These phases are
   now applied causally, as in :func:`mne.filter.filter_data`; the other phases
   are unchanged (:gh:`1686` by `Axel Coiffard-Donaty`_).
+- :meth:`braindecode.datasets.BaseConcatDataset.split` raises a ``ValueError`` when the
+  description column given as ``by`` has missing values, instead of silently leaving these
+  recordings out of every split (:gh:`XXXX` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
