@@ -688,6 +688,9 @@ Code health
   Published development notebooks install the build's commit, and the
   Exca tutorial installs the optional packages it imports (:gh:`1640` by
   `Bruno Aristimunha`_).
+- The numpydoc header test now covers every registered model, not nine. The
+  parameter headers of 13 models read ``name: type`` and are now ``name : type``,
+  so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 
 Current 2.0.0 (2026-11-02)
