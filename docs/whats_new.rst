@@ -705,7 +705,7 @@ Code health
   so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - The cropped inference page is now the :ref:`cropped-inference` section of the cropped
   decoding tutorial and the docstrings of its functions; :ref:`channel-strategies` moves
-  to the Models section, with tables (by `Bruno Aristimunha`_).
+  to the Models section, with tables (:gh:`1745` by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
