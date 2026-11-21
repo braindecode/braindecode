@@ -2872,7 +2872,7 @@ def test_corteg_released_adapter_reproduces_the_reference_outputs():
     try:
         model = CORTEG.from_pretrained(
             "braindecode/corteg-stanford-pooled",
-            revision="REHOST_PENDING",  # pin after re-host
+            revision="71141b05adba626a195de9e8c1a5021f23f2464e",
             n_chans=8,
             strict=True,
         ).eval()
