@@ -59,7 +59,18 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     ``n_merge_blocks`` blocks with their LayerNorms, and the head (about 297 K
     parameters for the small backbone); this module builds the network and
     freezes the channel codebook, and leaves LoRA and the freezing of the other
-    parameters to the training code.
+    parameters to the training code. With ``B`` the batch, ``C = n_chans``,
+    ``D = embed_dim``, ``P`` the patches per electrode (``n_times /
+    patch_size``, rounded as ``on_non_divisible`` says) and ``N = P * C``::
+
+        x (B, C, T), x_hi (B, C, T_hi), pos (B, C, 3)
+        -> patch embeddings                 lo (B, N, D), hi (B, N, D)
+        -> + temporal and channel embedding of each token
+        -> CLS token, low-frequency tokens  (B, 1 + N, D)
+        -> encoder blocks, with the fusion  (B, 1 + N, D)
+        -> norm                             (B, 1 + N, D)
+        -> mean over all tokens             (B, D)
+        -> final_layer                      (B, n_outputs)
 
     .. rubric:: Macro Components
 
@@ -69,7 +80,10 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
       ``x_hi`` into patches of ``hi_patch_size``, each linearly embedded and
       the high-gamma tokens average-pooled to the low-frequency count. The
       high-gamma embedding starts from the pretrained low-frequency one,
-      linearly interpolated to its patch size.
+      linearly interpolated to its patch size. *Role:* keep the pretrained
+      low-frequency tokenization and add the high-gamma dynamics on the same
+      token grid, so that both streams get the same temporal and channel
+      embeddings (Section 3.1 of the paper).
     - **KNNSoftFourier spatial adapter** (``CORTEG.channel_adapter``).
       *Operations:* a soft branch maps each electrode position to softmax
       weights over the 142 positioned slots of the pretrained channel
@@ -84,13 +98,21 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     - **Transformer encoder** (``CORTEG.encoder``). *Operations:* the
       ``depth`` pretrained pre-norm ViT blocks of ST-EEGFormer, over a CLS
       token and the (time-patch, channel) tokens of the low-frequency stream.
+      *Role:* the pretrained backbone, which extracts EEG-like low-frequency
+      representations; with ``"average"`` its first ``depth - n_merge_blocks``
+      blocks read the low-frequency stream alone (Section 3.1).
     - **Late fusion** (``merge_strategy``). *Operations:* ``"average"``
       replaces the low-frequency tokens by their mean with the high-gamma
       tokens before the last ``n_merge_blocks`` blocks; ``"layerwise_gate"``
       adds the high-gamma tokens after every block, scaled per block and per
-      sample by a small gate network that starts at zero.
+      sample by a small gate network that starts at zero. *Role:* bring the
+      high-gamma activity into the backbone, after its early blocks have read
+      the low-frequency stream (``"average"``, the paper's late fusion,
+      Section 3.1) or at every block, which avoids searching for the merge
+      point (``"layerwise_gate"``, Section 5.4).
     - **Read-out** (``CORTEG.norm``, ``CORTEG.final_layer``). *Operations:*
-      layer norm, mean over all tokens (CLS included), linear head.
+      layer norm, mean over all tokens (CLS included), linear head. *Role:*
+      one vector per window, projected to ``n_outputs`` values (Section 3.1).
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -117,76 +139,90 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
       batches one patient at a time: padded channels take part in no
       attention and no pooling.
 
-    .. important::
+    .. rubric:: Pretrained Weights
 
-        The ST-EEGFormer small backbone, with the high-gamma embedding
-        warm-started from its low-frequency one, loads from the re-hosted
-        checkpoint; the adapter, gate and head keep their initialization::
+    The ST-EEGFormer small backbone, with the high-gamma embedding
+    warm-started from its low-frequency one, loads from the re-hosted
+    checkpoint; the adapter, gate and head keep their initialization::
 
-            model = CORTEG.from_pretrained(
-                "braindecode/corteg-small-pretrained", n_outputs=5, n_times=128,
-                chs_info=chs_info,
-            )
+        model = CORTEG.from_pretrained(
+            "braindecode/corteg-small-pretrained", n_outputs=5, n_times=128,
+            chs_info=chs_info,
+        )
 
-        The authors' Stanford model (finger flexion, nine patients pooled) is
-        re-hosted with its LoRA factors folded in::
+    The authors' Stanford model (finger flexion, nine patients pooled) is
+    re-hosted with its LoRA factors folded in::
 
-            model = CORTEG.from_pretrained(
-                "braindecode/corteg-stanford-pooled", chs_info=chs_info
-            )
+        model = CORTEG.from_pretrained(
+            "braindecode/corteg-stanford-pooled", chs_info=chs_info
+        )
+
+    The Stanford model reads 1 s windows of the two streams above (``x`` of 128
+    and ``x_hi`` of 200 samples) after a notch at 60, 120 and 180 Hz and a
+    common average reference (``data/stanford_preprocessing/`` of the authors'
+    repository). The outputs match the reference implementation
+    (``LiuyinYang1101/CORTEG`` at ``caafb78``) for the same weights and inputs,
+    up to float32 rounding, for both merge strategies (:gh:`1551`).
+
+    A bare ``STEEGFormer`` checkpoint (``braindecode/STEEGFormer-small``) is not
+    a CORTEG checkpoint. It has no high-gamma embedding and names the channel
+    table ``channel_pos.embedding.weight``, so ``strict=True`` raises, and
+    ``strict=False`` leaves ``channel_codebook`` at zero and derives
+    ``patch_embed_hi`` from the random initialization. Load
+    ``braindecode/corteg-small-pretrained`` instead.
 
     Parameters
     ----------
-    patch_size : int
+    patch_size : int, default=16
         Patch size of the low-frequency stream (16 for the released
         backbones).
-    hi_patch_size : int
+    hi_patch_size : int, default=25
         Patch size of the high-gamma stream.
-    n_temporal_positions : int
+    n_temporal_positions : int, default=2048
         Positions of the fixed temporal encoding, CLS token included (2048, as in
         STEEGFormer); a window has at most ``n_temporal_positions - 1`` patches.
-    embed_dim : int
+    embed_dim : int, default=512
         Token embedding dimension (512 for the small backbone).
-    depth : int
+    depth : int, default=8
         Number of Transformer encoder blocks.
-    num_heads : int
+    num_heads : int, default=8
         Number of attention heads.
-    mlp_ratio : int
+    mlp_ratio : int, default=4
         Hidden-to-embedding ratio of the MLP blocks.
-    norm_eps : float
+    norm_eps : float, default=1e-6
         Epsilon of the LayerNorms of the blocks and of the final norm (1e-6, as in
         STEEGFormer).
-    drop_prob : float
+    drop_prob : float, default=0.0
         Dropout rate.
-    drop_path : float
+    drop_path : float, default=0.1
         Stochastic-depth rate (max of a linear schedule over ``depth``).
-    activation : type[nn.Module]
+    activation : type[nn.Module], default=nn.GELU
         Activation layer class of the feed-forward blocks and of the MLPs of
         the spatial adapter and the gate.
-    merge_strategy : {"average", "layerwise_gate"}
+    merge_strategy : {"average", "layerwise_gate"}, default="average"
         Fusion of the high-gamma stream: the paper's default mean before the
         last ``n_merge_blocks`` blocks (the released Stanford adapter), or the
         layer-wise gate (its BrainTreebank results).
-    n_merge_blocks : int
+    n_merge_blocks : int, default=4
         Number of blocks after the ``"average"`` fusion.
-    knn_k : int
+    knn_k : int, default=8
         Number of nearest scalp slots of the soft branch's initial kernel.
-    min_bandwidth : float
+    min_bandwidth : float, default=1e-6
         Smallest bandwidth of that kernel, in metres (1e-6).
-    weight_eps : float
+    weight_eps : float, default=1e-8
         Floor that keeps the normalization and the logarithm of the kernel
         weights finite (1e-8).
-    adapter_hidden : int
+    adapter_hidden : int, default=128
         Hidden width of the spatial adapter's MLPs.
-    n_fourier_freqs : int
+    n_fourier_freqs : int, default=32
         Number of Fourier frequencies per axis of the residual branch.
-    fourier_max_freq : float
+    fourier_max_freq : float, default=50.0
         Highest of those frequencies, log-spaced from 1, in radians per metre.
-    gate_bottleneck : int
+    gate_bottleneck : int, default=16
         Hidden width of the layer-wise gate.
-    init_std : float
+    init_std : float, default=0.02
         Standard deviation of the normal initialization of the CLS token (0.02).
-    on_non_divisible : {"pad", "crop", "error"}
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
         How a stream whose length is not a multiple of its patch size is
         handled (right zero-pad, crop, or raise); the reference crops.
 

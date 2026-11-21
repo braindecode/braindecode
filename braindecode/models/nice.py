@@ -75,6 +75,9 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
       NICE-GA) are not included.
     - ``mask`` hides raw samples before the temporal convolution, and
       ``return_features`` adds the temporal ``"tokens"`` (see :meth:`forward`).
+    - No pretrained weights: the authors' checkpoint (``eeyhsong/NICE``,
+      CC-BY-NC-ND-4.0, 10 subjects of THINGS-EEG2) is not supported; at its
+      revision ``7f98b08`` the encoder file is truncated.
 
     `License <https://github.com/eeyhsong/NICE-EEG/blob/main/LICENSE>`_
 
