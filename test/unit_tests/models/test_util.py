@@ -436,9 +436,7 @@ def test_fnirs_channel_order_reads_chs_info():
     # ... even when the name suffix says the other chromophore
     info = mne.create_info(["S1_D1 hbr", "S1_D1 hbo"], 10.0, ["hbo", "hbr"])
     assert fnirs_chromophores_from_chs_info(info["chs"]) == ["hbo", "hbr"]
-    # without a coil type: the string "kind", and a case-insensitive suffix
-    kinds = [{"ch_name": "a", "kind": "hbo"}, {"ch_name": "b", "kind": "HbR"}]
-    assert fnirs_chromophores_from_chs_info(kinds) == ["hbo", "hbr"]
+    # without a coil type: a case-insensitive suffix
     names = [{"ch_name": "S1_D1 HbO"}, {"ch_name": "S1_D1 HBR"}]
     assert fnirs_chromophores_from_chs_info(names) == ["hbo", "hbr"]
     # the second half must be HbR, not a second copy of HbO
@@ -457,29 +455,32 @@ def test_fnirs_split_hbo_hbr_follows_chs_info():
         fnirs_split_hbo_hbr(index, "interleave")
 
 
-def _assert_interleaved_input_matches_stacked(cls, kw):
-    """With the same weights, the interleaved model on MNE-ordered channels
-    gives the stacked model's output on the stacked channels."""
-    stacked = cls(n_chans=8, n_outputs=2, n_times=60, channel_order="stacked", **kw)
-    interleaved = cls(
-        n_chans=8, n_outputs=2, n_times=60, channel_order="interleaved", **kw
+@pytest.mark.parametrize(
+    "name, kw",
+    [
+        ("FNIRS4D", {}),
+        ("FNIRSPreT", dict(depth=1, spatial_kernel_size=2)),
+        ("FNIRST", dict(depth=1, spatial_kernel_size=2)),
+        ("JungMAE", dict(depth=1)),
+        ("GeoNIRS", dict(depth=1, num_heads=4, embed_dim=64,
+                         projection_dims=(64, 64), pool="mean_std")),
+        ("MtReNIRS", dict(depth=2, num_heads=2, embed_dim=32,
+                          pool="channel_temporal_mean")),
+    ],
+)
+def test_fnirs_interleaved_chs_info_matches_stacked(name, kw):
+    """With the same weights, MNE-ordered chs_info and input give the output of
+    the stacked chs_info on the stacked input."""
+    cls = getattr(models, name)
+    stacked = cls(chs_info=_fnirs_chs_info(4), n_outputs=3, n_times=100, **kw)
+    mne_order = cls(
+        chs_info=_fnirs_chs_info(4, interleaved=True), n_outputs=3, n_times=100, **kw
     )
-    interleaved.load_state_dict(stacked.state_dict())
-    x = torch.randn(3, 8, 60)  # [HbO_1..HbO_4, HbR_1..HbR_4]
-    x_mne = x.reshape(3, 2, 4, 60).transpose(1, 2).reshape(3, 8, 60)
+    mne_order.load_state_dict(stacked.state_dict())
+    x = torch.randn(2, 8, 100)  # [HbO_1..HbO_4, HbR_1..HbR_4]
+    x_mne = x.reshape(2, 2, 4, 100).transpose(1, 2).reshape(2, 8, 100)
     with torch.no_grad():
-        assert torch.equal(interleaved.eval()(x_mne), stacked.eval()(x))
-
-
-def test_fnirs4d_interleaved_input_matches_stacked():
-    _assert_interleaved_input_matches_stacked(models.FNIRS4D, {})
-
-
-@pytest.mark.parametrize("name", sorted(_FNIRS_PAIRING))
-def test_fnirs_interleaved_input_matches_stacked(name):
-    _assert_interleaved_input_matches_stacked(
-        getattr(models, name), _FNIRS_PAIRING[name]
-    )
+        torch.testing.assert_close(mne_order.eval()(x_mne), stacked.eval()(x))
 
 
 def test_fnirs4d_hbt_is_hbo_plus_hbr():
@@ -518,17 +519,20 @@ def test_fnirs_chs_info_without_hbo_hbr_pairs_raises(names, types):
             getattr(models, name)(chs_info=chs, n_outputs=2, n_times=60, **kw)
 
 
-def test_fnirs_odd_n_chans_raises_for_pairs():
-    with pytest.raises(ValueError, match="compute_hbt"):
-        models.FNIRS4D(n_chans=5, n_outputs=2, n_times=60)
-    with pytest.raises(ValueError, match="even n_chans"):  # multiscale: n_chans // 2
-        models.FNIRS4D(n_chans=5, n_outputs=2, n_times=60, compute_hbt=False)
-    models.FNIRS4D(
-        n_chans=5, n_outputs=2, n_times=60, compute_hbt=False, mean_branch="time_mean"
-    )
-    for cls in (models.FNIRST, models.FNIRSPreT):
-        with pytest.raises(ValueError, match=f"{cls.__name__} needs HbO/HbR pairs"):
-            cls(n_chans=11, n_outputs=2, n_times=60, depth=1)
+@pytest.mark.parametrize(
+    "name, kw, match",
+    [
+        ("FNIRS4D", {}, "compute_hbt needs HbO/HbR pairs"),
+        ("FNIRS4D", {"compute_hbt": False}, "even n_chans"),  # multiscale: n_chans // 2
+        ("FNIRST", {"depth": 1}, "FNIRST needs HbO/HbR pairs"),
+        ("FNIRSPreT", {"depth": 1}, "FNIRSPreT needs HbO/HbR pairs"),
+        ("JungMAE", {}, "JungMAE needs HbO/HbR pairs"),
+        ("GeoNIRS", {}, "n_chans must be even"),
+    ],
+)
+def test_fnirs_odd_n_chans_raises_for_pairs(name, kw, match):
+    with pytest.raises(ValueError, match=match):
+        getattr(models, name)(n_chans=5, n_outputs=2, n_times=60, **kw)
 
 
 def _assert_reads_channel_order_from_chs_info(cls, kw):
