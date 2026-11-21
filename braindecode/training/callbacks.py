@@ -4,6 +4,7 @@
 
 import torch
 from skorch.callbacks import Callback
+
 from braindecode.util import _warn_orphaned_api
 
 
