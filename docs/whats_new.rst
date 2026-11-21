@@ -28,8 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- Add :class:`braindecode.models.SAMBA` with a pure PyTorch Mamba-2 encoder.
-
+- Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
+  foundation model that reads electrode positions through a coordinate-driven
+  spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
 - Foundation models raise a ``ValueError`` with both channel counts, through
   :func:`braindecode.functional.check_n_chans`, when the input does not have the
   channels they were built for (:gh:`1605` by `Julien Gadonneix`_).
@@ -3524,3 +3525,4 @@ Authors
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
 .. _sixty-66: https://github.com/sixty-66
 .. _Axel Coiffard-Donaty: https://github.com/AxelNoun
+.. _Jiazhen Hong: https://github.com/Jiazhen-Hong
