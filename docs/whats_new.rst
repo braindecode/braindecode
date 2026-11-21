@@ -28,6 +28,10 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Redesign the documentation landing page with an interactive signal-to-prediction
+  stage, a five-modality overview bento, a pretrained foundation-model quickstart,
+  three end-to-end decoding workflows, and a pre-rendered native-CSS model zoo
+  explorer covering all 103 architectures (by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
   foundation model that reads electrode positions through a coordinate-driven
   spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
