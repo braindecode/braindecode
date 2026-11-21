@@ -2,7 +2,7 @@
 #
 
 # You can set these variables from the command line.
-SPHINXOPTS    =
+SPHINXOPTS    ?= -j auto
 SPHINXBUILD   = sphinx-build
 SPHINXPROJ    = Braindecode
 SOURCEDIR     = .
@@ -34,7 +34,7 @@ rmanddoc: removesource removeipynbcheckpoints apidoc html
 	echo "Done"
 
 clean:
-	-rm -rf _build auto_examples generated
+	-rm -rf _build auto_examples generated _static/model/models_analysis.html
 
 html:
 	@python prepare_summary_tables.py ../braindecode/models generated
