@@ -250,15 +250,14 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.SincShallowNet` with ``activation=None`` instantiates
-  :class:`torch.nn.ELU` instead of calling an already-instantiated module; the dense
-  temporal filter of :class:`~braindecode.models.TIDNet` registers its layers in
-  ``self.net`` and sizes each concatenated layer's input channels; ``_EEGNeuralNet.get_iterator``
-  accepts ``drop_index``; :func:`braindecode.augmentation.functional.ft_surrogate`
-  accepts ``float64`` and accelerator tensor ``phase_noise_magnitude`` values;
-  :class:`braindecode.datasets.SleepPhysionetChallenge2018` imports ``urllib.request``
-  explicitly; and :class:`braindecode.datasets.BBCIDataset` assigns its constructor
-  attributes without a ``self.self`` reference cycle (by `Bruno Aristimunha`_).
+- Fix ``SincShallowNet(activation=None)``, dense ``TIDNet`` layer registration,
+  ``_EEGNeuralNet.get_iterator(drop_index=...)``, ``ft_surrogate`` tensor dtypes,
+  ``SleepPhysionetChallenge2018`` ``urllib.request``, and ``BBCIDataset`` init (:gh:`1751` by `Bruno Aristimunha`_).
+- Documentation: list all pre-trained models under ``braindecode[hub]`` in the API
+  reference, deduplicate the DataTables assets and apply an accessible light/dark
+  category palette on the models summary table, drop the render-blocking Google Fonts
+  ``@import`` from ``style.css``, and strip unreferenced ``<clipPath>`` definitions
+  from the logo SVGs (by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.create_windows_from_events` rounds event durations to
   samples instead of truncating them, so trials, and windows inferred from them, can be
   one sample longer (:gh:`1727` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
@@ -616,11 +615,9 @@ Bug fixes
 Code health
 ============
 
-- Replace ``mypy`` and ``isort`` with Astral ``ty`` and consolidated ``ruff`` lint/format
-  hooks in pre-commit and ``braindecode[tests]``, remove superseded ``flake8``,
-  ``pydocstyle`` and ``pytest`` sections from ``setup.cfg``, enable ``sys.monitoring``
-  for coverage, and preserve class types through ``@register_dataset`` and
-  :class:`~braindecode.models.EEGModuleMixin` (by `Bruno Aristimunha`_).
+- Replace ``mypy`` and ``isort`` with Astral ``ty`` and consolidated ``ruff`` hooks,
+  enable ``sys.monitoring`` coverage, drop dead ``setup.cfg`` sections, and preserve
+  class types through ``@register_dataset`` and :class:`~braindecode.models.EEGModuleMixin` (:gh:`1751` by `Bruno Aristimunha`_).
 - The test suite peaks lower: smaller inputs where no assertion depends on size,
   shared read-only data, freed TorchScript, compile and reference-cycle memory
   (:gh:`1713` by `Bruno Aristimunha`_).
