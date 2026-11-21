@@ -250,6 +250,28 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
     )
 
 
+def test_windows_from_events_duration_float_error():
+    # 230 / 200 * 200 is 229.99999999999997: truncating it lost one sample.
+    sfreq = 200.0
+    raw = mne.io.RawArray(
+        np.random.RandomState(0).randn(1, 1000), mne.create_info(1, sfreq, "eeg")
+    )
+    raw.set_annotations(mne.Annotations([0.5, 3.0], [230 / sfreq] * 2, ["a", "a"]))
+    concat_ds = BaseConcatDataset([RawDataset(raw, description=pd.Series({"id": 1}))])
+
+    windows = create_windows_from_events(
+        concat_ds,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=230,
+        window_stride_samples=230,
+        preload=True,
+    )
+
+    assert len(windows) == 2
+    assert windows[0][0].shape[-1] == 230
+
+
 def test_windows_from_events_different_events(tmpdir_factory):
     description_expected = 5 * ["T0", "T1"] + 4 * ["T2", "T3"] + 2 * ["T1"]
     raw = _get_raw(tmpdir_factory, description_expected[:10])

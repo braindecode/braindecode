@@ -749,7 +749,7 @@ def _create_windows_from_events(
         if not any(extras):
             extras = None
 
-    stops = onsets + (filtered_durations * ds.raw.info["sfreq"]).astype(int)
+    stops = onsets + np.round(filtered_durations * ds.raw.info["sfreq"]).astype(int)
     # XXX This could probably be simplified by using chunk_duration in
     #     `events_from_annotations`
 
