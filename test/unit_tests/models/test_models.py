@@ -6373,7 +6373,7 @@ def test_megxl_pretrained_matches_the_release():
 
     model = MEGXL.from_pretrained(
         "braindecode/megxl-pretrained",
-        revision="REHOST_PENDING",  # pin after re-host
+        revision="0446ce5d77d0d0297e59e3a536b2e44f30815eb5",
         n_outputs=2,
         n_times=100,
     ).eval()

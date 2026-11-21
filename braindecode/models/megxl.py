@@ -97,7 +97,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         Weights converted from the released ``meg-xl-med-v2.ckpt``
         (``pnpl/MEG-XL``, step 113000, with its frozen BioCodec tokenizer) are
         on the Hugging Face Hub at ``braindecode/megxl-pretrained`` (revision
-        ``REHOST_PENDING``); the head is not pretrained::
+        ``0446ce5d``); the head is not pretrained::
 
             from braindecode.models import MEGXL
             model = MEGXL.from_pretrained("braindecode/megxl-pretrained", chs_info=raw.info["chs"], n_outputs=2)
