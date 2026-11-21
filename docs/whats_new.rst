@@ -196,7 +196,7 @@ API and behavior changes
   :class:`~braindecode.modules.IntermediateOutputWrapper`,
   :class:`~braindecode.modules.StatLayer` and the functions ``get_balanced_batches``,
   ``read_all_file_names``, ``corr`` and ``cov`` of ``braindecode.util``. Each emits a
-  ``DeprecationWarning`` and will be removed in 2.2 (:gh:`0000` by
+  ``DeprecationWarning`` and will be removed in 2.2 (:gh:`1734` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
