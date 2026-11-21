@@ -21,6 +21,7 @@ from braindecode.models import (
     MEGXL,
     NICE,
     REVE,
+    SAMBA,
     BaRISTA,
     BrainBERT,
     Brant,
@@ -114,6 +115,7 @@ _MODELS = [
         False,
         id="REVE",
     ),
+    pytest.param(SAMBA, N_CHANS, {"chs_info": _chs()}, False, id="SAMBA"),
     pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
     pytest.param(NICE, N_CHANS, {}, False, id="NICE"),
     pytest.param(
