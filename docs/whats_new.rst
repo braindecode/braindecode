@@ -619,6 +619,9 @@ Code health
 - :class:`~braindecode.models.GCNsNet` fits its graph with the public ``fit_graph``,
   called once per fit by the estimators; it and :class:`~braindecode.models.DGCNN`
   share :class:`~braindecode.modules.ChebyshevGraphConv` (:gh:`1700` by `Bruno Aristimunha`_).
+- :class:`~braindecode.models.SignalJEPA`, :class:`~braindecode.models.LUNA`, the NeuroRVQ
+  models and :class:`~braindecode.models.TFMTokenizer` use :class:`torch.nn.GroupNorm`
+  instead of two private copies (:gh:`1642` by `Bruno Aristimunha`_).
 - The :class:`braindecode.datasets.TUHEvents` test builds its corpus under ``tmp_path`` and
   reads it with the public class; the private ``_TUHEventsMock`` and its table of synthetic
   paths leave the package (:gh:`1704` by `Bruno Aristimunha`_).
@@ -656,6 +659,9 @@ Code health
   :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
   ``ch_mask`` with a ``ValueError`` that names it
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
+- The ``ch_mask`` training test enforces :class:`~braindecode.models.PopulationTransformer`,
+  :class:`~braindecode.models.Labram` and :class:`~braindecode.models.MAPA`, which it expected to fail:
+  each is fit with its channel metadata and raises without it (:gh:`1662` by `Bruno Aristimunha`_).
 - The Hugging Face config and round-trip tests also run on
   :class:`braindecode.models.AttnSleep`, which they skipped
   (:gh:`1614` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
@@ -664,8 +670,14 @@ Code health
   model suites. Frequency-shift device and gradient cases run alongside
   the transform's numerical tests (:gh:`1656` by `Bruno Aristimunha`_).
 
+- The monthly release updates the documentation version switcher: the stable
+  and development entries take the released and next series, and the previous
+  stable series stays linked (:gh:`1666` by `Bruno Aristimunha`_).
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
+- Development builds reach PyPI only after the ``tests`` run of their master
+  commit succeeds, and follow commit order, so ``pip install --pre`` finds the
+  newest one (:gh:`1661` by `Bruno Aristimunha`_).
 - Trial-prediction tests import their shared synthetic windows and historical
   reconstruction reference from a helper module instead of from other collected
   test modules (:gh:`1672` by `Bruno Aristimunha`_).

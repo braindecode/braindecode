@@ -33,7 +33,6 @@ from braindecode.functional import (
     spectral_input,
 )
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import chs_info_positions
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
@@ -970,6 +969,17 @@ class _CrossAttentionBlock(nn.Module):
 
 
 class _PatchEmbedNetwork(nn.Module):
+    """Embed each patch of every channel with three convolution stages.
+
+    ``tokenizer`` cuts ``(batch, n_chans, n_times)`` into patches
+    ``(batch, n_chans, n_patches, patch_size)``, stacked as
+    ``(batch, 1, n_chans * n_patches, patch_size)``. ``proj_in`` applies three times
+    a 2D convolution, a GroupNorm with ``groups`` groups and a GELU. The first
+    convolution strides each patch down to 4 steps, giving
+    ``(batch, embed_dim // 4, n_chans * n_patches, 4)``, which ``forward`` flattens
+    to ``(batch, n_chans * n_patches, embed_dim)``.
+    """
+
     def __init__(
         self, embed_dim: int = 64, patch_size: int = 40, on_non_divisible: str = "pad"
     ) -> None:
@@ -991,7 +1001,7 @@ class _PatchEmbedNetwork(nn.Module):
                 stride=(1, self.kernel_size // 2),
                 padding=(0, self.kernel_size // 2 - 1),
             ),
-            _GroupNorm(self.groups, self.out_channels),
+            nn.GroupNorm(self.groups, self.out_channels),
             nn.GELU(),
             nn.Conv2d(
                 in_channels=self.out_channels,
@@ -1000,7 +1010,7 @@ class _PatchEmbedNetwork(nn.Module):
                 stride=(1, 1),
                 padding=(0, 1),
             ),
-            _GroupNorm(self.groups, self.out_channels),
+            nn.GroupNorm(self.groups, self.out_channels),
             nn.GELU(),
             nn.Conv2d(
                 in_channels=self.out_channels,
@@ -1009,7 +1019,7 @@ class _PatchEmbedNetwork(nn.Module):
                 stride=(1, 1),
                 padding=(0, 1),
             ),
-            _GroupNorm(self.groups, self.out_channels),
+            nn.GroupNorm(self.groups, self.out_channels),
             nn.GELU(),
         )
 
