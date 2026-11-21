@@ -1,356 +1,180 @@
 # Authors: Jiazhen Hong
 #
 # License: Apache-2.0
-"""SAMBA encoder with a pure PyTorch Mamba-2 backend."""
+# Adapted from https://github.com/Jiazhen-Hong/SAMBA, with the Mamba-2 block of
+# https://github.com/state-spaces/mamba (Apache-2.0) rewritten in PyTorch.
+
+from __future__ import annotations
 
 import math
-from types import SimpleNamespace
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
-
-
-class PortableGatedNorm(nn.Module):
-    """Gate-before-RMS layout and FP32 accumulation used by released weights."""
-
-    def __init__(self, width):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(width))
-        self.eps = 1e-05
-
-    def reset_parameters(self):
-        nn.init.ones_(self.weight)
-
-    def forward(self, x, z):
-        dtype = x.dtype
-        # Accumulate the gate and RMS in FP32 for low precision inputs.
-        if x.dtype == torch.float16 or x.dtype == torch.bfloat16:
-            x, z = x.float(), z.float()
-        x = x * F.silu(z)
-        y = x * torch.rsqrt(x.square().mean(-1, keepdim=True) + self.eps)
-        return (y * self.weight).to(dtype=dtype)
-
-
-class PortableMamba2(nn.Module):
-    def __init__(self, d_model, d_state=16, d_conv=2, expand=8, headdim=64):
-        super().__init__()
-        self.d_inner = d_model * expand
-        self.d_state = d_state
-        self.headdim = headdim
-        if self.d_inner % headdim:
-            raise ValueError("Mamba head width mismatch")
-        self.nheads = self.d_inner // headdim
-        conv_dim = self.d_inner + 2 * d_state
-        self.in_proj = nn.Linear(
-            d_model, 2 * self.d_inner + 2 * d_state + self.nheads, bias=False
-        )
-        self.conv1d = nn.Conv1d(
-            conv_dim, conv_dim, d_conv, groups=conv_dim, padding=d_conv - 1
-        )
-        # Match the released Mamba2 constructor, including time-scale priors.
-        dt = torch.exp(
-            torch.rand(self.nheads) * (math.log(0.1) - math.log(0.001))
-            + math.log(0.001)
-        ).clamp_min(1e-4)
-        self.dt_bias = nn.Parameter(dt + torch.log(-torch.expm1(-dt)))
-        self.A_log = nn.Parameter(torch.empty(self.nheads).uniform_(1, 16).log())
-        self.D = nn.Parameter(torch.ones(self.nheads))
-        self.dt_bias._no_weight_decay = True
-        self.A_log._no_weight_decay = True
-        self.D._no_weight_decay = True
-        self.norm = PortableGatedNorm(self.d_inner)
-        self.out_proj = nn.Linear(self.d_inner, d_model, bias=False)
-
-    def reset_parameters(self):
-        # Child linear/convolution modules are reset by EEGModuleMixin.
-        with torch.no_grad():
-            dt = (
-                torch.empty_like(self.dt_bias)
-                .uniform_(math.log(0.001), math.log(0.1))
-                .exp()
-                .clamp_min(1e-4)
-            )
-            self.dt_bias.copy_(dt + torch.log(-torch.expm1(-dt)))
-            self.A_log.uniform_(1, 16).log_()
-            self.D.fill_(1)
-
-    def components(self, u):
-        z, xbc, dt = torch.split(
-            self.in_proj(u),
-            [self.d_inner, self.d_inner + 2 * self.d_state, self.nheads],
-            dim=-1,
-        )
-        xbc = F.silu(
-            self.conv1d(xbc.transpose(1, 2))[..., : u.shape[1]].transpose(1, 2)
-        )
-        x, b, c = torch.split(xbc, [self.d_inner, self.d_state, self.d_state], dim=-1)
-        if x.dtype == torch.float16 or x.dtype == torch.bfloat16:
-            x, b, c, dt = x.float(), b.float(), c.float(), dt.float()
-        dt = F.softplus(dt + self.dt_bias)
-        return (
-            z,
-            x.reshape(u.shape[0], u.shape[1], self.nheads, self.headdim),
-            b,
-            c,
-            dt,
-        )
-
-    def forward(self, u):
-        # Chunk-local quadratic scan plus recurrent boundary state. No L x L
-        # tensor is formed for the full sequence. Matches Mamba-2 ngroups=1.
-        z, x, b, c, dt = self.components(u)
-        state = x.new_zeros(u.shape[0], self.nheads, self.headdim, self.d_state)
-        ys = []
-        a_log = self.A_log
-        if a_log.dtype == torch.float16 or a_log.dtype == torch.bfloat16:
-            a_log = a_log.float()
-        a = -a_log.exp()
-        for start in range(0, u.shape[1], 64):
-            stop = min(start + 64, u.shape[1])
-            xx, bb, cc, dd = (
-                x[:, start:stop],
-                b[:, start:stop],
-                c[:, start:stop],
-                dt[:, start:stop],
-            )
-            cumulative = (dd * a).cumsum(1).transpose(1, 2)
-            log_decay = cumulative.unsqueeze(-1) - cumulative.unsqueeze(-2)
-            future = torch.ones(
-                stop - start, stop - start, dtype=torch.bool, device=u.device
-            ).triu(1)
-            decay = log_decay.masked_fill(future, float("-inf")).exp()
-            cb = torch.matmul(cc, bb.transpose(1, 2)).unsqueeze(1)
-            kernel = decay * cb * dd.transpose(1, 2).unsqueeze(-2)
-            yy = torch.matmul(kernel, xx.transpose(1, 2)).transpose(1, 2)
-            yy = (
-                yy
-                + torch.einsum("bhpn,btn->bthp", state, cc)
-                * cumulative.transpose(1, 2).exp()[..., None]
-            )
-            end_decay = (cumulative[:, :, -1:] - cumulative).exp().transpose(1, 2)
-            state = state * cumulative[:, :, -1].exp()[:, :, None, None] + torch.einsum(
-                "bth,bthp,btn->bhpn", end_decay * dd, xx, bb
-            )
-            ys.append(yy + xx * self.D[None, None, :, None])
-        y = torch.cat(ys, dim=1).flatten(2)
-        return self.out_proj(self.norm(y, z).to(dtype=u.dtype))
-
-    def recurrence_reference(self, u):
-        """Independent sequential calculation for numerical verification only."""
-        z, x, b, c, dt = self.components(u)
-        state = x.new_zeros(u.shape[0], self.nheads, self.headdim, self.d_state)
-        output = []
-        a_log = self.A_log
-        if a_log.dtype == torch.float16 or a_log.dtype == torch.bfloat16:
-            a_log = a_log.float()
-        a = -a_log.exp()
-        for t in range(u.shape[1]):
-            state = (
-                state * torch.exp(dt[:, t] * a)[:, :, None, None]
-                + dt[:, t, :, None, None] * x[:, t, :, :, None] * b[:, t, None, None, :]
-            )
-            output.append(
-                (state * c[:, t, None, None, :]).sum(-1)
-                + x[:, t] * self.D[None, :, None]
-            )
-        y = torch.stack(output, dim=1).flatten(2)
-        return self.out_proj(self.norm(y, z).to(dtype=u.dtype))
-
-
-def _mixer(config, width, head_dim=None):
-    return PortableMamba2(
-        width,
-        d_state=config.d_state,
-        d_conv=config.d_conv,
-        expand=config.expand,
-        headdim=64 if head_dim is None else head_dim,
-    )
-
-
-class CoordinateDrivenSpatialEmbedding(nn.Module):
-    def __init__(self, target_positions: torch.Tensor, hidden_dim: int) -> None:
-        super().__init__()
-        self.register_buffer(
-            "target_positions", target_positions.float(), persistent=True
-        )
-        self.net = nn.Sequential(
-            nn.Linear(3, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
-        )
-
-    def forward(
-        self,
-        signals: torch.Tensor,
-        input_positions: torch.Tensor,
-        channel_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if input_positions.ndim == 2:
-            input_positions = input_positions.unsqueeze(0).expand(
-                signals.shape[0], -1, -1
-            )
-        if input_positions.shape != (signals.shape[0], signals.shape[1], 3):
-            raise ValueError("input_positions must have shape [C, 3] or [B, C, 3]")
-        # SAMBA validates fixed coordinates in its constructor. Keeping that
-        # tensor-to-bool check out of forward permits torch.export tracing.
-        delta = self.target_positions[None, :, None, :] - input_positions[:, None, :, :]
-        logits = self.net(delta.to(dtype=self.net[0].weight.dtype)).squeeze(-1)
-        if channel_mask is not None:
-            if channel_mask.shape != signals.shape[:2]:
-                raise ValueError("channel_mask must have shape [B, C]")
-            logits = logits.masked_fill(~channel_mask[:, None, :], float("-inf"))
-        weights = logits.softmax(dim=-1)
-        return (torch.einsum("boc,bct->bot", weights, signals), weights)
-
-
-class _ResidualMixer(nn.Module):
-    """Residual wrapper preserves the released checkpoint parameter layout."""
-
-    def __init__(self, config: SimpleNamespace, width: int) -> None:
-        super().__init__()
-        self.mixer = _mixer(config, width)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.mixer(x)
-
-
-class _DifferentialMamba(nn.Module):
-    def __init__(self, config: SimpleNamespace) -> None:
-        super().__init__()
-        width, head = (config.bottleneck_channels, config.head_dim)
-        self.head_dim = head
-        self.first = nn.ModuleList(
-            [_mixer(config, head, head) for _ in range(width // head)]
-        )
-        self.second = nn.ModuleList(
-            [_mixer(config, head, head) for _ in range(width // head)]
-        )
-        self.lam = nn.Parameter(torch.ones(width))
-        self.norms = nn.ModuleList([nn.GroupNorm(1, head) for _ in self.first])
-        self.projection = nn.Linear(width, width)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        outputs = []
-        for index, (first, second, norm) in enumerate(
-            zip(self.first, self.second, self.norms)
-        ):
-            head = x[..., index * self.head_dim : (index + 1) * self.head_dim]
-            lam = self.lam[index * self.head_dim : (index + 1) * self.head_dim]
-            difference = first(head.contiguous()) - lam * second(head.contiguous())
-            outputs.append(norm(difference.transpose(1, 2)).transpose(1, 2))
-        return x + self.projection(torch.cat(outputs, dim=-1))
-
-
-class _MultiBranchEmbedding(nn.Module):
-    def __init__(self, input_channels: int, output_channels: int) -> None:
-        super().__init__()
-        self.branches = nn.ModuleList(
-            [
-                nn.Conv1d(input_channels, output_channels, kernel, padding=kernel // 2)
-                for kernel in (1, 3, 7)
-            ]
-        )
-        self.fuse = nn.Conv1d(output_channels * 3, output_channels, 1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.fuse(torch.cat([branch(x) for branch in self.branches], dim=1))
-
-
-class Encoder(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        base, bottleneck = config.base_channels, config.bottleneck_channels
-        self.cdse = CoordinateDrivenSpatialEmbedding(
-            torch.tensor(config.target_positions), config.cdse_hidden_dim
-        )
-        self.input_embedding = nn.Sequential(
-            _MultiBranchEmbedding(len(config.target_positions), base)
-        )
-        self.encoder1 = nn.Sequential(
-            nn.Linear(base, base), _ResidualMixer(config, base)
-        )
-        self.encoder2 = nn.Conv1d(base, base, 3, padding=1)
-        self.encoder3 = nn.Conv1d(base, bottleneck, 3, padding=1)
-        self.bottleneck = nn.Sequential(
-            nn.Linear(bottleneck, bottleneck),
-            _DifferentialMamba(config),
-            nn.Linear(bottleneck, bottleneck),
-        )
-
-    def encode(
-        self, x: torch.Tensor, positions: torch.Tensor, mask: torch.Tensor | None = None
-    ):
-        projected, _ = self.cdse(x, positions, mask)
-        x = self.encoder1(self.input_embedding(projected).transpose(1, 2)).transpose(
-            1, 2
-        )
-        x = self.encoder2(F.max_pool1d(x, 2))
-        x = self.encoder3(F.max_pool1d(x, 2))
-        return self.bottleneck(F.max_pool1d(x, 2).transpose(1, 2))
+from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.modules import MLP
 
 
 class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
-    """Self-supervised EEG representation learning with Differential Mamba-2 [1]_.
+    r"""SAMBA from Hong et al. (2026) [samba]_.
 
-    Coordinates must use the same frame and units as the pretrained target
-    montage. Inputs are (batch, channels, time); outputs are unnormalized
-    task scores (batch, n_outputs). This downstream encoder omits the
-    reconstruction decoder. It pools temporal means and population standard
-    deviations before a new linear task head. It does not normalize signals:
-    released weights expect per-window, per-channel absolute 95th percentile
-    normalization and 128 Hz signals. The encoder is bidirectional within a
-    supplied window (convolutions and GroupNorm); it is not a streaming model.
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
+
+    .. rubric:: Architecture Overview
+
+    The encoder of SAMBA, a U-shaped Mamba autoencoder pretrained to rebuild
+    masked EEG; the reconstruction decoder is not part of this class. A
+    coordinate-driven spatial embedding (CDSE) first projects the electrodes
+    onto a fixed target montage from their 3D positions, so the layers behind it
+    never see the recording montage. Mamba-2 state space blocks [mamba2]_, with
+    max-pooling and convolutions in between, then read the time axis in linear
+    time::
+
+        (batch, n_chans, n_times)
+        -> CDSE                       (batch, n_targets, n_times)
+        -> multi-branch convolution   (batch, base_channels, n_times)
+        -> Linear, residual Mamba-2   (batch, n_times, base_channels)
+        -> pool, convolution          (batch, base_channels, n_times // 2)
+        -> pool, convolution          (batch, bottleneck_channels, n_times // 4)
+        -> pool                       (batch, bottleneck_channels, n_times // 8)
+        -> Linear, differential Mamba-2, Linear
+                                      (batch, n_times // 8, bottleneck_channels)
+        -> mean and std over time     (batch, 2 * bottleneck_channels)
+        -> final_layer                (batch, n_outputs)
+
+    .. rubric:: Macro Components
+
+    ``SAMBA.encoder.cdse``
+        **Operations.** An MLP ``Linear(3, cdse_hidden_dim) -> ReLU ->
+        Linear(cdse_hidden_dim, 1)`` scores the offset from each electrode to
+        each target position; a softmax over the electrodes turns the scores into
+        weights, and each target channel is the weighted sum of the electrodes.
+        **Role.** Montage-agnostic input: any layout with 3D positions reaches
+        the same layers.
+
+    ``SAMBA.encoder.input_embedding``
+        **Operations.** Three ``Conv1d`` with kernel size 1, 3 and 7 over the
+        target channels, concatenated and fused by a pointwise convolution.
+
+    ``SAMBA.encoder.encoder1_mamba``
+        **Operations.** After a ``Linear``, a residual Mamba-2 block:
+        input-dependent step sizes, a causal depthwise convolution, a scan over
+        the time axis in chunks of 64 steps and a gated RMS norm.
+        **Role.** Models the signal at the input rate.
+
+    ``SAMBA.encoder.encoder2``, ``SAMBA.encoder.encoder3``
+        **Operations.** ``Conv1d`` of kernel size 3 behind a max-pooling by 2
+        each, with no activation in between, as in the authors' code.
+
+    ``SAMBA.encoder.bottleneck_mamba``
+        **Operations.** The channels are split into heads of ``head_dim``. Two
+        Mamba-2 blocks read each head, and ``first - lam * second`` followed by
+        a GroupNorm cancels what the two readings share, with ``lam`` a learned
+        scale per channel. A ``Linear`` mixes the heads, with a residual
+        connection.
+        **Role.** The multi-head differential Mamba of the paper, at one eighth
+        of the input rate.
+
+    ``SAMBA.final_layer``
+        **Operations.** ``Linear`` on the mean and the standard deviation of the
+        encoder output over time. Not pretrained.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** Mamba-2 state space blocks at the input rate and at one
+      eighth of it; the time axis is halved three times by max-pooling. The
+      output has ``n_times // 8`` steps.
+    - **Spatial:** electrodes enter only through their 3D positions, so any
+      montage with positions can be read.
+    - **Spectral:** no explicit spectral transform; the convolutions and the
+      state space blocks learn it.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Coordinates.** Positions are read from ``chs_info[i]["loc"][:3]``, in
+      metres, and must be in the frame of ``target_positions``. The target
+      montage of the authors' released weights is in the frame of the
+      ``standard_1005`` template of MNE (``mne.channels.make_standard_montage``),
+      not in the head frame that ``raw.set_montage`` writes into ``chs_info``,
+      which is a few centimetres away.
+    - **Input scale.** The model does not normalise its input. The authors'
+      recipe uses EEG at 128 Hz and divides each channel of each window by the
+      95th percentile of its absolute value.
+    - **Not causal.** The convolutions and the GroupNorm look at the whole
+      window, so the encoder is not a streaming model. The Mamba-2 blocks alone
+      are causal.
+    - **Weights.** The authors' checkpoints are not distributed with
+      braindecode.
+
+    .. versionadded:: 2.1
 
     Parameters
     ----------
-    target_positions : list of list of float | None
-        Shared montage XYZ coordinates. Defaults to input coordinates for
-        training from scratch. Use checkpoint config for pretrained models.
+    target_positions : list of list of float or None
+        Positions ``(n_targets, 3)``, in metres, of the montage onto which the
+        CDSE projects the electrodes. ``None`` takes the positions of
+        ``chs_info``, which trains from scratch on one montage.
     base_channels : int
-        Encoder width. Default 64.
+        Width of the multi-branch embedding and of the first Mamba-2 stage.
     bottleneck_channels : int
-        Differential encoder width. Default 128.
+        Width of the differential Mamba-2 bottleneck; the head reads twice this
+        many features.
     d_state : int
-        Mamba state dimension. Default 16.
+        State size of every Mamba-2 block.
     d_conv : int
-        Causal Mamba convolution width. Default 2.
+        Kernel size of the causal depthwise convolution of every Mamba-2 block.
     expand : int
-        Mamba expansion factor. Default 8.
+        Inner width of every Mamba-2 block, as a multiple of its input width; it
+        is split into heads. ``base_channels * expand`` must be divisible by 64,
+        the head width of the first stage.
     head_dim : int
-        Differential branch width. Default 16.
+        Channels per head of the differential bottleneck; divides
+        ``bottleneck_channels``.
     cdse_hidden_dim : int
-        Spatial coordinate network width. Default 32.
-
-    Notes
-    -----
-    Uses a chunked PyTorch recurrence, with no optional CUDA dependencies.
-    Chunk length is 64. Numerical results need not be bitwise identical to
-    fused CUDA kernels. All encoder parameters support automatic gradients.
+        Hidden width of the MLP of the CDSE.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. The model reads the
+        montage of ``chs_info`` natively, so the default ``"native"`` is usually
+        what you want.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     References
     ----------
-    .. [1] Hong et al. SAMBA: Toward an EEG Foundation Model via Differential
-       Mamba and Coordinate-Driven Spatial Embedding. NeurReps, 2026.
+    .. [samba] Hong, J., Mackellar, G., Ghane, S. (2026). SAMBA: Toward an EEG
+       Foundation Model via Differential Mamba and Coordinate-Driven Spatial
+       Embedding. NeurReps 2026 (Proceedings Track). arXiv:2511.18571.
        https://github.com/Jiazhen-Hong/SAMBA
+    .. [mamba2] Dao, T., Gu, A. (2024). Transformers are SSMs: Generalized
+       Models and Efficient Algorithms Through Structured State Space Duality.
+       ICML. arXiv:2405.21060.
     """
 
     def __init__(
         self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        target_positions=None,
-        base_channels=64,
-        bottleneck_channels=128,
-        d_state=16,
-        d_conv=2,
-        expand=8,
-        head_dim=16,
-        cdse_hidden_dim=32,
+        # Braindecode parameters
+        n_outputs: int | None = None,
+        n_chans: int | None = None,
+        chs_info: list[dict] | None = None,
+        n_times: int | None = None,
+        input_window_seconds: float | None = None,
+        sfreq: float | None = None,
+        *,
+        # Model-specific parameters
+        target_positions: list[list[float]] | None = None,
+        base_channels: int = 64,
+        bottleneck_channels: int = 128,
+        d_state: int = 16,
+        d_conv: int = 2,
+        expand: int = 8,
+        head_dim: int = 16,
+        cdse_hidden_dim: int = 32,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -359,53 +183,61 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
-        if chs_info is None:
-            raise ValueError("SAMBA requires chs_info with electrode XYZ coordinates")
-        positions = torch.tensor(
-            [list(ch["loc"][:3]) for ch in chs_info], dtype=torch.float32
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        # Electrode positions of the input channels, read from chs_info (the
+        # montage of the encoder under a channel_strategy). A missing or an
+        # all-zero loc comes back as NaN.
+        # (n_chans, 3)
+        positions = torch.as_tensor(
+            extract_channel_locations_from_chs_info(self.chs_info, fill_missing=True),
+            dtype=torch.get_default_dtype(),
         )
-        if positions.shape != (self.n_chans, 3) or not torch.isfinite(positions).all():
+        if not positions.isfinite().all():
             raise ValueError(
-                "Electrode coordinates must be finite with shape (n_chans, 3)"
+                "SAMBA reads the electrode positions from chs_info: every channel "
+                "needs a finite loc[:3]; call raw.set_montage(...)."
             )
-        target = positions.tolist() if target_positions is None else target_positions
-        target_tensor = torch.as_tensor(target, dtype=torch.float32)
-        if (
-            target_tensor.ndim != 2
-            or target_tensor.shape[1] != 3
-            or not len(target_tensor)
-            or not torch.isfinite(target_tensor).all()
-        ):
+
+        # Montage the CDSE projects onto: a copy of the input montage to train from
+        # scratch, since loading weights overwrites the targets, not the electrodes
+        # (n_targets, 3)
+        targets = (
+            positions.clone()
+            if target_positions is None
+            else torch.tensor(target_positions, dtype=torch.get_default_dtype())
+        )
+        if targets.ndim != 2 or targets.shape[1] != 3 or not targets.isfinite().all():
             raise ValueError(
-                "target_positions must be a finite nonempty (channels, 3) array"
+                "target_positions must be finite with shape (n_targets, 3), got "
+                f"shape {tuple(targets.shape)}."
             )
-        if (
-            min(
-                base_channels,
-                bottleneck_channels,
-                d_state,
-                d_conv,
-                expand,
-                head_dim,
-                cdse_hidden_dim,
+
+        # Every Mamba-2 head takes a whole number of channels: the first stage
+        # reads base_channels * expand of them in heads of _MAMBA_HEAD_DIM, the
+        # bottleneck splits bottleneck_channels into heads of head_dim
+        if base_channels * expand % _MAMBA_HEAD_DIM:
+            raise ValueError(
+                f"base_channels * expand ({base_channels * expand}) must be "
+                f"divisible by {_MAMBA_HEAD_DIM}, the head width of the first "
+                "Mamba-2 block."
             )
-            < 1
-            or bottleneck_channels % head_dim
-            or base_channels * expand % 64
-        ):
-            raise ValueError("Invalid SAMBA dimensions or head divisibility")
-        self.target_positions = target
-        self.base_channels = base_channels
-        self.bottleneck_channels = bottleneck_channels
-        self.d_state = d_state
-        self.d_conv = d_conv
-        self.expand = expand
-        self.head_dim = head_dim
-        self.cdse_hidden_dim = cdse_hidden_dim
+        if bottleneck_channels % head_dim:
+            raise ValueError(
+                f"bottleneck_channels ({bottleneck_channels}) must be divisible "
+                f"by head_dim ({head_dim}): a head takes bottleneck_channels / "
+                "head_dim channels."
+            )
+
+        # Shortest window: the three max-poolings by 2 leave n_times // 8 steps
+        self.min_n_times = _DOWNSAMPLING
+        # Derived from chs_info, so not saved with the weights
         self.register_buffer("input_positions", positions, persistent=False)
-        config = SimpleNamespace(
-            target_positions=target,
+        self.encoder = _SambaEncoder(
+            target_positions=targets,
             base_channels=base_channels,
             bottleneck_channels=bottleneck_channels,
             d_state=d_state,
@@ -414,64 +246,547 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             head_dim=head_dim,
             cdse_hidden_dim=cdse_hidden_dim,
         )
-        self.encoder = Encoder(config)
+        # Head on the mean and the standard deviation of the encoder output
         self.final_layer = nn.Linear(2 * bottleneck_channels, self.n_outputs)
 
-    def forward_features(self, X):
-        """Return pooled encoder features with gradients enabled."""
-        if X.ndim != 3 or X.shape[1] != self.n_chans or X.shape[2] < 16:
-            raise ValueError("Expected (batch, n_chans, time), with time >= 16")
-        hidden = self.encoder.encode(X, self.input_positions, None)
-        return torch.cat((hidden.mean(1), hidden.std(1, correction=0)), dim=-1)
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> torch.Tensor | dict[str, torch.Tensor | None]:
+        """Encode EEG windows and score them.
 
-    def forward(self, X):
-        return self.final_layer(self.forward_features(X))
+        Parameters
+        ----------
+        x : torch.Tensor
+            EEG of shape ``(batch, n_chans, n_times)``, in the channel order of
+            ``chs_info``, with ``n_times >= 8``.
+        return_features : bool, default=False
+            Return the features that ``final_layer`` reads instead of its
+            outputs.
 
-    def reset_head(self, n_outputs):
-        """Replace only the task head; require a positive number of outputs.
-
-        Use ``forward_features`` for embeddings rather than a zero-sized head.
+        Returns
+        -------
+        torch.Tensor or dict
+            Outputs of shape ``(batch, n_outputs)``. With
+            ``return_features=True``, ``{"features": Tensor, "cls_token":
+            None}`` with the ``(batch, 2 * bottleneck_channels)`` input of
+            ``final_layer``.
         """
-        if (
-            not isinstance(n_outputs, int)
-            or isinstance(n_outputs, bool)
-            or n_outputs <= 0
-        ):
-            raise ValueError("n_outputs must be a positive integer")
-        self._set_n_outputs(n_outputs)
-        self.final_layer = nn.Linear(2 * self.bottleneck_channels, n_outputs)
-
-    def load_pretrained_encoder(self, state_dict):
-        """Load a released SambaModel state dict, omitting only decoder keys.
-
-        Download weights explicitly before calling. The task head is initialized
-        separately. Missing encoder keys, unknown keys, shapes or a mismatched
-        target montage fail instead of silently loading a partial checkpoint.
-        """
-        expected = self.encoder.state_dict()
-        decoder_prefixes = (
-            "decoder3.",
-            "decoder3_mixer.",
-            "decoder2.",
-            "decoder2_mixer.",
-            "decoder1.",
-            "output_embedding.",
-            "spatial_decoder.",
-        )
-        unknown = [
-            k
-            for k in state_dict
-            if k not in expected and not k.startswith(decoder_prefixes)
-        ]
-        if unknown:
-            raise ValueError(f"Unrecognized checkpoint keys: {unknown}")
-        if "cdse.target_positions" in state_dict and not torch.equal(
-            state_dict["cdse.target_positions"].cpu(),
-            expected["cdse.target_positions"].cpu(),
-        ):
+        check_n_chans(x, self.n_chans, "SAMBA")
+        if x.shape[-1] < self.min_n_times:
             raise ValueError(
-                "Checkpoint target montage differs from model configuration"
+                f"SAMBA needs at least {self.min_n_times} samples, one for each "
+                f"step it keeps after its max-poolings; got {x.shape[-1]}."
             )
-        return self.encoder.load_state_dict(
-            {k: v for k, v in state_dict.items() if k in expected}, strict=True
+
+        # Encoder: n_times // 8 steps of bottleneck_channels features
+        # (batch, n_chans, n_times) -> (batch, n_times // 8, bottleneck_channels)
+        hidden = self.encoder(x, self.input_positions)
+
+        # Mean and population standard deviation over time, side by side
+        # (batch, n_times // 8, bottleneck_channels) -> (batch, 2 * bottleneck_channels)
+        features = torch.cat([hidden.mean(dim=1), hidden.std(dim=1, correction=0)], -1)
+        if return_features:
+            return {"features": features, "cls_token": None}
+
+        # (batch, 2 * bottleneck_channels) -> (batch, n_outputs)
+        return self.final_layer(features)
+
+    def reset_head(self, n_outputs: int) -> None:
+        """Replace ``final_layer`` by a new one with ``n_outputs`` outputs.
+
+        Parameters
+        ----------
+        n_outputs : int
+            New number of outputs.
+        """
+        self._set_n_outputs(n_outputs)
+        # The features do not change, so the head keeps its input width
+        self.final_layer = nn.Linear(self.final_layer.in_features, self.n_outputs)
+
+
+# -----------------------------------------------------------------------------
+# Constants and blocks of SAMBA, below the model class
+# -----------------------------------------------------------------------------
+
+# The time axis is halved by three max-poolings
+_DOWNSAMPLING = 8
+
+# Kernel sizes of the branches of the multi-branch embedding, from the authors'
+# code
+_BRANCH_KERNELS = (1, 3, 7)
+
+# Mamba-2: the initial step sizes and decay rates, the epsilon of the norm and
+# the head width of the first stage are the defaults of the reference ``Mamba2``
+# of state-spaces/mamba.
+# Initial step size, log-uniform in [_DT_MIN, _DT_MAX] and at least _DT_FLOOR
+_DT_MIN = 1e-3
+_DT_MAX = 1e-1
+_DT_FLOOR = 1e-4
+# Initial decay rate A, uniform in [_A_MIN, _A_MAX]
+_A_MIN = 1.0
+_A_MAX = 16.0
+# Epsilon of the RMS norm that follows the gate
+_NORM_EPS = 1e-5
+# Width of one head of the Mamba-2 block of the first stage
+_MAMBA_HEAD_DIM = 64
+# Steps per chunk of the scan: bounds the size of the quadratic form
+_CHUNK_SIZE = 64
+
+
+class _SambaEncoder(nn.Module):
+    """Encoder of SAMBA: the electrodes onto the target montage, then Mamba-2
+    stages and convolutions that shorten the time axis eight-fold.
+
+    For ``x`` of shape ``(batch, n_chans, n_times)`` and the electrode
+    ``positions`` ``(n_chans, 3)``:
+
+    1. CDSE: ``(batch, n_targets, n_times)``;
+    2. multi-branch convolution: ``(batch, base_channels, n_times)``;
+    3. ``Linear`` and a residual Mamba-2 block over time;
+    4. max-pooling by 2 and a convolution, twice, widening the features to
+       ``bottleneck_channels``, then a last max-pooling by 2:
+       ``(batch, bottleneck_channels, n_times // 8)``;
+    5. ``Linear``, differential Mamba-2 and ``Linear`` over time:
+       ``(batch, n_times // 8, bottleneck_channels)``.
+
+    Parameters
+    ----------
+    target_positions : torch.Tensor
+        Positions of the target montage, ``(n_targets, 3)``.
+    base_channels : int
+        Width of the embedding and of the first stage.
+    bottleneck_channels : int
+        Width of the bottleneck.
+    d_state, d_conv, expand : int
+        Parameters of the Mamba-2 blocks, see ``SAMBA``.
+    head_dim : int
+        Channels per head of the differential bottleneck.
+    cdse_hidden_dim : int
+        Hidden width of the MLP of the CDSE.
+    """
+
+    def __init__(
+        self,
+        target_positions: torch.Tensor,
+        base_channels: int,
+        bottleneck_channels: int,
+        d_state: int,
+        d_conv: int,
+        expand: int,
+        head_dim: int,
+        cdse_hidden_dim: int,
+    ):
+        super().__init__()
+        self.cdse = _CoordinateDrivenSpatialEmbedding(target_positions, cdse_hidden_dim)
+        self.input_embedding = _MultiBranchEmbedding(
+            len(target_positions), base_channels
         )
+
+        # First stage, at the input rate
+        self.encoder1_linear = nn.Linear(base_channels, base_channels)
+        self.encoder1_mamba = _Mamba2(
+            base_channels, d_state, d_conv, expand, _MAMBA_HEAD_DIM
+        )
+        # Second and third stages, behind a max-pooling each
+        self.pool = nn.MaxPool1d(kernel_size=2)
+        self.encoder2 = nn.Conv1d(
+            base_channels, base_channels, kernel_size=3, padding=1
+        )
+        self.encoder3 = nn.Conv1d(
+            base_channels, bottleneck_channels, kernel_size=3, padding=1
+        )
+
+        # Bottleneck, at one eighth of the input rate
+        self.bottleneck_in = nn.Linear(bottleneck_channels, bottleneck_channels)
+        self.bottleneck_mamba = _DifferentialMamba(
+            bottleneck_channels, head_dim, d_state, d_conv, expand
+        )
+        self.bottleneck_out = nn.Linear(bottleneck_channels, bottleneck_channels)
+
+    def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        """``(batch, n_chans, n_times)`` -> ``(batch, n_times // 8, bottleneck)``."""
+        # Electrodes onto the target montage
+        # (batch, n_chans, n_times) -> (batch, n_targets, n_times)
+        x = self.cdse(x, positions)
+        # (batch, n_targets, n_times) -> (batch, base_channels, n_times)
+        x = self.input_embedding(x)
+
+        # First stage: the sequence layers take (batch, n_times, features)
+        # (batch, base_channels, n_times) -> (batch, n_times, base_channels)
+        x = x.transpose(1, 2)
+        x = self.encoder1_linear(x)
+        # Residual Mamba-2 block; shape unchanged
+        x = x + self.encoder1_mamba(x)
+
+        # Second and third stages: half the steps each
+        # (batch, n_times, base_channels) -> (batch, base_channels, n_times // 2)
+        x = self.pool(x.transpose(1, 2))
+        x = self.encoder2(x)
+        # (batch, base_channels, n_times // 2) -> (batch, bottleneck, n_times // 4)
+        x = self.encoder3(self.pool(x))
+
+        # Bottleneck: half the steps again, back to (batch, steps, features)
+        # (batch, bottleneck, n_times // 4) -> (batch, n_times // 8, bottleneck)
+        x = self.pool(x).transpose(1, 2)
+        x = self.bottleneck_in(x)
+        # Differential Mamba-2 with its residual; shape unchanged
+        x = self.bottleneck_mamba(x)
+        return self.bottleneck_out(x)
+
+
+class _CoordinateDrivenSpatialEmbedding(nn.Module):
+    """Project the electrodes onto a fixed target montage from their positions.
+
+    For ``x`` of shape ``(batch, n_chans, n_times)`` and the electrode
+    ``positions`` ``(n_chans, 3)``, the same for every window of the batch:
+
+    1. offset from every electrode to every target,
+       ``(n_targets, n_chans, 3)``;
+    2. an MLP scores each offset, ``(n_targets, n_chans)``;
+    3. a softmax over the electrodes gives the weights of each target;
+    4. each target channel is the weighted sum of the electrodes,
+       ``(batch, n_targets, n_times)``.
+
+    Parameters
+    ----------
+    target_positions : torch.Tensor
+        Positions of the target montage, ``(n_targets, 3)``. Saved with the
+        weights, since they belong to the pretrained montage.
+    hidden_dim : int
+        Hidden width of the MLP.
+    """
+
+    def __init__(self, target_positions: torch.Tensor, hidden_dim: int):
+        super().__init__()
+        self.register_buffer("target_positions", target_positions)
+        # Linear, ReLU, Linear: (..., 3) -> (..., hidden_dim) -> (..., 1)
+        self.score = MLP(
+            in_features=3,
+            hidden_features=(hidden_dim,),
+            out_features=1,
+            activation=nn.ReLU,
+        )
+
+    def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        """``(batch, n_chans, n_times)`` -> ``(batch, n_targets, n_times)``."""
+        # Offset from every electrode to every target
+        # (n_targets, 1, 3) - (1, n_chans, 3) -> (n_targets, n_chans, 3)
+        offsets = self.target_positions[:, None, :] - positions[None, :, :]
+        # Score of every electrode for every target, normalised over electrodes
+        # (n_targets, n_chans, 3) -> (n_targets, n_chans)
+        weights = self.score(offsets).squeeze(-1).softmax(dim=-1)
+        # Weighted sum of the electrodes
+        # (n_targets, n_chans) x (batch, n_chans, n_times) -> (batch, n_targets, n_times)
+        return torch.einsum("oc,bct->bot", weights, x)
+
+
+class _MultiBranchEmbedding(nn.Module):
+    """Multi-scale temporal convolution.
+
+    For ``x`` of shape ``(batch, in_channels, n_times)``:
+
+    1. one ``Conv1d`` per kernel size of ``_BRANCH_KERNELS``, each
+       ``(batch, out_channels, n_times)``;
+    2. the branches side by side, ``(batch, 3 * out_channels, n_times)``;
+    3. a pointwise convolution fuses them, ``(batch, out_channels, n_times)``.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of channels of each branch and of the output.
+    """
+
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        # Padding of half the kernel keeps the number of steps
+        self.branches = nn.ModuleList(
+            [
+                nn.Conv1d(in_channels, out_channels, kernel, padding=kernel // 2)
+                for kernel in _BRANCH_KERNELS
+            ]
+        )
+        self.fuse = nn.Conv1d(
+            len(_BRANCH_KERNELS) * out_channels, out_channels, kernel_size=1
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """``(batch, in_channels, n_times)`` -> ``(batch, out_channels, n_times)``."""
+        # (batch, in_channels, n_times) -> 3 x (batch, out_channels, n_times)
+        branches = [branch(x) for branch in self.branches]
+        # (batch, 3 * out_channels, n_times) -> (batch, out_channels, n_times)
+        return self.fuse(torch.cat(branches, dim=1))
+
+
+class _DifferentialMamba(nn.Module):
+    """Multi-head differential Mamba-2, with a residual connection.
+
+    For ``x`` of shape ``(batch, n_steps, width)``, for each of the
+    ``width // head_dim`` heads, a slice of ``head_dim`` channels:
+
+    1. two Mamba-2 blocks read the head, each ``(batch, n_steps, head_dim)``;
+    2. the difference ``first - lam * second``, with ``lam`` a learned scale per
+       channel;
+    3. a GroupNorm with one group, over the channels and the steps of each
+       window;
+
+    then the heads side by side, ``(batch, n_steps, width)``, a ``Linear`` that
+    mixes them, and the sum with ``x``.
+
+    Parameters
+    ----------
+    width : int
+        Number of channels of ``x``.
+    head_dim : int
+        Channels per head; divides ``width``.
+    d_state, d_conv, expand : int
+        Parameters of the Mamba-2 blocks, see ``SAMBA``.
+    """
+
+    def __init__(
+        self, width: int, head_dim: int, d_state: int, d_conv: int, expand: int
+    ):
+        super().__init__()
+        n_heads = width // head_dim
+        self.head_dim = head_dim
+        # Two Mamba-2 blocks per head; each one's heads are as wide as the head
+        self.first = nn.ModuleList(
+            [
+                _Mamba2(head_dim, d_state, d_conv, expand, head_dim)
+                for _ in range(n_heads)
+            ]
+        )
+        self.second = nn.ModuleList(
+            [
+                _Mamba2(head_dim, d_state, d_conv, expand, head_dim)
+                for _ in range(n_heads)
+            ]
+        )
+        self.lam = nn.Parameter(torch.ones(width))
+        self.norms = nn.ModuleList(
+            [nn.GroupNorm(num_groups=1, num_channels=head_dim) for _ in range(n_heads)]
+        )
+        self.projection = nn.Linear(width, width)
+
+    def reset_parameters(self) -> None:
+        # The two readings start with equal weight
+        nn.init.ones_(self.lam)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """``(batch, n_steps, width)`` -> ``(batch, n_steps, width)``."""
+        heads = []
+        for index, (first, second, norm) in enumerate(
+            zip(self.first, self.second, self.norms)
+        ):
+            start = index * self.head_dim
+            # This head: (batch, n_steps, head_dim)
+            head = x[..., start : start + self.head_dim]
+            lam = self.lam[start : start + self.head_dim]
+            # Difference of the two readings; shape unchanged
+            difference = first(head) - lam * second(head)
+            # GroupNorm takes (batch, channels, steps)
+            heads.append(norm(difference.transpose(1, 2)).transpose(1, 2))
+        # Heads side by side, mixed, plus the residual
+        # (batch, n_steps, width)
+        return x + self.projection(torch.cat(heads, dim=-1))
+
+
+class _Mamba2(nn.Module):
+    """Mamba-2 block: a selective state space layer over the time axis.
+
+    For ``u`` of shape ``(batch, n_steps, d_model)``:
+
+    1. ``in_proj`` gives the gate ``z``, the convolution input ``xbc`` and the
+       raw step size ``dt`` of each head;
+    2. a causal depthwise convolution and a SiLU turn ``xbc`` into the input
+       ``x`` of the heads and the state projections ``b`` and ``c``;
+    3. ``_ssd_scan`` runs the recurrence of each head over the steps,
+       ``(batch, n_steps, d_inner)``;
+    4. the output is gated by ``z``, RMS-normalised and projected back to
+       ``d_model``.
+
+    Parameters
+    ----------
+    d_model : int
+        Width of the input and of the output.
+    d_state : int
+        State size of each head.
+    d_conv : int
+        Kernel size of the causal depthwise convolution.
+    expand : int
+        ``d_inner = expand * d_model``, the total width of the heads.
+    head_dim : int
+        Width of one head; divides ``d_inner``.
+    """
+
+    def __init__(
+        self, d_model: int, d_state: int, d_conv: int, expand: int, head_dim: int
+    ):
+        super().__init__()
+        d_inner = expand * d_model
+        self.d_inner = d_inner
+        self.d_state = d_state
+        self.head_dim = head_dim
+        self.n_heads = d_inner // head_dim
+
+        # Width of the convolved sequence: the input x of the heads, and the
+        # projections b and c of the state, shared by all heads
+        conv_dim = d_inner + 2 * d_state
+        # z | x b c | dt
+        self.in_proj = nn.Linear(d_model, d_inner + conv_dim + self.n_heads, bias=False)
+        self.conv1d = nn.Conv1d(
+            conv_dim, conv_dim, d_conv, groups=conv_dim, padding=d_conv - 1
+        )
+        # Per head: step size bias, log of the decay rate, skip connection
+        self.dt_bias = nn.Parameter(torch.empty(self.n_heads))
+        self.A_log = nn.Parameter(torch.empty(self.n_heads))
+        self.D = nn.Parameter(torch.empty(self.n_heads))
+        self.norm = nn.RMSNorm(d_inner, eps=_NORM_EPS)
+        self.out_proj = nn.Linear(d_inner, d_model, bias=False)
+
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Draw the step sizes, decay rates and skip as the reference Mamba-2."""
+        with torch.no_grad():
+            # Step sizes log-uniform in [_DT_MIN, _DT_MAX]; dt_bias is their
+            # inverse softplus, so that softplus(dt_bias) starts at dt
+            log_dt = torch.empty_like(self.dt_bias)
+            log_dt.uniform_(math.log(_DT_MIN), math.log(_DT_MAX))
+            dt = log_dt.exp().clamp(min=_DT_FLOOR)
+            self.dt_bias.copy_(dt + torch.log(-torch.expm1(-dt)))
+            # Decay rates A uniform in [_A_MIN, _A_MAX], kept as log(A)
+            decay = torch.empty_like(self.A_log).uniform_(_A_MIN, _A_MAX)
+            self.A_log.copy_(decay.log())
+            self.D.fill_(1.0)
+
+    def forward(self, u: torch.Tensor) -> torch.Tensor:
+        """``(batch, n_steps, d_model)`` -> ``(batch, n_steps, d_model)``."""
+        n_steps = u.shape[1]
+
+        # Gate, convolution input and raw step sizes
+        # (batch, n_steps, d_model) -> (batch, n_steps, d_inner),
+        # (batch, n_steps, d_inner + 2 * d_state) and (batch, n_steps, n_heads)
+        z, xbc, dt = self.in_proj(u).split(
+            [self.d_inner, self.d_inner + 2 * self.d_state, self.n_heads], dim=-1
+        )
+        # Causal depthwise convolution over time: the padding added on the right
+        # is cut, so a step sees only the past
+        # (batch, n_steps, d_inner + 2 * d_state)
+        xbc = F.silu(self.conv1d(xbc.transpose(1, 2))[..., :n_steps].transpose(1, 2))
+        # Input of the heads, and the state projections shared by all heads
+        # (batch, n_steps, d_inner), 2 x (batch, n_steps, d_state)
+        x, b, c = xbc.split([self.d_inner, self.d_state, self.d_state], dim=-1)
+
+        # The scan accumulates decays over many steps: float32 at least
+        dtype = torch.promote_types(u.dtype, torch.float32)
+        # Positive step sizes, (batch, n_steps, n_heads); negative decay rates,
+        # (n_heads,)
+        dt = F.softplus(dt.to(dtype) + self.dt_bias.to(dtype))
+        a = -self.A_log.to(dtype).exp()
+        # Heads of the input: (batch, n_steps, n_heads, head_dim)
+        x = x.to(dtype).unflatten(-1, (self.n_heads, self.head_dim))
+        y = _ssd_scan(x, dt, a, b.to(dtype), c.to(dtype), self.D.to(dtype))
+
+        # Heads side by side, back in the dtype of the model
+        # (batch, n_steps, n_heads, head_dim) -> (batch, n_steps, d_inner)
+        y = y.flatten(2).to(u.dtype)
+        # Gate, RMS norm, project back
+        # (batch, n_steps, d_inner) -> (batch, n_steps, d_model)
+        return self.out_proj(self.norm(y * F.silu(z)))
+
+
+def _ssd_scan(
+    x: torch.Tensor,
+    dt: torch.Tensor,
+    a: torch.Tensor,
+    b: torch.Tensor,
+    c: torch.Tensor,
+    d: torch.Tensor,
+    chunk_size: int = _CHUNK_SIZE,
+) -> torch.Tensor:
+    """Selective state space scan of Mamba-2, in chunks of ``chunk_size`` steps.
+
+    For every head, with a state ``h`` of shape ``(head_dim, d_state)``::
+
+        h_t = exp(dt_t * a) * h_{t-1} + dt_t * x_t (outer) b_t
+        y_t = h_t @ c_t + d * x_t
+
+    Inside a chunk the recurrence is one matrix product (the quadratic, dual
+    form of Mamba-2); the state ``h`` is carried from chunk to chunk by the
+    recurrence. No tensor of ``n_steps x n_steps`` is formed.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input of the heads, ``(batch, n_steps, n_heads, head_dim)``.
+    dt : torch.Tensor
+        Positive step sizes, ``(batch, n_steps, n_heads)``.
+    a : torch.Tensor
+        Negative decay rates, ``(n_heads,)``.
+    b, c : torch.Tensor
+        Input and output projections of the state, shared by all heads,
+        ``(batch, n_steps, d_state)``.
+    d : torch.Tensor
+        Skip connection of each head, ``(n_heads,)``.
+    chunk_size : int
+        Steps per chunk.
+
+    Returns
+    -------
+    torch.Tensor
+        Output of the heads, ``(batch, n_steps, n_heads, head_dim)``.
+    """
+    batch_size, n_steps, n_heads, head_dim = x.shape
+    # State carried between chunks
+    # (batch, n_heads, head_dim, d_state)
+    state = x.new_zeros(batch_size, n_heads, head_dim, b.shape[-1])
+
+    outputs = []
+    for start in range(0, n_steps, chunk_size):
+        # The steps of this chunk, n_chunk <= chunk_size of them
+        x_chunk = x[:, start : start + chunk_size]
+        dt_chunk = dt[:, start : start + chunk_size]
+        b_chunk = b[:, start : start + chunk_size]
+        c_chunk = c[:, start : start + chunk_size]
+        n_chunk = x_chunk.shape[1]
+
+        # Log of the decay accumulated up to each step of the chunk
+        # (batch, n_chunk, n_heads) -> (batch, n_heads, n_chunk)
+        log_decay = (dt_chunk * a).cumsum(dim=1).transpose(1, 2)
+
+        # Decay from step s to step t >= s; zero for a future step s > t
+        # (batch, n_heads, n_chunk, n_chunk), entry [t, s]
+        log_between = log_decay[..., :, None] - log_decay[..., None, :]
+        future = torch.ones(n_chunk, n_chunk, dtype=torch.bool, device=x.device)
+        decay = log_between.masked_fill(future.triu(1), float("-inf")).exp()
+
+        # Weight of the input of step s in the output of step t: decay, c_t . b_s
+        # and the step size of s
+        # (batch, n_heads, n_chunk, n_chunk)
+        cb = torch.matmul(c_chunk, b_chunk.transpose(1, 2))[:, None]
+        weight = decay * cb * dt_chunk.transpose(1, 2)[..., None, :]
+        # Output from the inputs of the chunk
+        # (batch, n_heads, n_chunk, n_chunk) x (batch, n_heads, n_chunk, head_dim)
+        # -> (batch, n_chunk, n_heads, head_dim)
+        y = torch.matmul(weight, x_chunk.transpose(1, 2)).transpose(1, 2)
+
+        # Output from the state carried in, decayed up to each step
+        # (batch, n_chunk, n_heads, head_dim)
+        carried = torch.einsum("bhpn,btn->bthp", state, c_chunk)
+        y = y + carried * log_decay.transpose(1, 2).exp()[..., None]
+
+        # State at the end of the chunk: the carried state decayed over the
+        # chunk, plus the input of each step decayed up to the end
+        # (batch, n_chunk, n_heads)
+        decay_to_end = (log_decay[..., -1:] - log_decay).exp().transpose(1, 2)
+        state = state * log_decay[..., -1].exp()[..., None, None] + torch.einsum(
+            "bth,bthp,btn->bhpn", decay_to_end * dt_chunk, x_chunk, b_chunk
+        )
+
+        # Skip connection of each head
+        outputs.append(y + x_chunk * d[:, None])
+
+    # (batch, n_steps, n_heads, head_dim)
+    return torch.cat(outputs, dim=1)

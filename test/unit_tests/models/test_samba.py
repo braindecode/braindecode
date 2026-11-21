@@ -1,147 +1,133 @@
-"""SAMBA CPU recurrence, training, coordinate and checkpoint contracts."""
+"""SAMBA: the scan over time, the coordinate-driven input and the initialization."""
 
-from copy import deepcopy
-
+import numpy as np
 import pytest
 import torch
 
 from braindecode.models import SAMBA
-from braindecode.models.samba import PortableMamba2
+from braindecode.models.samba import _ssd_scan
+
+N_TIMES = 131  # not a multiple of 8: the pooling drops the tail
 
 
-def make_model():
+def _chs_info(n_chans, seed=0, loc=None):
+    """Electrodes at random positions in metres; ``loc`` places them all there."""
+    rng = np.random.default_rng(seed)
+    positions = rng.normal(scale=0.07, size=(n_chans, 3))
+    if loc is not None:
+        positions[:] = loc
+    return [
+        {"ch_name": f"E{i}", "kind": "eeg", "loc": np.r_[positions[i], np.zeros(9)]}
+        for i in range(n_chans)
+    ]
+
+
+def _samba(chs_info, **kwargs):
     return SAMBA(
-        n_chans=2,
         n_outputs=3,
-        n_times=72,
-        chs_info=[{"loc": [-0.03, 0.08, 0.01]}, {"loc": [0.03, 0.08, 0.01]}],
+        chs_info=chs_info,
+        n_times=N_TIMES,
+        sfreq=128.0,
         base_channels=8,
         bottleneck_channels=8,
         head_dim=4,
         d_state=3,
-        expand=8,
-    )
+        **kwargs,
+    ).eval()
 
 
-@pytest.mark.parametrize("length", [1, 63, 64, 65, 129])
-def test_scan_forward_backward(length):
-    torch.manual_seed(3)
-    m = PortableMamba2(4, d_state=3, expand=2, headdim=4).double()
-    u = torch.randn(2, length, 4, dtype=torch.double, requires_grad=True)
-    a = m(u)
-    b = m.recurrence_reference(u)
-    torch.testing.assert_close(a, b, atol=1e-10, rtol=1e-8)
-    params = (u, *m.parameters())
-    ga = torch.autograd.grad(a.square().sum(), params, retain_graph=True)
-    gb = torch.autograd.grad(b.square().sum(), params)
-    for x, y in zip(ga, gb):
-        torch.testing.assert_close(x, y, atol=1e-8, rtol=1e-6)
-
-
-def test_train_reload_and_config():
-    torch.manual_seed(4)
-    m = make_model()
-    x = torch.randn(2, 2, 72)
-    old = m.encoder.encoder1[1].mixer.in_proj.weight.detach().clone()
-    opt = torch.optim.Adam(m.parameters(), lr=1e-3)
-    loss = torch.nn.functional.cross_entropy(m(x), torch.tensor([0, 1]))
-    loss.backward()
-    assert all(
-        p.grad is not None and torch.isfinite(p.grad).all() for p in m.parameters()
-    )
-    opt.step()
-    assert not torch.equal(old, m.encoder.encoder1[1].mixer.in_proj.weight)
-    other = SAMBA.from_config(m.get_config())
-    other.load_state_dict(m.state_dict())
-    torch.testing.assert_close(other(x), m(x), atol=0, rtol=0)
-
-
-def test_coordinates_and_checkpoint():
-    m = make_model().eval()
-    x = torch.randn(2, 2, 72)
-    permuted = deepcopy(m)
-    permuted.input_positions.copy_(m.input_positions.flip(0))
-    torch.testing.assert_close(m(x), permuted(x.flip(1)))
-    state = m.encoder.state_dict()
-    m.load_pretrained_encoder(state)
-    with pytest.raises(RuntimeError):
-        m.load_pretrained_encoder(
-            {k: v for k, v in state.items() if k != "encoder1.0.weight"}
+def _recurrence(x, dt, a, b, c, d):
+    """The scan, one step at a time: ``h = exp(dt * a) h + dt x b``, ``y = h c + d x``."""
+    state = x.new_zeros(x.shape[0], x.shape[2], x.shape[3], b.shape[-1])
+    ys = []
+    for t in range(x.shape[1]):
+        decay = torch.exp(dt[:, t] * a)[..., None, None]
+        state = (
+            decay * state
+            + dt[:, t, :, None, None] * x[:, t, ..., None] * b[:, t, None, None]
         )
-    with pytest.raises(ValueError, match="Unrecognized"):
-        m.load_pretrained_encoder(dict(state, unknown=torch.ones(1)))
-    bad = dict(state)
-    bad["cdse.target_positions"] = state["cdse.target_positions"] + 1
-    with pytest.raises(ValueError, match="montage"):
-        m.load_pretrained_encoder(bad)
-    with pytest.raises(ValueError):
-        m(torch.randn(2, 2, 8))
+        ys.append((state * c[:, t, None, None]).sum(-1) + d[:, None] * x[:, t])
+    return torch.stack(ys, dim=1)
 
 
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-def test_large_gated_norm(dtype):
-    from braindecode.models.samba import PortableGatedNorm
+@pytest.mark.parametrize("n_steps", [1, 63, 64, 65, 130])
+def test_scan_in_chunks_equals_the_recurrence(n_steps):
+    """The scan runs in chunks of 64 steps and the state crosses their borders:
+    it decays slowly here, so that it still matters two chunks later."""
+    generator = torch.Generator().manual_seed(0)
 
-    x = torch.full((2, 4, 8), 1000.0, dtype=dtype, requires_grad=True)
-    z = torch.ones_like(x, requires_grad=True)
-    m = PortableGatedNorm(8).to(dtype)
-    y = m(x, z)
+    def uniform(*shape):
+        return torch.rand(*shape, generator=generator, dtype=torch.double)
+
+    x = uniform(2, n_steps, 3, 4) - 0.5
+    dt = 0.01 + 0.04 * uniform(2, n_steps, 3)
+    a = -(0.1 + 0.4 * uniform(3))
+    b, c = uniform(2, n_steps, 5) - 0.5, uniform(2, n_steps, 5) - 0.5
+    d = uniform(3)
     torch.testing.assert_close(
-        y.float(), torch.ones_like(y).float(), atol=0.01, rtol=0.01
-    )
-    y.sum().backward()
-    assert torch.isfinite(x.grad).all() and torch.isfinite(z.grad).all()
-
-
-def test_mamba_initialization():
-    torch.manual_seed(44)
-    m = PortableMamba2(64)
-    dt = torch.nn.functional.softplus(m.dt_bias.detach())
-    a = m.A_log.detach().exp()
-    assert (dt >= 0.001).all() and (dt <= 0.1).all()
-    assert (a >= 1).all() and (a <= 16).all()
-    assert dt.std() > 0 and a.std() > 0
-    assert all(p._no_weight_decay for p in (m.dt_bias, m.A_log, m.D))
-
-
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-def test_low_precision_training(dtype):
-    m = make_model().to(dtype)
-    x = torch.randn(2, 2, 72).to(dtype)
-    y = m(x)
-    y.float().square().mean().backward()
-    assert torch.isfinite(y).all()
-    assert all(
-        p.grad is not None and torch.isfinite(p.grad).all() for p in m.parameters()
+        _ssd_scan(x, dt, a, b, c, d), _recurrence(x, dt, a, b, c, d)
     )
 
 
-def test_reset_head_and_parameters():
-    m = make_model().double().eval()
-    m.encoder.encoder1.train()  # Preserve a deliberately mixed mode.
-    old = {k: v.clone() for k, v in m.encoder.state_dict().items()}
-    m.reset_head(5)
-    assert m.n_outputs == 5 and m.get_config()["n_outputs"] == 5
-    assert not m.final_layer.training and m.final_layer.weight.dtype == torch.double
-    assert m.encoder.encoder1.training
-    for key, value in m.encoder.state_dict().items():
-        torch.testing.assert_close(value, old[key], atol=0, rtol=0)
-    x = torch.randn(2, 2, 72, dtype=torch.double)
-    restored = SAMBA.from_config(m.get_config()).double()
-    restored.load_state_dict(m.state_dict())
-    torch.testing.assert_close(m(x), restored(x))
-    for invalid in (0, None, -1):
-        with pytest.raises(ValueError, match="positive integer"):
-            m.reset_head(invalid)
-    mixer = m.encoder.encoder1[1].mixer
+def test_output_does_not_depend_on_the_channel_order():
+    """Electrodes enter through their positions: the same electrodes in another
+    order, with the same weights, give the same output."""
+    torch.manual_seed(0)
+    chs_info, order = _chs_info(4), [2, 0, 3, 1]
+    targets = _chs_info(6, seed=1)
+    targets = [ch["loc"][:3].tolist() for ch in targets]
+    model = _samba(chs_info, target_positions=targets)
+    permuted = _samba([chs_info[i] for i in order], target_positions=targets)
+    permuted.load_state_dict(model.state_dict())
+    x = torch.randn(2, 4, N_TIMES)
     with torch.no_grad():
-        mixer.dt_bias.zero_()
-        mixer.A_log.zero_()
-        mixer.D.zero_()
-        mixer.norm.weight.zero_()
-    m.reset_parameters()
-    dt = torch.nn.functional.softplus(mixer.dt_bias.detach())
-    assert (dt >= 0.001).all() and (dt <= 0.1).all()
-    assert (mixer.A_log.exp() >= 1).all() and (mixer.A_log.exp() <= 16).all()
-    torch.testing.assert_close(mixer.D, torch.ones_like(mixer.D))
-    torch.testing.assert_close(mixer.norm.weight, torch.ones_like(mixer.norm.weight))
+        torch.testing.assert_close(permuted(x[:, order]), model(x))
+
+
+def test_loaded_weights_bring_their_targets_and_keep_the_electrodes():
+    """Weights trained on one montage run on another: they set the target
+    montage, and the electrodes stay those of the model."""
+    torch.manual_seed(0)
+    targets = [ch["loc"][:3].tolist() for ch in _chs_info(5, seed=3)]
+    chs_info = _chs_info(5, seed=2)
+    source = _samba(_chs_info(3, seed=1), target_positions=targets)
+    expected = _samba(chs_info, target_positions=targets)
+    expected.load_state_dict(source.state_dict())
+    loaded = _samba(chs_info)  # its own electrodes as targets, until the load
+    loaded.load_state_dict(source.state_dict())
+    x = torch.randn(2, 5, N_TIMES)
+    with torch.no_grad():
+        torch.testing.assert_close(loaded(x), expected(x))
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"chs_info": _chs_info(2, loc=np.nan)}, "positions"),
+        ({"chs_info": _chs_info(2, loc=0.0)}, "positions"),
+        (
+            {"chs_info": _chs_info(2), "target_positions": [[0.0, 0.0]]},
+            "target_positions",
+        ),
+    ],
+    ids=["nan", "zeros", "target_positions"],
+)
+def test_positions_are_checked(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        _samba(**kwargs)
+
+
+def test_window_shorter_than_the_pooling_is_refused():
+    model = _samba(_chs_info(3))
+    with pytest.raises(ValueError, match="at least 8 samples"):
+        model(torch.randn(2, 3, 7))
+    assert model(torch.randn(2, 3, 8)).shape == (2, 3)
+
+
+def test_reset_parameters_draws_every_parameter_again():
+    model = _samba(_chs_info(3))
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.fill_(float("nan"))
+    model.reset_parameters()
+    assert all(parameter.isfinite().all() for parameter in model.parameters())
