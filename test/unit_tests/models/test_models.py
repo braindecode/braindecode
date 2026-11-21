@@ -6380,9 +6380,9 @@ def test_megxl_mask_token_hops(n_times):
 
 def test_megxl_min_rms_floors_the_scale_each_channel_is_divided_by():
     """A floor above every channel's RMS replaces that RMS as the divisor of the
-    window the tokenizer's encoder sees. (The codes cannot show it: at random
-    initialization the encoder output is its bias response and every token gets
-    the same code.)"""
+    window the tokenizer's encoder sees. (The codes cannot show it: in this tiny
+    model the encoder output is almost its bias response, so every token gets the
+    same code.)"""
     x = torch.randn(2, 3, 64)
     model = _megxl(n_chans=3, n_times=64, min_rms=1e3)
     seen = []
