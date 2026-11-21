@@ -325,15 +325,17 @@ class TimmMlp(nn.Module):
         self.fc1 = nn.Linear(in_features, hidden_features)
         self.act = act_layer()
         self.drop = nn.Dropout(drop)
-        self.norm = norm_layer(hidden_features) if norm_layer is not None else None
+        self.norm = (
+            norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
+        )
         self.fc2 = nn.Linear(hidden_features, out_features)
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        self._modules.setdefault("norm", nn.Identity())
+
     def forward(self, x):
-        x = self.drop(self.act(self.fc1(x)))
-        # getattr keeps v2.0 whole-model pickles (saved before ``norm`` existed) runnable.
-        if (norm := getattr(self, "norm", None)) is not None:
-            x = norm(x)
-        return self.drop(self.fc2(x))
+        return self.drop(self.fc2(self.norm(self.drop(self.act(self.fc1(x))))))
 
 
 class FeedForwardBlock(nn.Sequential):
