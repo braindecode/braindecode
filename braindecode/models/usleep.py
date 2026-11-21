@@ -430,9 +430,15 @@ class _DecoderBlock(nn.Module):
     def _crop_tensors_to_match(
         x1: torch.Tensor, x2: torch.Tensor, axis: int = -1
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Crops two tensors to their lowest-common-dimension along an axis."""
+        """Crops two tensors to their lowest-common-dimension along an axis.
+
+        Like U-Time's ``CropToMatch``, ``x1`` loses its first samples: the
+        encoder pads an odd level at the start, so the upsampled ``x1`` starts
+        one sample before ``x2``.
+        """
         dim_cropped = min(x1.shape[axis], x2.shape[axis])
+        diff = x1.shape[axis] - dim_cropped
         return (
-            x1.narrow(axis, 0, dim_cropped),
+            x1.narrow(axis, diff // 2 + diff % 2, dim_cropped),
             x2.narrow(axis, 0, dim_cropped),
         )

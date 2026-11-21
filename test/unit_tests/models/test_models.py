@@ -940,7 +940,7 @@ def test_usleep(n_chans, sfreq, n_classes, input_size_s):
     )
 
 
-def test_usleep_decoder_crop_returns_prefix_views():
+def test_usleep_decoder_crop_returns_views():
     """Decoder alignment avoids allocating device-specific index tensors."""
     longer = torch.arange(30).reshape(2, 3, 5)
     shorter = torch.arange(24).reshape(2, 3, 4)
@@ -949,7 +949,7 @@ def test_usleep_decoder_crop_returns_prefix_views():
         longer, shorter
     )
 
-    torch.testing.assert_close(cropped_longer, longer[..., :4])
+    torch.testing.assert_close(cropped_longer, longer[..., 1:])
     torch.testing.assert_close(cropped_shorter, shorter)
     assert (
         cropped_longer.untyped_storage().data_ptr()
@@ -959,6 +959,21 @@ def test_usleep_decoder_crop_returns_prefix_views():
         cropped_shorter.untyped_storage().data_ptr()
         == shorter.untyped_storage().data_ptr()
     )
+
+
+def test_usleep_decoder_skip_aligned_with_padded_encoder():
+    """Residual sample i is upsampled from the pooled pair that contains it."""
+    n_times = 7
+    # The encoder pads one sample at each end, so the pairs are
+    # (pad, 0), (1, 2), (3, 4), (5, 6): residual i is in pair (i + 1) // 2.
+    pair_ids = torch.arange((n_times + 1) // 2, dtype=torch.float)
+    upsampled = pair_ids.repeat_interleave(2).reshape(1, 1, -1)
+    residual = torch.zeros(1, 1, n_times)
+
+    cropped, _ = _DecoderBlock._crop_tensors_to_match(upsampled, residual)
+
+    expected = (torch.arange(n_times) + 1) // 2
+    torch.testing.assert_close(cropped[0, 0], expected.float())
 
 
 def test_usleep_n_params():
