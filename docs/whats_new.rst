@@ -653,6 +653,9 @@ Code health
   :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
   ``ch_mask`` with a ``ValueError`` that names it
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
+- The ``ch_mask`` training test enforces :class:`~braindecode.models.PopulationTransformer`,
+  :class:`~braindecode.models.Labram` and :class:`~braindecode.models.MAPA`, which it expected to fail:
+  each is fit with its channel metadata and raises without it (:gh:`1662` by `Bruno Aristimunha`_).
 - The Hugging Face config and round-trip tests also run on
   :class:`braindecode.models.AttnSleep`, which they skipped
   (:gh:`1614` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
