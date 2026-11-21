@@ -27,7 +27,6 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchaudio
 from einops import EinopsError
-from einops.layers.torch import Rearrange
 from scipy.signal import stft
 from torch import nn
 
