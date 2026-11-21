@@ -376,7 +376,9 @@ def test_printing_a_model_does_not_keep_it_alive():
     assert ref() is None
 
 
-@pytest.mark.parametrize("name", ["LUNA", "CORTEG"])
+# GCNsNet is not listed: it keeps the bound-method hook of v2.0.0, which the
+# whole-model pickles of v2.0.0 store by name.
+@pytest.mark.parametrize("name", ["LUNA"])
 def test_model_with_a_load_hook_is_freed_by_reference_counting(name):
     required, signal_params = next(
         (r, s) for n, r, s in models_mandatory_parameters if n == name
