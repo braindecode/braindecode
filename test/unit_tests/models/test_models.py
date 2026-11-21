@@ -6301,7 +6301,8 @@ def test_megxl_batched_geometry_gradients():
     expected = expected + model.sensor_type_layer(model.sensor_type.expand(2, -1))[:, :, None]
     actual = model.encode(x)
     assert torch.equal(actual, expected)
-    params = [model.position_projector.weight, model.orientation_projector.weight]
+    params = [*model.position_projector.parameters(), *model.orientation_projector.parameters(),
+              *model.sensor_type_layer.parameters()]
     cotangent = torch.randn_like(expected)
     grads = [torch.autograd.grad(h, params, cotangent) for h in (expected, actual)]
     assert all(torch.equal(a, b) for a, b in zip(*grads))
@@ -6336,6 +6337,10 @@ def test_megxl_masked_codes_before_context():
     changed[mask] = (changed[mask] + 1) % 8  # other code values under the mask
     assert torch.equal(masked, model.encode_codes(changed, mask, value))
     assert not torch.equal(masked, clean)
+    flat = _megxl(num_layers=0)  # encode_codes gives the tokens before attention
+    flat_codes = flat.tokenize(x)
+    hidden = flat.encode_codes(flat_codes, mask, value)
+    assert torch.equal(hidden[~mask], flat.encode_codes(flat_codes)[~mask])
     masked.square().sum().backward()
     assert torch.count_nonzero(value.grad)
     assert all(p.grad is None for p in [*model.encoder.parameters(), *model.quantizer.parameters()])
