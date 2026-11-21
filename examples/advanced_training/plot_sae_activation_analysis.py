@@ -160,7 +160,6 @@ preprocess(
             init_block_size=init_block_size,
         ),
     ],
-    n_jobs=-1,
 )
 
 ######################################################################
@@ -226,19 +225,19 @@ classifier = EEGClassifier(
     optimizer=torch.optim.AdamW,
     optimizer__lr=6.25e-4,
     optimizer__weight_decay=0,
+    optimizer__foreach=False,
     batch_size=64,
     max_epochs=30,
     train_split=None,
-    callbacks=["accuracy"],
     classes=list(range(len(LABELS))),
     device=device,
     verbose=0,
 )
-classifier.fit(train_set, y=None)
+classifier.fit(x_train, y=y_train)
 
 model = classifier.module_.eval()
 model.requires_grad_(False)
-baseline_pred = classifier.predict(test_set)
+baseline_pred = classifier.predict(x_test)
 baseline_accuracy = balanced_accuracy_score(y_test, baseline_pred)
 print(f"Test-session balanced accuracy of the trained decoder: {baseline_accuracy:.1%}")
 
@@ -263,7 +262,7 @@ print(f"Test-session balanced accuracy of the trained decoder: {baseline_accurac
 layer = model.pool_nonlin_exp
 to_rows = "window feature time 1 -> (window time) feature"
 
-with torch.no_grad():
+with torch.inference_mode():
     train_acts = capture_activations(model, x_train, layer).detach()
 train_rows = einops.rearrange(train_acts, to_rows)
 mean = train_rows.mean(0)
@@ -349,7 +348,7 @@ _ = sae.eval()
 # the original log-power units. The mean number of active features is at most
 # ``k`` because Top-K rectifies the selected values.
 
-with torch.no_grad():
+with torch.inference_mode():
     test_acts = capture_activations(model, x_test, layer).detach()
     test_rows = einops.rearrange(test_acts, to_rows)
     test_scaled = (test_rows - mean) / std
@@ -422,7 +421,7 @@ interventions = {
     "layer := train mean": mean_ablation,
 }
 predictions = {}
-with torch.no_grad():
+with torch.inference_mode():
     for name, substitute in interventions.items():
         logits = run_with_activation_substitution(model, x_test, layer, substitute)
         predictions[name] = logits.argmax(1).numpy()
@@ -556,7 +555,7 @@ plt.show()
 # the evaluation data would make any apparent selectivity circular.
 
 to_windows = "(window time) feature -> window feature"
-with torch.no_grad():
+with torch.inference_mode():
     train_codes = sae.encode(train_scaled)
 train_window_codes = einops.reduce(
     train_codes, to_windows, "mean", time=n_time_bins

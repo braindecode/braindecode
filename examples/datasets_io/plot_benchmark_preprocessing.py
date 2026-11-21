@@ -47,16 +47,20 @@ the dataset and the specific operations applied to the recordings.
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
+import gc
+import json
+import subprocess
+import sys
 import tempfile
-import time
+import textwrap
 from itertools import product
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from memory_profiler import memory_usage
 from sklearn.preprocessing import scale
 
 from braindecode.datasets import SleepPhysionet
@@ -74,50 +78,57 @@ from braindecode.preprocessing import (
 
 
 def prepare_data(n_recs, save, preload, n_jobs):
-    if save:
-        tmp_dir = tempfile.TemporaryDirectory()
-        save_dir = tmp_dir.name
-    else:
-        save_dir = None
+    tmp_dir = tempfile.TemporaryDirectory() if save else None
+    save_dir = tmp_dir.name if tmp_dir is not None else None
+    try:
+        # (1) Load the data
+        concat_ds = SleepPhysionet(
+            subject_ids=range(n_recs),
+            recording_ids=[1],
+            crop_wake_mins=30,
+            preload=preload,
+        )
+        sfreq = concat_ds.datasets[0].raw.info["sfreq"]
 
-    # (1) Load the data
-    concat_ds = SleepPhysionet(
-        subject_ids=range(n_recs), recording_ids=[1], crop_wake_mins=30, preload=preload
-    )
-    sfreq = concat_ds.datasets[0].raw.info["sfreq"]
+        # (2) Preprocess the continuous data
+        preprocessors = [
+            Preprocessor("crop", tmin=10),
+            Preprocessor("filter", l_freq=None, h_freq=30),
+        ]
+        preprocess(
+            concat_ds, preprocessors, save_dir=save_dir, overwrite=True, n_jobs=n_jobs
+        )
 
-    # (2) Preprocess the continuous data
-    preprocessors = [
-        Preprocessor("crop", tmin=10),
-        Preprocessor("filter", l_freq=None, h_freq=30),
-    ]
-    preprocess(
-        concat_ds, preprocessors, save_dir=save_dir, overwrite=True, n_jobs=n_jobs
-    )
+        # (3) Window the data
+        windows_ds = create_fixed_length_windows(
+            concat_ds,
+            0,
+            None,
+            int(30 * sfreq),
+            int(30 * sfreq),
+            on_last_window="drop",
+            preload=preload,
+            n_jobs=n_jobs,
+        )
 
-    # (3) Window the data
-    windows_ds = create_fixed_length_windows(
-        concat_ds,
-        0,
-        None,
-        int(30 * sfreq),
-        int(30 * sfreq),
-        on_last_window="drop",
-        preload=preload,
-        n_jobs=n_jobs,
-    )
-
-    # Preprocess the windowed data
-    preprocessors = [Preprocessor(scale, channel_wise=True)]
-    preprocess(
-        windows_ds, preprocessors, save_dir=save_dir, overwrite=True, n_jobs=n_jobs
-    )
+        # (4) Preprocess the windowed data
+        preprocessors = [Preprocessor(scale, channel_wise=True)]
+        preprocess(
+            windows_ds, preprocessors, save_dir=save_dir, overwrite=True, n_jobs=n_jobs
+        )
+    finally:
+        if tmp_dir is not None:
+            tmp_dir.cleanup()
 
 
 ###############################################################################
-# Next, we can run our function and measure its run time and peak memory usage
-# for each one of our 4 cases above. We call the function multiple times with
-# each configuration to get better estimates.
+# Next, we measure run time and peak memory overhead for each of the 4 cases
+# above inside an isolated Python subprocess. Running each configuration in its
+# own ``subprocess`` works cleanly across Linux, macOS ``spawn``, Windows, and
+# parallel Sphinx-Gallery workers (where ``multiprocessing``-based profilers
+# fail inside daemonic worker processes), while warming ``joblib``'s worker pool
+# once per configuration separates preprocessing cost from one-time Python
+# import startup.
 #
 # .. note::
 #   To better characterize the run time vs. memory usage tradeoff for your
@@ -125,59 +136,241 @@ def prepare_data(n_recs, save, preload, n_jobs):
 #   data size and preprocessing operations), we recommend adapting this example
 #   to your use case and running it on your machine.
 
+_CHILD_SCRIPT = textwrap.dedent(
+    """
+    import gc
+    import json
+    import resource
+    import sys
+    import tempfile
+    import threading
+    import time
+    import numpy as np
+    from joblib import Parallel, delayed
+    from sklearn.preprocessing import scale
+    from braindecode.datasets import SleepPhysionet
+    from braindecode.preprocessing import (
+        Preprocessor,
+        create_fixed_length_windows,
+        exponential_moving_demean,
+        preprocess,
+    )
+
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+
+    n_recs = int(sys.argv[1])
+    n_jobs = int(sys.argv[2])
+    n_repets = int(sys.argv[3])
+
+    def _tree_rss_mib():
+        if psutil is not None:
+            proc = psutil.Process()
+            rss = proc.memory_info().rss
+            for child in proc.children(recursive=True):
+                try:
+                    rss += child.memory_info().rss
+                except psutil.Error:
+                    pass
+            return rss / (1024 ** 2)
+        ru_self = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        ru_child = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+        scale_factor = 1024 ** 2 if sys.platform == "darwin" else 1024
+        return (ru_self + ru_child) / scale_factor
+
+    def _run_once(save):
+        tmp_dir = tempfile.TemporaryDirectory() if save else None
+        save_dir = tmp_dir.name if tmp_dir is not None else None
+        try:
+            concat_ds = SleepPhysionet(
+                subject_ids=range(n_recs),
+                recording_ids=[1],
+                crop_wake_mins=30,
+                preload=False,
+            )
+            sfreq = concat_ds.datasets[0].raw.info["sfreq"]
+            preprocess(
+                concat_ds,
+                [
+                    Preprocessor("crop", tmin=10),
+                    Preprocessor("filter", l_freq=None, h_freq=30),
+                ],
+                save_dir=save_dir,
+                overwrite=True,
+                n_jobs=n_jobs,
+            )
+            windows_ds = create_fixed_length_windows(
+                concat_ds,
+                0,
+                None,
+                int(30 * sfreq),
+                int(30 * sfreq),
+                on_last_window="drop",
+                preload=False,
+                n_jobs=n_jobs,
+            )
+            preprocess(
+                windows_ds,
+                [Preprocessor(scale, channel_wise=True)],
+                save_dir=save_dir,
+                overwrite=True,
+                n_jobs=n_jobs,
+            )
+        finally:
+            if tmp_dir is not None:
+                tmp_dir.cleanup()
+
+    if n_jobs > 1:
+        # Import braindecode inside workers before recording baseline RSS/time.
+        Parallel(n_jobs=n_jobs)(
+            delayed(exponential_moving_demean)(np.zeros((1, 2)))
+            for _ in range(n_jobs)
+        )
+
+    gc.collect()
+    idle_mib = _tree_rss_mib()
+    out = []
+    # Run serialized (lower-memory) mode before in-memory mode so OS allocator
+    # high-water marks do not mask the smaller footprint of save=True.
+    for save in (True, False):
+        for _ in range(n_repets):
+            gc.collect()
+            peak = [_tree_rss_mib()]
+            stop_evt = threading.Event()
+
+            def _sampler(peak_ref=peak, evt=stop_evt):
+                while not evt.wait(0.015):
+                    cur = _tree_rss_mib()
+                    if cur > peak_ref[0]:
+                        peak_ref[0] = cur
+
+            t_sampler = threading.Thread(target=_sampler, daemon=True)
+            t_sampler.start()
+            t0 = time.perf_counter()
+            try:
+                _run_once(save)
+            finally:
+                elapsed = time.perf_counter() - t0
+                stop_evt.set()
+                t_sampler.join()
+            peak_mib = max(peak[0], _tree_rss_mib())
+            out.append(
+                {
+                    "save": save,
+                    "time": elapsed,
+                    "max_mem": max(0.0, peak_mib - idle_mib),
+                }
+            )
+
+    print("__BENCHMARK_JSON__" + json.dumps(out))
+    """
+)
+
 n_repets = 2  # Number of repetitions
 all_n_recs = 2  # Number of recordings to load and preprocess
 all_n_jobs = [1, 2]  # Number of parallel processes
 
-results = list()
-for _, n_recs, save, n_jobs in product(
-    range(n_repets), [all_n_recs], [True, False], all_n_jobs
-):
-    start = time.time()
-    mem = max(memory_usage(proc=(prepare_data, [n_recs, save, False, n_jobs], {})))
-    time_taken = time.time() - start
+# Ensure the SleepPhysionet files are cached once before timing subprocesses.
+_ = SleepPhysionet(
+    subject_ids=range(all_n_recs), recording_ids=[1], crop_wake_mins=30, preload=False
+)
+gc.collect()
 
-    results.append(
-        {
-            "n_recs": n_recs,
-            "max_mem": mem,
-            "save": save,
-            "n_jobs": n_jobs,
-            "time": time_taken,
-        }
+results = []
+for n_recs, n_jobs in product([all_n_recs], all_n_jobs):
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _CHILD_SCRIPT,
+            str(n_recs),
+            str(n_jobs),
+            str(n_repets),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
+    marker_line = next(
+        line
+        for line in completed.stdout.splitlines()
+        if line.startswith("__BENCHMARK_JSON__")
+    )
+    for run in json.loads(marker_line.removeprefix("__BENCHMARK_JSON__")):
+        results.append(
+            {
+                "n_recs": n_recs,
+                "max_mem": run["max_mem"],
+                "save": run["save"],
+                "n_jobs": n_jobs,
+                "time": run["time"],
+            }
+        )
 
 
 ###############################################################################
-# Finally, we can plot the results:
+# Finally, we can plot the results (two repetitions per configuration, with the
+# configuration mean shown as a larger marker):
 
 df = pd.DataFrame(results)
 
-fig, ax = plt.subplots(figsize=(6, 4))
-colors = {True: "tab:orange", False: "tab:blue"}
-markers = {n: m for n, m in zip(all_n_jobs, ["o", "x", "."])}
-for (save, n_jobs), sub_df in df.groupby(["save", "n_jobs"]):
+fig, ax = plt.subplots(figsize=(6.4, 4.0), facecolor="white")
+ax.set_facecolor("white")
+colors = {True: "#D55E00", False: "#0072B2"}
+markers = {1: "o", 2: "s"}
+labels = {
+    (False, 1): "Sequential, in-memory (save=False, n_jobs=1)",
+    (True, 1): "Sequential, serialized (save=True, n_jobs=1)",
+    (False, 2): "Parallel, in-memory (save=False, n_jobs=2)",
+    (True, 2): "Parallel, serialized (save=True, n_jobs=2)",
+}
+
+for (save, n_jobs), sub_df in df.groupby(["save", "n_jobs"], sort=False):
     ax.scatter(
-        x=sub_df["time"],
-        y=sub_df["max_mem"],
+        sub_df["time"],
+        sub_df["max_mem"],
         color=colors[save],
         marker=markers[n_jobs],
-        label=f"save={save}, n_jobs={n_jobs}",
+        s=32,
+        alpha=0.45,
     )
-ax.legend()
+    ax.scatter(
+        [sub_df["time"].mean()],
+        [sub_df["max_mem"].mean()],
+        color=colors[save],
+        marker=markers[n_jobs],
+        s=90,
+        edgecolor="white",
+        linewidth=0.8,
+        label=labels[(save, n_jobs)],
+        zorder=3,
+    )
+
+ax.spines["top"].set_visible(False)
+ax.spines["right"].set_visible(False)
+ax.spines["left"].set_linewidth(0.8)
+ax.spines["bottom"].set_linewidth(0.8)
+ax.tick_params(direction="out", width=0.8)
+ax.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+ax.set_axisbelow(True)
+ax.legend(frameon=False, fontsize=8.5)
 ax.set_xlabel("Execution time (s)")
-ax.set_ylabel("Memory usage (MiB)")
-ax.set_title(f"Loading and preprocessing {all_n_recs} recordings from Sleep Physionet")
+ax.set_ylabel("Peak memory overhead (MiB)")
+fig.tight_layout()
 plt.show()
 
 
 ###############################################################################
-# We see that parallel preprocessing without serialization (blue crosses) is
+# We see that parallel preprocessing without serialization (blue squares) is
 # faster than simple sequential processing (blue circles), however it uses more
-# memory.
+# memory because multiple workers hold and return preprocessed data at once.
 #
-# Combining parallel preprocessing and serialization (orange crosses) reduces
-# memory usage significantly, however it increases run time by a few seconds.
-# Depending on available resources (e.g. in limited memory settings), it might
-# therefore be more advantageous to use both parallelization and serialization
-# together.
+# Combining parallel preprocessing and serialization (vermillion squares)
+# lowers peak memory overhead because each worker writes its preprocessed
+# recording directly to disk and the main process reloads headers lazily
+# (``preload=False``), at the cost of extra disk I/O time. Depending on
+# available resources (e.g. in memory-constrained settings with many
+# recordings), combining parallelization and serialization can provide a
+# practical balance between speed and memory footprint.
