@@ -95,6 +95,7 @@ tests = [
     'ipython',
     "transformers>=4.57.0",
     "bids_validator",
+    "timescoring==0.0.7",  # oracle for szcore_event_scores; pinned because SzCORE results changed between releases
 ]
 typing = [
     'exca>=0.5.10',

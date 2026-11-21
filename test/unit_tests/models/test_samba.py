@@ -66,7 +66,7 @@ def test_scan_in_chunks_equals_the_recurrence(n_steps):
     b, c = uniform(2, n_steps, 5) - 0.5, uniform(2, n_steps, 5) - 0.5
     d = uniform(3)
     torch.testing.assert_close(
-        _ssd_scan(x, dt, a, b, c, d), _recurrence(x, dt, a, b, c, d)
+        _ssd_scan(x, dt, a, b, c, d, chunk_size=64), _recurrence(x, dt, a, b, c, d)
     )
 
 
@@ -132,6 +132,35 @@ def test_window_shorter_than_the_pooling_is_refused():
     with pytest.raises(ValueError, match="at least 8 samples"):
         model(torch.randn(2, 3, 7))
     assert model(torch.randn(2, 3, 8)).shape == (2, 3)
+
+
+def test_sizes_follow_the_stack_parameters():
+    """Other poolings, kernels and head widths set the weights. The shortest window
+    is pool_size ** 3 and leaves one step, so the standard deviation over time (the
+    second half of the features) is zero there. The heads of the first stage must
+    divide base_channels * expand, and the kernels must be odd to keep the steps."""
+    model = _samba(
+        _chs_info(3),
+        branch_kernel_sizes=(1, 5),
+        pool_size=3,
+        stage_kernel_size=5,
+        encoder1_head_dim=32,
+    )
+    shapes = {name: tuple(value.shape) for name, value in model.state_dict().items()}
+    assert shapes["encoder.input_embedding.branches.1.weight"] == (8, 3, 5)
+    assert shapes["encoder.input_embedding.fuse.weight"] == (8, 2 * 8, 1)
+    assert shapes["encoder.encoder2.weight"] == (8, 8, 5)
+    assert shapes["encoder.encoder3.weight"] == (8, 8, 5)
+    assert shapes["encoder.encoder1_mamba.A_log"] == (2,)  # 8 * 8 channels, heads of 32
+    with pytest.raises(ValueError, match="at least 27 samples"):
+        model(torch.randn(2, 3, 26))
+    features = model(torch.randn(2, 3, 27), return_features=True)["features"]
+    assert features.shape == (2, 16) and not features[:, 8:].any()
+    with pytest.raises(ValueError, match="encoder1_head_dim"):
+        _samba(_chs_info(3), encoder1_head_dim=48)
+    for kwargs in ({"stage_kernel_size": 4}, {"branch_kernel_sizes": (1, 4)}):
+        with pytest.raises(ValueError, match="must be odd"):
+            _samba(_chs_info(3), **kwargs)
 
 
 def test_reset_parameters_draws_every_parameter_again():

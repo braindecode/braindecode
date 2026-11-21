@@ -440,9 +440,10 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
 
     .. rubric:: Macro Components
 
-    - ``pre.average_pooling`` **Average pooling.** Three moving averages
-      along time, ``AvgPool1d`` with kernels 5, 13 and 7, stride 1 and "same"
-      zero padding, shared by HbO and HbR.
+    - ``pre.average_pooling`` **Average pooling.** Moving averages along
+      time, one ``AvgPool1d`` per entry of ``preprocessing_kernel_sizes``
+      (kernels 5, 13 and 7 by default), stride 1 and "same" zero padding,
+      shared by HbO and HbR.
     - ``pre.norms`` **Layer normalization.** One ``LayerNorm`` over the
       :math:`W` samples per chromophore: each channel row is centred and
       scaled over the window, then given a learned scale and shift per
@@ -462,14 +463,21 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
 
     `License <https://github.com/wzhlearning/fNIRS-Transformer/blob/6ebe987faacc5587e11e8bd0d1177b40ec3ccd8d/LICENSE>`_
 
+    Parameters
+    ----------
+    preprocessing_kernel_sizes : tuple of int, default=(5, 13, 7)
+        Kernel of each moving average of the preprocessing module, in samples,
+        each odd so that the padding ``k // 2`` keeps ``n_times``; the default
+        is that of ``PreBlock`` in the authors' ``model.py``.
+
     References
     ----------
     .. footbibliography::
     """
 
-    # The signature repeats FNIRST's, so that both models list the same
-    # parameters; with docstring inheritance on (docs/conf.py), a subclass
-    # sharing FNIRST.__init__ would also be given FNIRST's docstring.
+    # The signature repeats FNIRST's and adds ``preprocessing_kernel_sizes``;
+    # with docstring inheritance on (docs/conf.py), a subclass sharing
+    # FNIRST.__init__ would also be given FNIRST's docstring.
     def __init__(
         self,
         # Braindecode parameters
@@ -495,6 +503,7 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
         drop_prob: float = 0.0,
         embed_drop_prob: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
+        preprocessing_kernel_sizes: tuple[int, ...] = (5, 13, 7),
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -519,11 +528,22 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
             activation=activation,
         )
 
+        # Checkers
+        # The padding k // 2 keeps the n_times samples only for an odd kernel,
+        # and the LayerNorms of the module read n_times samples
+        if any(k % 2 == 0 for k in preprocessing_kernel_sizes):
+            raise ValueError(
+                "preprocessing_kernel_sizes must be odd, so that the padding "
+                f"k // 2 keeps n_times, got {preprocessing_kernel_sizes}."
+            )
+
         # Layers
         # Preprocessing Module: learned in place of the band-pass filter and
         # baseline correction that fNIRS-T expects; it takes the place of the
         # identity between the chromophore planes and the two embeddings
-        self.pre = _PreprocessingModule(n_times=self.n_times)
+        self.pre = _PreprocessingModule(
+            n_times=self.n_times, kernel_sizes=preprocessing_kernel_sizes
+        )
 
 
 class _TransformerEncoder(nn.Sequential):
@@ -583,32 +603,29 @@ class _TransformerEncoder(nn.Sequential):
         )
 
 
-# Kernels of the three moving averages of the preprocessing module, from
-# ``PreBlock`` in model.py of wzhlearning/fNIRS-Transformer (6ebe987f). Each is
-# padded by k // 2 on both sides, which keeps the number of samples (k is odd).
-_PREPROCESSING_KERNELS = (5, 13, 7)
-
-
 class _PreprocessingModule(nn.Module):
     """Preprocessing Module of fNIRS-PreT (the authors' ``PreBlock``).
 
-    Three moving averages in cascade, then a LayerNorm over time for HbO
+    Moving averages in cascade, then a LayerNorm over time for HbO
     (``norms.0``) and one for HbR (``norms.1``).
 
     Parameters
     ----------
     n_times : int
         Number of samples of the window, the size of the LayerNorms.
+    kernel_sizes : tuple of int
+        Kernel of each moving average, in samples; odd, so that the padding
+        ``k // 2`` on both sides keeps ``n_times``.
     """
 
-    def __init__(self, n_times: int) -> None:
+    def __init__(self, n_times: int, kernel_sizes: tuple[int, ...]) -> None:
         super().__init__()
-        # Moving averages, a low-pass smoothing; the padding keeps the number
-        # of samples
+        # Moving averages, a low-pass smoothing; the padding k // 2 keeps the
+        # number of samples (k is odd)
         self.average_pooling = nn.Sequential(
             *[
                 nn.AvgPool1d(kernel_size=k, stride=1, padding=k // 2)
-                for k in _PREPROCESSING_KERNELS
+                for k in kernel_sizes
             ]
         )
         # One normalization over time per chromophore, with its own scale

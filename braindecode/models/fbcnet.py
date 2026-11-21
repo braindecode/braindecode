@@ -55,7 +55,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         Number of frequency bands. Could
     n_filters_spat : int, default=32
         Number of spatial filters for the first convolution.
-    n_dim: int, default=3
+    n_dim : int, default=3
         Number of dimensions for the temporal reductor
     temporal_layer : str, default='LogVarLayer'
         Type of temporal aggregator layer. Options: 'VarLayer', 'StdLayer',
@@ -68,7 +68,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         Maximum norm for the spatial convolution layer.
     linear_max_norm : float, default=0.5
         Maximum norm for the final linear layer.
-    filter_parameters: dict, default None
+    filter_parameters : dict, default None
         Dictionary of parameters to use for the FilterBankLayer.
         If None, a default Chebyshev Type II filter with transition bandwidth of
         2 Hz and stop-band ripple of 30 dB will be used.

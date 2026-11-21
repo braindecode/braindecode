@@ -169,6 +169,12 @@ Enhancements
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
   learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
   (:gh:`1599` by `Bruno Aristimunha`_).
+- Add :func:`braindecode.training.szcore_event_scores`, SzCORE event-based seizure scoring
+  (Dan et al., Epilepsia 2025) with its default rules; it matches timescoring 0.0.7
+  (:gh:`1735` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Add the :ref:`seizure-alarm-chbmit` tutorial. A seizure detector trained on two CHB-MIT
+  patients is tested on a third, and :func:`braindecode.training.szcore_event_scores`
+  scores its alarms (:gh:`1736` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 API and behavior changes
 ========================
@@ -176,6 +182,9 @@ API and behavior changes
 - :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
   when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
   removed in 2.2 (:gh:`1701` by `Bruno Aristimunha`_).
+- Eight public names with no user in braindecode, listed in :gh:`1442`, emit a
+  ``FutureWarning`` and will be removed in 2.2, e.g. ``braindecode.util.corr``
+  (:gh:`1734` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
@@ -238,9 +247,15 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.preprocessing.create_windows_from_events` rounds event durations to
+  samples instead of truncating them, so trials, and windows inferred from them, can be
+  one sample longer (:gh:`1727` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.Pratibha2` returns the feature dict, not the logits, when it
   is compiled with ``torch.jit.script`` and called with ``return_features=True``
   (:gh:`1710` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.EEGConformer` and ``HybridNet`` drop their
+  legacy-key ``mapping``: it named keys no release wrote and pointed at missing keys. A contract test checks
+  that every ``mapping`` value is a distinct ``state_dict`` key (:gh:`1732` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - ``braindecode.models`` and ``braindecode.models.util.get_summary_table`` work when
   braindecode is imported from a zip archive (:gh:`1670` by `Bruno Aristimunha`_).
 - Exported :class:`braindecode.models.EEGMiner` programs decompose without mutating
@@ -623,10 +638,6 @@ Code health
   :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
   which it skipped; it still skips SyncNet and NeuroRVQTokenizer
   (:gh:`1598` by `Bruno Aristimunha`_).
-- The :class:`braindecode.models.JungMAE` tests compare the forward with the
-  reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
-  the model masks the invalid ones, so float32 rounding depends on the machine
-  (:gh:`1594` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.Perceiver` builds the Fourier features for
   :class:`braindecode.models.DANCE` directly along the time axis. A training
   test checks its per-token logits and the gradients of all three event heads
@@ -677,6 +688,9 @@ Code health
   Published development notebooks install the build's commit, and the
   Exca tutorial installs the optional packages it imports (:gh:`1640` by
   `Bruno Aristimunha`_).
+- The numpydoc header test now covers every registered model, not nine. The
+  parameter headers of 13 models read ``name: type`` and are now ``name : type``,
+  so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 
 Current 2.0.0 (2026-11-02)
