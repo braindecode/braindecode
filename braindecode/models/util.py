@@ -530,6 +530,11 @@ def _dance_signal_params() -> dict[str, Any]:
         "input_window_seconds": 1.0,
         "n_outputs": 4,
         "chs_info": _draw_chs_info(19, np.random.default_rng(19)),
+        # 6 of 10 convolution blocks (dilation 97 is the first to skip taps
+        # that only read padding), 1 of 6 Perceiver and 1 of 4 decoder blocks
+        "conv_depth": 6,
+        "perceiver_depth": 1,
+        "decoder_depth": 1,
     }
 
 
@@ -562,8 +567,18 @@ models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[str, Any] | Callable[[], dict[str, Any]] | None]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
-    ("Pratibha2", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
+    # 2 of the 22 released blocks (118.6M -> 10.9M parameters), here and below:
+    # fewer identical blocks, every tensor keeps its released shape.
+    (
+        "AXON",
+        ["chs_info", "n_outputs"],
+        {"sfreq": 200.0, "n_times": 1000, "depth": 2},
+    ),
+    (
+        "Pratibha2",
+        ["chs_info", "n_outputs"],
+        {"sfreq": 200.0, "n_times": 1000, "depth": 2},  # 2 of 22 blocks
+    ),
     (
         "BaRISTA",
         ["chs_info", "n_outputs", "n_times"],
@@ -800,7 +815,12 @@ models_mandatory_parameters: list[
     ),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     # 1 s of the 128 Hz low-frequency stream
-    ("CORTEG", ["chs_info", "n_outputs", "n_times"], {"n_times": 128, "sfreq": 128.0}),
+    (
+        "CORTEG",
+        ["chs_info", "n_outputs", "n_times"],
+        # 2 of 8 blocks; the high-gamma stream merges at the last one
+        {"n_times": 128, "sfreq": 128.0, "depth": 2, "n_merge_blocks": 1},
+    ),
     (
         "MVPFormer",
         ["n_chans", "n_outputs", "n_times", "sfreq"],
@@ -813,6 +833,7 @@ models_mandatory_parameters: list[
             "sfreq": 200.0,
             "n_chans": 19,
             "n_times": 1_000,
+            "depth": 2,  # 2 of 22 blocks
             "chs_info": [{"ch_name": f"E{i + 1}", "kind": "eeg"} for i in range(19)],
         },
     ),
@@ -865,6 +886,8 @@ models_mandatory_parameters: list[
             "n_chans": 3,
             "n_times": 200,
             "sfreq": 200.0,
+            "encoder_depth": 2,  # 2 of the 12 released encoder blocks
+            "decoder_depth": 2,  # 2 of the 3 released decoder blocks
             "chs_info": [
                 {"ch_name": name, "kind": "eeg"} for name in ("F3", "F4", "Cz")
             ],
@@ -894,8 +917,9 @@ models_mandatory_parameters: list[
         ["n_chans", "n_outputs", "n_times"],
         {
             "n_chans": 19,
-            "n_times": 1024,  # 4 s @ 256 Hz keeps the 38M-parameter model fast in CI
+            "n_times": 1024,  # 4 s @ 256 Hz
             "sfreq": 256.0,
+            "num_layers": 2,  # 2 of 8 Transformer layers
         },
     ),
     ("Guetschel2026", ["chs_info", "n_outputs", "n_times"], {"sfreq": 200.0}),

@@ -357,8 +357,9 @@ def test_dense_spatial_filter_forward_collapse_false():
 def test_combined_conv(
     bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat, stride
 ):
-    batch_size = 64
-    timepoints = 1000
+    # 64 x 1000 samples took each case to ~1 GB; no branch of the merge depends on size.
+    batch_size = 4
+    timepoints = 200
 
     data = torch.rand([batch_size, 1, timepoints, in_chans])
     conv = CombinedConv(

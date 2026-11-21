@@ -588,6 +588,13 @@ Bug fixes
 Code health
 ============
 
+- The test suite peaks lower: smaller inputs where no assertion depends on size,
+  shared read-only data, freed TorchScript, compile and reference-cycle memory
+  (:gh:`1713` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.LUNA` is freed as soon as it is deleted: its state-dict
+  hook no longer holds a reference to the model (:gh:`1713` by `Bruno Aristimunha`_).
+- Printing a model no longer keeps it alive: torchinfo's module-level summary
+  cache held the last printed instance of each class (:gh:`1713` by `Bruno Aristimunha`_).
 - Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
   14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
   small or gone (:gh:`1701` by `Bruno Aristimunha`_).
