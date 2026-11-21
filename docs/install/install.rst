@@ -4,73 +4,74 @@
  Installation
 ##############
 
-Braindecode requires Python >= 3.11, PyTorch >= 2.6, and TorchAudio >= 2.6. macOS
-requires Apple Silicon; Intel Macs are no longer supported because `PyTorch discontinued
-macOS x86_64 binaries after 2.2
-<https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690>`_.
+Braindecode requires **Python >= 3.11**, **PyTorch >= 2.6**, and **TorchAudio >= 2.6**
+on Linux (``x86_64``), Windows (``AMD64``), or macOS with Apple Silicon (``arm64``;
+Intel Macs are unsupported because `PyTorch ended macOS x86_64 builds after 2.2
+<https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690>`_).
 
-The package is distributed via Python package index (`PyPI <braindecode-pypi_>`_), and
-you can access the source code via `Github <braindecode-github_>`_ repository.
+Packages are published on `PyPI <braindecode-pypi_>`_ and developed openly on
+`GitHub <braindecode-github_>`_.
 
-There are different ways to install Braindecode, depending on your needs and:
+***************
+ Quick install
+***************
+
+Install the core library from PyPI, or include optional extras for Hugging Face Hub
+pretrained weights (``hub``) and benchmark dataset fetchers (``moabb``):
+
+.. code-block:: bash
+
+    pip install braindecode
+    pip install "braindecode[hub]"
+
+*********************
+ Installation guides
+*********************
+
+Choose the setup guide matching your workflow:
 
 .. grid:: 2
+    :gutter: 3
 
-    .. grid-item-card::
-        :text-align: center
+    .. grid-item-card:: Install from PyPI
 
-        .. rst-class:: font-weight-bold mb-0
+        Recommended for research, clinical pipelines, and benchmarking. Covers core
+        installation, optional extras (``hub``, ``moabb``, ``eegprep``, ``viz``), and
+        CUDA GPU setup.
 
-            Install via ``pip``
+        .. code-block:: bash
 
-        .. rst-class:: card-subtitle text-muted mt-0
+            pip install "braindecode[hub,moabb]"
 
-            For Beginners
-
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        .. image:: /_static/braindecode_install.png
-           :alt: Braindecode Installer with pip
-
-        +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
+        +++
 
         .. button-ref:: install_pip
             :ref-type: ref
             :color: primary
-            :shadow:
-            :class: font-weight-bold
+            :expand:
 
-            Installing from PyPI
+            PyPI installation guide →
 
+    .. grid-item-card:: Build from source
 
-    .. grid-item-card::
-        :text-align: center
+        Recommended for contributors and users testing unreleased changes from ``master``.
+        Covers editable ``pip install -e .`` setups, test dependencies, and verification.
 
-        .. rst-class:: font-weight-bold mb-0
+        .. code-block:: bash
 
-           Building from source code
+            git clone https://github.com/braindecode/braindecode
+            pip install -e ".[tests,docs]"
 
-        .. rst-class:: card-subtitle text-muted mt-0
-
-            For Advanced Users
-
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        .. image:: https://mne.tools/stable/_images/mne_installer_console.png
-           :alt: Terminal Window
-
-        **Already familiar with Python?**
-        Follow our setup instructions for building from Github and start to contribute!
-        +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        +++
 
         .. button-ref:: install_source
             :ref-type: ref
             :color: primary
-            :shadow:
-            :class: font-weight-bold
+            :expand:
 
-            From Source Code
+            Source & contributor guide →
 
-To run on Intel Gaudi accelerators, see :ref:`install_gaudi`.
+To run training workloads on Intel Gaudi accelerators, see :ref:`install_gaudi`.
 
 .. toctree::
     :hidden:

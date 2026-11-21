@@ -16,7 +16,7 @@ See :doc:`cite`.
  Help! I can't get Python and Braindecode working!
 ***************************************************
 
-Check out if your are running the most recent version of braindecode.
+Check whether you are running the most recent version of Braindecode (see :doc:`install/install`).
 
 *******************************
  I still can't get it to work!
@@ -27,10 +27,10 @@ whether it happened because of a bug in Braindecode, a mistake in user code, a c
 data file, or irregularities in the data itself.
 
 Your first step when asking for help should be the `Braindecode Chat
-<braindecode-chat_>`_, not GitHub. This bears repeating: *the GitHub issue tracker is
-not for usage help* — it is for software bugs, feature requests, and improvements to
-documentation. If you open an issue that contains only a usage question, we will close
-the issue and direct you to the chat.
+<braindecode-chat_>`_, not GitHub. *The GitHub issue tracker is not for usage help*: it
+is for software bugs, feature requests, and documentation improvements. If you open an
+issue that contains only a usage question, we will close the issue and direct you to the
+chat.
 
 **************************************
  I think I found a bug, what do I do?

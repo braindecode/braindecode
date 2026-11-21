@@ -195,21 +195,88 @@ function initZoo(root) {
   bindSlashShortcut(searchInput);
 }
 
-function applyDownloadBadge(dlEl, payload) {
-  if (!payload || !payload.value) {
+function setActiveVenueDot(dots, activeIdx) {
+  dots.forEach((dot, idx) => {
+    dot.toggleAttribute("data-active", idx === activeIdx);
+    dot.setAttribute("aria-selected", idx === activeIdx ? "true" : "false");
+  });
+}
+
+function scrollTrackToIndex(track, cards, idx) {
+  const target = cards[idx];
+  if (!target) {
     return;
   }
-  dlEl.textContent = String(payload.value).replace(/k$/, "K").replace(/m$/, "M");
+  const offset = target.offsetLeft - track.offsetLeft - 32;
+  track.scrollTo({ left: Math.max(0, offset), behavior: "smooth" });
+}
+
+function computeActiveCardIndex(track, cards) {
+  const scrollEdge = track.scrollLeft + 96;
+  let best = 0;
+  cards.forEach((card, idx) => {
+    if (card.offsetLeft - track.offsetLeft <= scrollEdge) {
+      best = idx;
+    }
+  });
+  return best;
+}
+
+function bindCarouselButtons(wrap, track, cards, dots) {
+  const prevBtn = wrap.querySelector("[data-venue-prev]");
+  const nextBtn = wrap.querySelector("[data-venue-next]");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      const next = Math.max(0, computeActiveCardIndex(track, cards) - 1);
+      scrollTrackToIndex(track, cards, next);
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      const next = Math.min(cards.length - 1, computeActiveCardIndex(track, cards) + 1);
+      scrollTrackToIndex(track, cards, next);
+    });
+  }
+  dots.forEach((dot, idx) => {
+    dot.addEventListener("click", () => {
+      scrollTrackToIndex(track, cards, idx);
+    });
+  });
+}
+
+function initVenueCarousel(root) {
+  const wrap = root.querySelector(".venue-showcase");
+  if (!wrap) {
+    return;
+  }
+  const track = wrap.querySelector(".venue-track");
+  if (!track) {
+    return;
+  }
+  const cards = [...track.querySelectorAll(".venue-card")];
+  const dots = [...wrap.querySelectorAll(".venue-dot")];
+  bindCarouselButtons(wrap, track, cards, dots);
+  track.addEventListener(
+    "scroll",
+    () => {
+      setActiveVenueDot(dots, computeActiveCardIndex(track, cards));
+    },
+    { passive: true }
+  );
+}
+
+function applyDownloadBadge(dlEl, payload) {
+  const raw = payload?.value;
+  if (!raw) {
+    return;
+  }
+  const clean = String(raw).replace(/k$/, "K").replace(/m$/, "M");
+  dlEl.textContent = clean.replace(/\+?$/, "+");
 }
 
 function fetchDownloads(dlEl) {
   fetch("https://img.shields.io/pepy/dt/braindecode.json", { priority: "low" })
-    .then((resp) => {
-      if (resp.ok) {
-        return resp.json();
-      }
-      return null;
-    })
+    .then((resp) => (resp.ok ? resp.json() : null))
     .then((payload) => {
       applyDownloadBadge(dlEl, payload);
     })
@@ -234,9 +301,196 @@ function initDownloads(root) {
   io.observe(dlEl);
 }
 
+function placeApiPop(pop, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const popW = Math.min(440, window.innerWidth - 32);
+  const left = Math.min(Math.max(16, rect.left), window.innerWidth - popW - 16);
+  const below = rect.bottom + 10;
+  const top = below + 132 > window.innerHeight ? Math.max(16, rect.top - 118) : below;
+  pop.style.left = left + "px";
+  pop.style.top = top + "px";
+}
+
+function showApiPop(pop, titleEl, codeEl, target) {
+  titleEl.textContent = target.getAttribute("data-api-head");
+  codeEl.textContent = target.getAttribute("data-api-code");
+  pop.hidden = false;
+  placeApiPop(pop, target);
+}
+
+function handleZooEnter(pop, titleEl, codeEl, event) {
+  const item = event.target?.closest?.("[data-api-code]");
+  if (!item) {
+    return;
+  }
+  showApiPop(pop, titleEl, codeEl, item);
+}
+
+function handleZooLeave(pop, event) {
+  const fromItem = event.target?.closest?.("[data-api-code]");
+  if (!fromItem) {
+    return;
+  }
+  if (!fromItem.contains(event.relatedTarget)) {
+    pop.hidden = true;
+  }
+}
+
+function initZooApiPreview(root) {
+  const zoo = root.querySelector(".bd-zoo");
+  const pop = root.querySelector("#bd-zoo-pop");
+  if (!zoo || !pop) {
+    return;
+  }
+  const titleEl = pop.querySelector(".zoo-api-pop-title");
+  const codeEl = pop.querySelector(".zoo-api-pop-code");
+  const onEnter = (event) => handleZooEnter(pop, titleEl, codeEl, event);
+  const hidePop = () => {
+    pop.hidden = true;
+  };
+  zoo.addEventListener("pointerover", onEnter);
+  zoo.addEventListener("pointerout", (event) => handleZooLeave(pop, event));
+  zoo.addEventListener("focusin", onEnter);
+  zoo.addEventListener("focusout", hidePop);
+  window.addEventListener("scroll", hidePop, { passive: true });
+}
+
+function runCountUp(nodes, target) {
+  const start = performance.now();
+  const duration = 1050;
+  const step = (now) => {
+    const p = Math.min(1, (now - start) / duration);
+    const val = Math.max(1, Math.round((1 - Math.pow(1 - p, 3)) * target));
+    nodes.forEach((el) => {
+      el.textContent = String(val);
+    });
+    if (p < 1) {
+      requestAnimationFrame(step);
+    }
+  };
+  requestAnimationFrame(step);
+}
+
+function prefersReducedMotion() {
+  if (!window.matchMedia) {
+    return false;
+  }
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function initCountUp(root) {
+  const nodes = [...root.querySelectorAll("[data-count-to]")];
+  if (!nodes.length || prefersReducedMotion()) {
+    return;
+  }
+  const target = Number(nodes[0].dataset.countTo);
+  const io = new IntersectionObserver(
+    (entries, obs) => {
+      if (!entries.some((entry) => entry.isIntersecting)) {
+        return;
+      }
+      obs.disconnect();
+      runCountUp(nodes, target);
+    },
+    { threshold: 0.25 }
+  );
+  io.observe(nodes[0]);
+}
+
+function setTextIfPresent(el, text) {
+  if (el && text) {
+    el.textContent = text;
+  }
+}
+
+function applyActiveCap(stage, cards, modEl, exprEl, activeIdx) {
+  const card = cards[activeIdx];
+  if (!card) {
+    return;
+  }
+  stage.dataset.activeCap = String(activeIdx);
+  cards.forEach((item, idx) => {
+    item.toggleAttribute("data-cap-active", idx === activeIdx);
+  });
+  setTextIfPresent(modEl, card.dataset.capMod);
+  setTextIfPresent(exprEl, card.dataset.capSig);
+}
+
+function bindCapableHover(stage, cards, modEl, exprEl, setLocked) {
+  const inputs = stage.querySelector(".capable-inputs");
+  if (!inputs) {
+    return;
+  }
+  cards.forEach((card, idx) => {
+    const lockTo = () => {
+      setLocked(true, idx);
+      applyActiveCap(stage, cards, modEl, exprEl, idx);
+    };
+    card.addEventListener("pointerenter", lockTo);
+    card.addEventListener("focusin", lockTo);
+  });
+  inputs.addEventListener("pointerleave", () => {
+    setLocked(false, -1);
+  });
+  inputs.addEventListener("focusout", (event) => {
+    if (!inputs.contains(event.relatedTarget)) {
+      setLocked(false, -1);
+    }
+  });
+}
+
+function observeCapableCycle(stage, stepFn) {
+  let timer = 0;
+  const io = new IntersectionObserver(
+    (entries) => {
+      const visible = entries.some((entry) => entry.isIntersecting);
+      clearInterval(timer);
+      timer = visible ? setInterval(stepFn, 2400) : 0;
+    },
+    { rootMargin: "120px" }
+  );
+  io.observe(stage);
+}
+
+function initCapableStage(root) {
+  const stage = root.querySelector(".capable-stage");
+  if (!stage) {
+    return;
+  }
+  const cards = [...stage.querySelectorAll(".cap-card")];
+  if (!cards.length) {
+    return;
+  }
+  const modEl = stage.querySelector("[data-cap-live-mod]");
+  const exprEl = stage.querySelector("[data-cap-live-expr]");
+  let activeIdx = 0;
+  let locked = false;
+  const setLocked = (nextLocked, nextIdx) => {
+    locked = nextLocked;
+    stage.toggleAttribute("data-cap-locked", nextLocked);
+    if (nextIdx >= 0) {
+      activeIdx = nextIdx;
+    }
+  };
+  bindCapableHover(stage, cards, modEl, exprEl, setLocked);
+  if (prefersReducedMotion()) {
+    return;
+  }
+  observeCapableCycle(stage, () => {
+    if (!locked) {
+      activeIdx = (activeIdx + 1) % cards.length;
+      applyActiveCap(stage, cards, modEl, exprEl, activeIdx);
+    }
+  });
+}
+
 const landingRoot = document.querySelector(".bd-landing");
 if (landingRoot) {
   landingRoot.addEventListener("click", handleCopyClick);
   initZoo(landingRoot);
+  initZooApiPreview(landingRoot);
+  initCountUp(landingRoot);
+  initCapableStage(landingRoot);
+  initVenueCarousel(landingRoot);
   initDownloads(landingRoot);
 }

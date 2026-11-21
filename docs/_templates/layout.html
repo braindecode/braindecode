@@ -17,11 +17,13 @@
 
   {{ super() }}
 
-  {% if pagename == 'index' %}
-  {# Landing-only fonts, styles, and progressive-enhancement module. #}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+  <script src="{{ pathto('_static/cite.js', 1) }}" defer></script>
+
+  {% if pagename == 'index' %}
+  {# Landing-only styles and progressive-enhancement module. #}
   <link rel="stylesheet" href="{{ pathto('_static/landing.css', 1) }}">
   <script type="module" src="{{ pathto('_static/landing.js', 1) }}"></script>
   {# `<meta name="description">` and `<meta property="og:description">` are
@@ -42,6 +44,10 @@
     "programmingLanguage": "Python",
     "downloadUrl": "https://pypi.org/project/braindecode/",
     "codeRepository": "https://github.com/braindecode/braindecode",
+    "citation": [
+      "https://doi.org/10.5281/zenodo.8214376",
+      "https://doi.org/10.1002/hbm.23730"
+    ],
     "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
     "publisher": {
       "@type": "Organization",
@@ -68,3 +74,8 @@
   {% block body %} {% endblock %}
 </div>
 {% endblock %}
+
+{%- block scripts_end %}
+    {{ super() }}
+    <script src="https://braindecode.org/versionwarning.js" defer></script>
+{%- endblock %}

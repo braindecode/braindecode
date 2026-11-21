@@ -1,362 +1,1242 @@
+/* =========================================================================
+   Braindecode Global Documentation & Sub-Page Design System
+   Palette: Mineral Paper (#f7f8fa / #ffffff), Obsidian (#0e1218 / #141a23),
+   Cortical Navy (#163350 / #7db4e6), Steel Cerulean (#1b5e91 / #89c4f4),
+   Copper-Amber (#b46a2c / #e5964f), Clinical Sage (#356643 / #7ec48e).
+   Typography: Geist + Geist Mono across header, sidebars, prose, API & code.
+   ========================================================================= */
+
 :root {
-    --text-align: left;
-    --pst-font-size-base: 16px;
-    --pst-font-size-milli: 13px;
-    --pst-font-family-base: "Inter", "Source Sans Pro", var(--pst-font-family-base-system);
-    --pst-font-family-heading: "Fraunces", "Inter", var(--pst-font-family-base-system);
-    --pst-font-family-monospace: "JetBrains Mono", "Source Code Pro", var(--pst-font-family-monospace-system);
+  --text-align: left;
+  --pst-font-size-base: 16px;
+  --pst-font-size-milli: 13px;
+  --pst-font-family-base: "Geist", "Inter", var(--pst-font-family-base-system);
+  --pst-font-family-heading: "Geist", "Inter", var(--pst-font-family-base-system);
+  --pst-font-family-monospace: "Geist Mono", "Source Code Pro", var(--pst-font-family-monospace-system);
+  --pst-header-height: 4.25rem;
+  --bd-ctrl-border: rgba(18, 33, 51, 0.18);
+  --bd-ctrl-bg: rgba(255, 255, 255, 0.78);
 }
+
+html {
+  scrollbar-gutter: stable;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* -------------------------------------------------------------------------
+   1. PyData Sphinx Theme & Sphinx-Design Token Overrides (Zero Teal/Purple)
+   Verified against pydata-sphinx-theme.css: all --pst-color-* and --sd-color-*
+   tokens take direct CSS color values (hex/rgba), never raw RGB triplets.
+   ------------------------------------------------------------------------- */
+html[data-theme="light"] {
+  --pst-color-primary: #163350;
+  --pst-color-primary-text: #ffffff;
+  --pst-color-primary-highlight: #0f243a;
+  --pst-color-primary-bg: #e6eef7;
+  --pst-color-secondary: #b46a2c;
+  --pst-color-secondary-text: #ffffff;
+  --pst-color-secondary-highlight: #8f511e;
+  --pst-color-secondary-bg: #f8ede2;
+  --pst-color-accent: #2a527a;
+  --pst-color-accent-bg: #e8f0f8;
+  --pst-color-link: #1d4d7a;
+  --pst-color-link-hover: #102a45;
+  --pst-color-inline-code: #163350;
+  --pst-color-inline-code-links: #1d4d7a;
+  --pst-color-background: #f7f8fa;
+  --pst-color-on-background: #ffffff;
+  --pst-color-surface: #ffffff;
+  --pst-color-on-surface: #121821;
+  --pst-color-text-base: #121821;
+  --pst-color-text-muted: #515e70;
+  --pst-color-border: #d5dde7;
+  --pst-color-border-muted: rgba(18, 33, 51, 0.10);
+  --pst-color-shadow: rgba(18, 33, 51, 0.06);
+  --pst-color-info: #2a527a;
+  --pst-color-info-bg: #eaf1f8;
+  --pst-color-warning: #b46a2c;
+  --pst-color-warning-bg: #f8ede2;
+  --pst-color-success: #356643;
+  --pst-color-success-bg: #e3f0e7;
+  --pst-color-target: #f6eadf;
+  --pst-color-table: #121821;
+  --pst-color-table-heading-bg: #eef2f7;
+  --pst-color-table-inner-border: #dde4ed;
+  --pst-color-table-row-hover-bg: #eef3f9;
+  --pst-color-table-row-zebra-low-bg: #f9fafc;
+  --pst-color-table-row-zebra-high-bg: #ffffff;
+
+  /* sphinx-design variable sync */
+  --sd-color-primary: #163350;
+  --sd-color-primary-text: #ffffff;
+  --sd-color-primary-highlight: #0f243a;
+  --sd-color-primary-bg: #e6eef7;
+  --sd-color-secondary: #b46a2c;
+  --sd-color-secondary-text: #ffffff;
+  --sd-color-secondary-highlight: #8f511e;
+  --sd-color-secondary-bg: #f8ede2;
+  --sd-color-info: #2a527a;
+  --sd-color-info-bg: #eaf1f8;
+  --sd-color-warning: #b46a2c;
+  --sd-color-warning-bg: #f8ede2;
+  --sd-color-success: #356643;
+  --sd-color-success-bg: #e3f0e7;
+  --sd-color-card-border: #d5dde7;
+  --sd-color-card-background: #ffffff;
+  --sd-color-shadow: rgba(18, 33, 51, 0.04);
+
+  /* project helpers */
+  --braindecode-color-github: #121821;
+  --braindecode-color-discourse: #121821;
+  --braindecode-color-discord: #5865F2;
+  --braindecode-color-twitter: #55acee;
+  --pst-color-border-rgba: rgba(18, 33, 51, 0.14);
+  --pst-color-background-rgba: rgba(22, 51, 80, 0.035);
+  --pst-color-primary-rgba: rgba(22, 51, 80, 0.08);
+  --pst-color-secondary-rgba: rgba(180, 106, 44, 0.14);
+  --copybtn-opacity: 0.8;
+
+  /* sphinx-gallery overrides */
+  --sg-download-a-background-color: var(--pst-color-primary);
+  --sg-download-a-background-image: unset;
+  --sg-download-a-border-color: var(--pst-color-border);
+  --sg-download-a-color: #ffffff;
+  --sg-download-a-hover-background-color: var(--pst-color-primary-highlight);
+  --sg-download-a-hover-box-shadow-1: none;
+  --sg-download-a-hover-box-shadow-2: none;
+}
+
+html[data-theme="dark"] {
+  --pst-color-primary: #7db4e6;
+  --pst-color-primary-text: #0e1218;
+  --pst-color-primary-highlight: #9ec8ef;
+  --pst-color-primary-bg: #162638;
+  --pst-color-secondary: #e5964f;
+  --pst-color-secondary-text: #0e1218;
+  --pst-color-secondary-highlight: #f0ab6d;
+  --pst-color-secondary-bg: #2b1f14;
+  --pst-color-accent: #7db4e6;
+  --pst-color-accent-bg: #172738;
+  --pst-color-link: #89c4f4;
+  --pst-color-link-hover: #b8dcfa;
+  --pst-color-inline-code: #a8d1f7;
+  --pst-color-inline-code-links: #89c4f4;
+  --pst-color-background: #0e1218;
+  --pst-color-on-background: #141a23;
+  --pst-color-surface: #141a23;
+  --pst-color-on-surface: #eef2f7;
+  --pst-color-text-base: #eef2f7;
+  --pst-color-text-muted: #9aa7b8;
+  --pst-color-border: #253041;
+  --pst-color-border-muted: rgba(241, 236, 225, 0.10);
+  --pst-color-shadow: rgba(0, 0, 0, 0.28);
+  --pst-color-info: #7db4e6;
+  --pst-color-info-bg: #152436;
+  --pst-color-warning: #e5964f;
+  --pst-color-warning-bg: #2c2015;
+  --pst-color-success: #7ec48e;
+  --pst-color-success-bg: #16281d;
+  --pst-color-target: #2e2418;
+  --pst-color-table: #eef2f7;
+  --pst-color-table-heading-bg: #18202c;
+  --pst-color-table-inner-border: #253041;
+  --pst-color-table-row-hover-bg: #1a2535;
+  --pst-color-table-row-zebra-low-bg: #121821;
+  --pst-color-table-row-zebra-high-bg: #141a23;
+
+  /* sphinx-design variable sync */
+  --sd-color-primary: #7db4e6;
+  --sd-color-primary-text: #0e1218;
+  --sd-color-primary-highlight: #9ec8ef;
+  --sd-color-primary-bg: #162638;
+  --sd-color-secondary: #e5964f;
+  --sd-color-secondary-text: #0e1218;
+  --sd-color-secondary-highlight: #f0ab6d;
+  --sd-color-secondary-bg: #2b1f14;
+  --sd-color-info: #7db4e6;
+  --sd-color-info-bg: #152436;
+  --sd-color-warning: #e5964f;
+  --sd-color-warning-bg: #2c2015;
+  --sd-color-success: #7ec48e;
+  --sd-color-success-bg: #16281d;
+  --sd-color-card-border: #253041;
+  --sd-color-card-background: #141a23;
+  --sd-color-shadow: rgba(0, 0, 0, 0.2);
+
+  /* header & project helpers */
+  --bd-ctrl-border: rgba(241, 236, 225, 0.18);
+  --bd-ctrl-bg: rgba(255, 255, 255, 0.05);
+  --braindecode-color-github: #ffffff;
+  --braindecode-color-discourse: #FFF9AE;
+  --braindecode-color-discord: #ffffff;
+  --braindecode-color-twitter: #55acee;
+  --pst-color-border-rgba: rgba(241, 236, 225, 0.16);
+  --pst-color-background-rgba: rgba(255, 255, 255, 0.04);
+  --pst-color-primary-rgba: rgba(125, 180, 230, 0.12);
+  --pst-color-secondary-rgba: rgba(229, 150, 79, 0.18);
+  --copybtn-opacity: 0.6;
+
+  /* sphinx-gallery overrides */
+  --sg-download-a-background-color: #215380;
+  --sg-download-a-background-image: unset;
+  --sg-download-a-border-color: var(--pst-color-border);
+  --sg-download-a-color: #ffffff;
+  --sg-download-a-hover-background-color: #2b699e;
+  --sg-download-a-hover-box-shadow-1: none;
+  --sg-download-a-hover-box-shadow-2: none;
+}
+
+/* -------------------------------------------------------------------------
+   2. High-Attention Zenodo Citation Banner + Quick Export Pills (All Pages)
+   ------------------------------------------------------------------------- */
+.bd-header-announcement {
+  background: linear-gradient(90deg, #dff0fc 0%, #e7f3fc 50%, #dff0fc 100%) !important;
+  color: #0b2948 !important;
+  border-left: 0 !important;
+  border-bottom: 1px solid rgba(22, 51, 80, 0.16) !important;
+  padding: 0 !important;
+  min-height: 44px !important;
+}
+
+html[data-theme="dark"] .bd-header-announcement {
+  background: linear-gradient(90deg, #132f4c 0%, #193d63 50%, #132f4c 100%) !important;
+  color: #eef5fc !important;
+  border-bottom: 1px solid rgba(125, 180, 230, 0.26) !important;
+}
+
+.bd-header-announcement__content {
+  width: min(100% - 56px, 1280px);
+  margin: 0 auto;
+  min-height: 44px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.45rem 0.7rem;
+  padding: 6px 0 !important;
+  font-family: var(--pst-font-family-base);
+  font-size: 0.92rem;
+  font-weight: 400;
+  letter-spacing: -0.008em;
+  line-height: 1.3;
+}
+
+.bd-announcement-lead {
+  font-weight: 700;
+  color: #0b2948;
+  letter-spacing: -0.012em;
+}
+
+html[data-theme="dark"] .bd-announcement-lead {
+  color: #f4f8fd;
+}
+
+.bd-header-announcement__content a.braindecode-announcement-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1b5e91 !important;
+  color: #ffffff !important;
+  text-decoration: none !important;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(11, 41, 72, 0.22);
+  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  box-shadow: 0 2px 6px rgba(22, 51, 80, 0.16);
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.bd-header-announcement__content a.braindecode-announcement-cta:hover {
+  background-color: #163350 !important;
+  border-color: #0b2948;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .bd-header-announcement__content a.braindecode-announcement-cta {
+  background-color: #246da6 !important;
+  border-color: rgba(184, 220, 250, 0.34);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme="dark"] .bd-header-announcement__content a.braindecode-announcement-cta:hover {
+  background-color: #2f80bf !important;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.braindecode-announcement-secondary {
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: #163350;
+}
+
+html[data-theme="dark"] .braindecode-announcement-secondary {
+  color: #d6e8fa;
+}
+
+.braindecode-announcement-secondary a {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #0b2948 !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+}
+
+html[data-theme="dark"] .braindecode-announcement-secondary a {
+  color: #ffffff !important;
+}
+
+.bd-announcement-exports {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.bd-cite-quick-btn {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  text-decoration: none !important;
+  background-color: rgba(255, 255, 255, 0.84);
+  color: #163350 !important;
+  border: 1px solid rgba(22, 51, 80, 0.24);
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.bd-cite-quick-btn:hover {
+  background-color: #ffffff;
+  border-color: #163350;
+  color: #0b2948 !important;
+}
+
+html[data-theme="dark"] .bd-cite-quick-btn {
+  background-color: rgba(255, 255, 255, 0.10);
+  color: #eef5fc !important;
+  border-color: rgba(184, 220, 250, 0.32);
+}
+
+html[data-theme="dark"] .bd-cite-quick-btn:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-color: #89c4f4;
+  color: #ffffff !important;
+}
+
+.bd-cite-quick-btn[data-copied="true"],
+.bd-cite-hub-btn[data-copied="true"] {
+  background-color: #e4f3e8 !important;
+  color: #2d6a40 !important;
+  border-color: #2d6a40 !important;
+}
+
+html[data-theme="dark"] .bd-cite-quick-btn[data-copied="true"],
+html[data-theme="dark"] .bd-cite-hub-btn[data-copied="true"] {
+  background-color: rgba(45, 106, 64, 0.36) !important;
+  color: #8ce0a3 !important;
+  border-color: #7ec48e !important;
+}
+
+/* -------------------------------------------------------------------------
+   3. Unified Top Navbar Across Landing & Every Sub-Page (Zero Drift)
+   ------------------------------------------------------------------------- */
+.bd-header {
+  background-color: rgba(247, 248, 250, 0.92) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: none !important;
+  border-bottom: 1px solid rgba(18, 33, 51, 0.10) !important;
+}
+
+html[data-theme="dark"] .bd-header {
+  background-color: rgba(14, 18, 24, 0.92) !important;
+  border-bottom-color: rgba(241, 236, 225, 0.10) !important;
+}
+
+@media (min-width: 960px) {
+  .bd-header .bd-header__inner {
+    width: min(100% - 56px, 1280px) !important;
+    max-width: 1280px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    height: var(--pst-header-height) !important;
+    display: grid !important;
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr) !important;
+    align-items: center !important;
+    column-gap: 1rem !important;
+  }
+
+  .bd-header .navbar-header-items {
+    display: contents !important;
+  }
+
+  .bd-header .navbar-header-items__start {
+    width: auto !important;
+    justify-self: start !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  .bd-header .navbar-header-items__center {
+    justify-self: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .bd-header .navbar-header-items__end {
+    justify-self: end !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 0.5rem !important;
+  }
+
+  .bd-header .navbar-item,
+  .bd-header .version-switcher__container {
+    display: inline-flex !important;
+    align-items: center !important;
+    margin: 0 !important;
+  }
+}
+
+.bd-header .navbar-brand {
+  height: 40px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+.bd-header .navbar-brand img,
+.bd-header .navbar-brand .logo__image {
+  height: 36px !important;
+  width: auto !important;
+  max-height: 36px !important;
+  display: block;
+}
+
+.bd-header .navbar-nav {
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 0.15rem !important;
+}
+
+.bd-header ul.navbar-nav > li.nav-item {
+  margin-inline: 0 !important;
+}
+
+.bd-header .navbar-nav > .nav-item > .nav-link,
+.bd-header .navbar-nav .dropdown-toggle {
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  line-height: 1.25 !important;
+  font-family: var(--pst-font-family-base);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #3f4e62;
+  transition: color 140ms ease;
+}
+
+html[data-theme="dark"] .bd-header .navbar-nav > .nav-item > .nav-link,
+html[data-theme="dark"] .bd-header .navbar-nav .dropdown-toggle {
+  color: #b5c1d1;
+}
+
+.bd-header .navbar-nav > .nav-item > .nav-link {
+  padding: 0.42rem 0.62rem !important;
+}
+
+@media (min-width: 960px) and (max-width: 1150px) {
+  .bd-header .navbar-nav > .nav-item > .nav-link {
+    padding: 0.4rem 0.44rem !important;
+    font-size: 0.875rem;
+  }
+  .bd-header .search-button-field .search-button__kbd-shortcut {
+    display: none !important;
+  }
+}
+
+/* Hover & active nav link underlines: Cortical Navy + Copper-Amber (zero teal/purple) */
+.bd-header ul.navbar-nav > li.nav-item > .nav-link:hover {
+  color: #163350 !important;
+  text-decoration: none;
+}
+
+.bd-header ul.navbar-nav > li.nav-item > .nav-link:hover::before {
+  border-bottom: 2px solid #b46a2c !important;
+}
+
+html[data-theme="dark"] .bd-header ul.navbar-nav > li.nav-item > .nav-link:hover {
+  color: #eef5fc !important;
+}
+
+html[data-theme="dark"] .bd-header ul.navbar-nav > li.nav-item > .nav-link:hover::before {
+  border-bottom: 2px solid #e5964f !important;
+}
+
+.bd-header ul.navbar-nav > li.nav-item.current > .nav-link,
+.bd-header ul.navbar-nav > li.nav-item > .nav-link.active {
+  color: #163350 !important;
+  text-shadow: 0 0 0.25px currentColor;
+}
+
+.bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before,
+.bd-header ul.navbar-nav > li.nav-item > .nav-link.active::before {
+  border-bottom: 2.5px solid #163350 !important;
+}
+
+html[data-theme="dark"] .bd-header ul.navbar-nav > li.nav-item.current > .nav-link,
+html[data-theme="dark"] .bd-header ul.navbar-nav > li.nav-item > .nav-link.active {
+  color: #7db4e6 !important;
+  text-shadow: 0 0 0.25px currentColor;
+}
+
+html[data-theme="dark"] .bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before,
+html[data-theme="dark"] .bd-header ul.navbar-nav > li.nav-item > .nav-link.active::before {
+  border-bottom: 2.5px solid #7db4e6 !important;
+}
+
+.bd-header .search-button-field,
+.bd-header .theme-switch-button,
+.bd-header .version-switcher__button {
+  height: 36px !important;
+  min-height: 36px !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--bd-ctrl-border) !important;
+  background: var(--bd-ctrl-bg) !important;
+  color: var(--pst-color-text-base) !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+}
+
+.bd-header .search-button-field:hover,
+.bd-header .theme-switch-button:hover,
+.bd-header .version-switcher__button:hover {
+  border-color: var(--pst-color-primary) !important;
+}
+
+.bd-header .search-button-field {
+  padding: 0 0.75rem !important;
+  gap: 0.45rem !important;
+  font-size: 0.875rem !important;
+}
+
+.bd-header .theme-switch-button {
+  width: 36px !important;
+  padding: 0 !important;
+}
+
+.bd-header .version-switcher__button {
+  padding: 0 0.72rem !important;
+  font-family: var(--pst-font-family-monospace) !important;
+  font-size: 0.84375rem !important;
+  font-weight: 500 !important;
+}
+
+/* -------------------------------------------------------------------------
+   4. Citation Export Hub (docs/cite.rst)
+   ------------------------------------------------------------------------- */
+.bd-cite-hub {
+  margin: 1.35rem 0 2rem;
+  padding: 1.25rem 1.35rem;
+  border-radius: 12px;
+  border: 1px solid var(--pst-color-border);
+  background: var(--pst-color-on-background);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+html[data-theme="dark"] .bd-cite-hub {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.bd-cite-hub__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--pst-color-border);
+}
+
+.bd-cite-hub__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.bd-cite-hub__eyebrow {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--pst-color-secondary);
+}
+
+.bd-cite-hub__doi {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--pst-color-link);
+  text-decoration: none;
+}
+
+.bd-cite-hub__doi:hover {
+  color: var(--pst-color-link-hover);
+  text-decoration: underline;
+}
+
+.bd-cite-hub__badge img {
+  display: block;
+  height: 22px;
+  width: auto;
+}
+
+.bd-cite-hub__toolbar,
+.bd-cite-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.bd-cite-inline-actions {
+  margin: 0.75rem 0 0.9rem;
+}
+
+.bd-cite-hub-btn {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  height: 36px;
+  padding: 0 0.95rem;
+  border-radius: 8px;
+  font-family: var(--pst-font-family-base);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none !important;
+  background-color: var(--pst-color-background);
+  color: var(--pst-color-text-base) !important;
+  border: 1px solid var(--pst-color-border);
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.bd-cite-hub-btn:hover {
+  border-color: var(--pst-color-primary);
+  background-color: var(--pst-color-primary-bg);
+  color: var(--pst-color-primary) !important;
+}
+
+.bd-cite-hub-btn--primary {
+  background-color: #163350 !important;
+  border-color: #163350 !important;
+  color: #ffffff !important;
+}
+
+.bd-cite-hub-btn--primary:hover {
+  background-color: #1b5e91 !important;
+  border-color: #1b5e91 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .bd-cite-hub-btn--primary {
+  background-color: #246da6 !important;
+  border-color: #3a84be !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .bd-cite-hub-btn--primary:hover {
+  background-color: #2f80bf !important;
+  border-color: #7db4e6 !important;
+}
+
+.bd-cite-hub-btn--download {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.82rem;
+}
+
+/* -------------------------------------------------------------------------
+   5. Sub-Page Architectural Design System (Scoped off Landing Page)
+   ------------------------------------------------------------------------- */
+html:not(:has(.bd-landing)) body {
+  background-color: var(--pst-color-background);
+  color: var(--pst-color-text-base);
+  font-family: var(--pst-font-family-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html:not(:has(.bd-landing)) .bd-page-width {
+  max-width: 88rem;
+}
+
+html:not(:has(.bd-landing)) .bd-main .bd-content .bd-article-container {
+  background-color: transparent;
+  padding-top: 1.75rem;
+}
+
 .bd-content p,
 .bd-content li {
-    text-align: left;
-    text-wrap: pretty;
-    line-height: 1.65;
+  text-align: left;
+  text-wrap: pretty;
+  line-height: 1.65;
 }
 
-html[data-theme="light"] {
-    --braindecode-color-github: #000;
-    --braindecode-color-discourse: #000;
-    --braindecode-color-discord: #5865F2;
-    --braindecode-color-twitter: #55acee;
-    --pst-color-border-rgba: rgba(0, 0, 0, 0.125);
-    --pst-color-background-rgba: rgba(0, 0, 0, 0.03);
-    --pst-color-primary-rgba: rgba(69, 157, 185, 0.2);
-    --pst-color-secondary-rgba: rgba(238, 144, 64, 0.2);
-    --copybtn-opacity: 0.75;
-    /* sphinx-gallery overrides */
-    --sg-download-a-background-color: var(--pst-color-primary);
-    --sg-download-a-background-image: unset;
-    --sg-download-a-border-color: var(--pst-color-border-rgba);
-    --sg-download-a-color: #fff;
-    --sg-download-a-hover-background-color: var(--pst-color-secondary);
-    --sg-download-a-hover-box-shadow-1: none;
-    --sg-download-a-hover-box-shadow-2: none;
-}
-html[data-theme="dark"] {
-    --braindecode-color-github: #fff;
-    --braindecode-color-discourse: #FFF9AE;  /* color taken from their logo SVG */
-    --braindecode-color-discord: #fff;
-    --braindecode-color-twitter: #55acee;
-    --pst-color-border-rgba: rgba(201, 201, 201, 0.25);
-    --pst-color-background-rgba: rgba(255, 255, 255, 0.08);
-    --pst-color-primary-rgba: rgba(69, 157, 185, 0.3);
-    --pst-color-secondary-rgba: rgba(238, 144, 64, 0.3);
-    --copybtn-opacity: 0.25;
-    /* sphinx-gallery overrides */
-    --sg-download-a-background-color: var(--pst-color-primary);
-    --sg-download-a-background-image: unset;
-    --sg-download-a-border-color: var(--pst-color-border-rgba);
-    --sg-download-a-color: #fff;
-    --sg-download-a-hover-background-color: var(--pst-color-secondary);
-    --sg-download-a-hover-box-shadow-1: none;
-    --sg-download-a-hover-box-shadow-2: none;
+html:not(:has(.bd-landing)) .bd-article h1 {
+  font-family: var(--pst-font-family-heading);
+  font-weight: 500;
+  letter-spacing: -0.024em;
+  line-height: 1.14;
+  color: var(--pst-color-text-base);
+  margin-bottom: 1.15rem;
 }
 
-/* ************************************************************ Sphinx fixes */
-dl.field-list {
-    grid-template-columns: auto 1fr;
+html:not(:has(.bd-landing)) .bd-article h2 {
+  font-family: var(--pst-font-family-heading);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.24;
+  color: var(--pst-color-text-base);
+  border-bottom: 1px solid var(--pst-color-border);
+  padding-bottom: 0.4rem;
+  margin-top: 2.25rem;
+  margin-bottom: 1rem;
 }
 
-/* ********************************************************** Sphinx-gallery */
-
-/* backreference links: restore hover decoration that SG removes */
-a.sphx-glr-backref-instance:hover {
-    text-decoration: underline;
-}
-/* backreference links: make non-Brainde func/meth calls resemble regular code */
-a[class^="sphx-glr-backref-module"] { color: var(--pst-color-text); }
-/* backreference links: make Braindecode calls bold and colorful */
-a[class^="sphx-glr-backref-module-braindecode"] {
-    font-weight: 600;
-    color: rgb(var(--pst-color-link));
-}
-/* suppress redundant note at top of every tutorial and signature at the end */
-div.sphx-glr-download-link-note,
-p.sphx-glr-signature {
-    visibility: hidden;
-    height: 0;
-    margin: 0;
-    padding: 0;
-}
-/* script/notebook download buttons */
-.sphx-glr-download a.download {
-    /* ↓↓↓↓↓↓↓ these two rules copied from sphinx-design */
-    box-shadow: 0 .125rem .25rem var(--sd-color-shadow) !important;
-    transition: color .15s ease-in-out,background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out;
-}
-/* Report embedding */
-iframe.sg_report {
-    width: 95%;
-    height: 70vh;
-    margin: 20px auto;
-    display: block;
-    border-style: solid;
-}
-/* Disable thumbnail tooltips on hover */
-.sphx-glr-thumbcontainer[tooltip]:hover::before,
-.sphx-glr-thumbcontainer[tooltip]:hover::after {
-    display: none;
+html:not(:has(.bd-landing)) .bd-article h3,
+html:not(:has(.bd-landing)) .bd-article h4 {
+  font-family: var(--pst-font-family-heading);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  color: var(--pst-color-text-base);
 }
 
-/* ******************************** make HTML'd pandas dataframes scrollable */
-table.dataframe {
-    display: block;
-    overflow: auto;
+/* Inline code & code blocks */
+html:not(:has(.bd-landing)) code.literal {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.86em;
+  border-radius: 5px;
+  padding: 0.12rem 0.34rem;
+  background-color: #edf2f8;
+  border: 1px solid rgba(22, 51, 80, 0.14);
+  color: var(--pst-color-inline-code);
 }
 
-/* ********************************* Long API titles need to wrap for mobile */
-div[id^="braindecode-"] h1,
-div[id^="examples-using-"] h2 {
-    word-break: break-word;
+html[data-theme="dark"]:not(:has(.bd-landing)) code.literal {
+  background-color: #18212e;
+  border-color: rgba(125, 180, 230, 0.18);
 }
 
-/* ******************************************* in-text sidebar callout boxes */
-div.sidebar,
-aside.sidebar {
-    background-color: var(--pst-color-primary-rgba);
-    border-color: rgb(var(--pst-color-info));
+html:not(:has(.bd-landing)) div.highlight,
+html:not(:has(.bd-landing)) div.literal-block-wrapper {
+  border-radius: 8px;
 }
 
-/* **************************************************************** homepage */
-img.logo {
-    max-width: 500px;
-    width: 100%;
+html:not(:has(.bd-landing)) div.highlight pre {
+  border-radius: 8px;
+  border: 1px solid var(--pst-color-border);
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.885rem;
+  line-height: 1.58;
+  padding: 0.95rem 1.1rem;
+  background-color: #f2f5f9;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
-/* ************************************* homepage quick links & funders list */
-ul.quicklinks {
-    font-weight: 600;
-}
-ul.quicklinks a:hover {
-    text-decoration: none;
-}
-ul.funders li {
-    margin-left: 36px;
-    text-indent: -36px;
-    padding-bottom: 9px;
-}
-ul.funders li img {
-    width: 30px;
-    max-height: 24px;
-    object-fit: contain;
+html[data-theme="dark"]:not(:has(.bd-landing)) div.highlight pre {
+  background-color: #0c1017;
+  border-color: var(--pst-color-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.institution-logo-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* API reference signatures */
+html:not(:has(.bd-landing)) dl.py > dt.sig,
+html:not(:has(.bd-landing)) dl.class > dt.sig,
+html:not(:has(.bd-landing)) dl.function > dt.sig,
+html:not(:has(.bd-landing)) dl.method > dt.sig,
+html:not(:has(.bd-landing)) dl.attribute > dt.sig {
+  border-radius: 6px;
+  border-left: 3px solid var(--pst-color-primary);
+  background: rgba(22, 51, 80, 0.05);
+  padding: 0.55rem 0.85rem;
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.89rem;
 }
 
-.institution-logo {
-    width: 100%;
-    height: auto;
-    object-fit: contain;
-    padding: 0.5rem;
+html[data-theme="dark"]:not(:has(.bd-landing)) dl.py > dt.sig,
+html[data-theme="dark"]:not(:has(.bd-landing)) dl.class > dt.sig,
+html[data-theme="dark"]:not(:has(.bd-landing)) dl.function > dt.sig,
+html[data-theme="dark"]:not(:has(.bd-landing)) dl.method > dt.sig,
+html[data-theme="dark"]:not(:has(.bd-landing)) dl.attribute > dt.sig {
+  background: rgba(125, 180, 230, 0.08);
 }
 
-/* these two also affect collapsible divs */
-h5.card-header {
-    margin-top: 0px;
-    margin-bottom: 0px;
-}
-h5.card-header::before {
-    height: 0px;
-    margin-top: 0px;
-}
-
-/* ******************************************************** version dropdown */
-.dropdown {
-    padding: 0 .5rem;  /* match other items in the hamburger menu */
-}
-.dropdown-toggle {
-    font-weight: 600;
+/* Admonitions & callouts */
+html:not(:has(.bd-landing)) div.admonition,
+html:not(:has(.bd-landing)) .admonition {
+  border-radius: 8px;
+  border: 1px solid var(--pst-color-border);
+  border-left: 3px solid var(--pst-color-info);
+  background-color: var(--pst-color-on-background);
+  box-shadow: none;
 }
 
-/* ********************************************* sphinx-design compatibility */
+html:not(:has(.bd-landing)) div.admonition.warning,
+html:not(:has(.bd-landing)) div.admonition.attention,
+html:not(:has(.bd-landing)) div.admonition.caution {
+  border-left-color: var(--pst-color-warning);
+}
+
+/* Cards, dropdowns, buttons & gallery thumbnails */
+html:not(:has(.bd-landing)) .sd-card,
+html:not(:has(.bd-landing)) .sphx-glr-thumbcontainer {
+  border-radius: 10px !important;
+  border: 1px solid var(--pst-color-border) !important;
+  background-color: var(--pst-color-on-background) !important;
+  box-shadow: none !important;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+html:not(:has(.bd-landing)) .sd-card:hover,
+html:not(:has(.bd-landing)) .sphx-glr-thumbcontainer:hover {
+  border-color: var(--pst-color-primary) !important;
+}
+
 .sd-dropdown {
-    border: 1px solid var(--pst-color-border-rgba) !important;
-    box-shadow: 1px 1px 1px var(--pst-color-shadow);
+  border-radius: 8px !important;
+  border: 1px solid var(--pst-color-border) !important;
+  box-shadow: none !important;
 }
+
 .sd-card-header {
-    border-bottom: 1px solid var(--pst-color-border-rgba) !important;
-    background-color: var(--pst-color-background-rgba) !important;
+  border-bottom: 1px solid var(--pst-color-border) !important;
+  background-color: var(--pst-color-background-rgba) !important;
+  font-weight: 600;
 }
+
 .sd-card-footer {
-    border-top: 1px solid var(--pst-color-border-rgba) !important;
-    background-color: var(--pst-color-background-rgba) !important;
+  border-top: 1px solid var(--pst-color-border) !important;
+  background-color: var(--pst-color-background-rgba) !important;
 }
+
 p.btn a {
-    color: unset;
+  color: unset;
 }
-/* remove this when
-   https://github.com/pydata/pydata-sphinx-theme/issues/733 is addressed
-   ↓↓↓↓↓↓↓↓↓ */
+
 .sd-btn-primary {
-    background-color: var(--pst-color-link) !important;
-    border-color: var(--pst-color-link) !important
+  border-radius: 8px !important;
+  background-color: #163350 !important;
+  border-color: #163350 !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
 }
+
 .sd-btn-primary:hover {
-    background-color: var(--pst-color-link-hover) !important;
-    border-color: var(--pst-color-link-hover) !important
+  background-color: #1b5e91 !important;
+  border-color: #1b5e91 !important;
+  color: #ffffff !important;
 }
 
-/* ****************************************************** navbar quick links */
-
-#navbar-icon-links i.fa-github-square::before {
-    color: var(--braindecode-color-github);
-}
-#navbar-icon-links i.fa-twitter-square::before {
-    color: var(--braindecode-color-twitter);
-}
-#navbar-icon-links i.fa-discourse::before {
-    color: var(--braindecode-color-discourse);
-}
-#navbar-icon-links i.fa-discord::before {
-    color: var(--braindecode-color-discord);
-}
-/* *********************************************************** contrib guide */
-ul.icon-bullets {
-    list-style-type: none;
-    padding-left: 2em;
-    text-indent: -1.5em;
-}
-.small-stack {
-    font-size: 0.5em;
-}
-/* *********************************************************** copy button */
-button.copybtn {
-    /* always show; https://sphinx-copybutton.readthedocs.io/en/latest/use.html#modify-the-copy-button-s-css */
-    opacity: var(--copybtn-opacity);
- }
-
-/* *********************************************************** miscellaneous */
-.hidden {
-    display: none;
-}
-img.hidden {
-    visibility: hidden;
-}
-/*model grid*/
-/* For the horizontally scrolling model cards */
-.horizontal-scroll-container {
-  display: flex;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
-  padding-bottom: 1rem; /* Add some space for the scrollbar */
+html[data-theme="dark"] .sd-btn-primary {
+  background-color: #215380 !important;
+  border-color: #3673a8 !important;
+  color: #ffffff !important;
 }
 
-/* Ensure the grid itself doesn't wrap, allowing it to overflow */
-.horizontal-scroll-container > .sd-grid {
-  flex-wrap: nowrap;
+html[data-theme="dark"] .sd-btn-primary:hover {
+  background-color: #2b699e !important;
+  border-color: #7db4e6 !important;
+  color: #ffffff !important;
 }
 
-/* Give the cards a minimum width so they don't get too squished */
-.horizontal-scroll-container .sd-card {
-  min-width: 250px;
+/* Tables */
+html:not(:has(.bd-landing)) table.table,
+html:not(:has(.bd-landing)) .bd-article table.docutils {
+  border: 1px solid var(--pst-color-border);
+  border-radius: 10px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  background-color: var(--pst-color-on-background);
 }
 
-/* Grey out images marked as unavailable */
-figure.unavailable img,
-img.unavailable {           /* covers :class: on the image */
-  filter: grayscale(100%);
-  opacity: 0.45;
+html:not(:has(.bd-landing)) table.table thead th,
+html:not(:has(.bd-landing)) .bd-article table.docutils thead th {
+  background-color: var(--pst-color-table-heading-bg);
+  color: var(--pst-color-text-base);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--pst-color-border);
 }
 
-/* Optional “Unavailable” ribbon – only shows if the class is on the figure */
-figure.unavailable { position: relative; }
-figure.unavailable::after {
-  content: "Unavailable";
-  position: absolute;
-  top: 0.6rem; right: -0.6rem;
-  transform: rotate(15deg);
-  padding: 0.2rem 0.6rem;
-  font-size: 0.8rem; font-weight: 600;
-  background: rgba(128,128,128,0.25);
-  border: 1px solid rgba(128,128,128,0.45);
-  border-radius: 0.25rem;
-  pointer-events: none;
-}
-.plot-caption{ font-size:.9em; color: var(--pst-color-text-muted, #6c757d); }
-
-
-/* Narrow the primary (left) sidebar on desktop */
+/* Sidebars (Primary Left & Secondary Right TOC) */
 @media (min-width: 992px) {
-  :root { --leftbar: clamp(13rem, 16vw, 16rem); } /* try 14–16rem if you prefer */
+  :root {
+    --leftbar: clamp(13.5rem, 16.5vw, 16.25rem);
+  }
   .bd-sidebar-primary {
     flex: 0 0 var(--leftbar);
     max-width: var(--leftbar);
   }
 }
 
-/* Smaller fonts + tighter spacing in the left sidebar */
-.bd-sidebar { --pst-sidebar-font-size: 0.85rem; }            /* default ~0.9rem */
-.bd-sidebar .sidebar-title { margin: .25rem 0 .25rem; }
+.bd-sidebar {
+  --pst-sidebar-font-size: 0.865rem;
+}
 
-/* Reduce vertical space between items */
-.bd-sidebar nav .nav-link { padding: .12rem .25rem; line-height: 1.15; }
-.bd-sidebar nav .nav-item { margin-bottom: 0; }
+.bd-sidebar-primary {
+  background-color: var(--pst-color-background);
+  border-right: 1px solid var(--pst-color-border);
+}
 
-/* Slim the active indicator bar */
+.bd-sidebar-secondary {
+  border-left: 1px solid var(--pst-color-border);
+}
+
+.bd-sidebar .sidebar-title,
+.bd-sidebar .caption-text {
+  margin: 0.35rem 0 0.3rem;
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pst-color-text-muted);
+}
+
+.bd-sidebar nav .nav-item {
+  margin-bottom: 1px;
+}
+
+.bd-sidebar nav .nav-link {
+  padding: 0.26rem 0.5rem;
+  line-height: 1.32;
+  border-radius: 6px;
+  color: var(--pst-color-text-muted);
+  transition: color 130ms ease, background-color 130ms ease;
+}
+
+.bd-sidebar nav .nav-link:hover {
+  color: var(--pst-color-text-base);
+  background-color: var(--pst-color-background-rgba);
+}
+
 .bd-sidebar nav .nav-link.active,
-.bd-sidebar nav .active > .nav-link { border-left-width: 2px; }
-
-/* ********************************************************** Announcement banner */
-
-.bd-header-announcement {
-  background-color: #eef3f8 !important;
-  color: #14181f !important;
-  border-left: 3px solid #3a6c97 !important;
+.bd-sidebar nav .active > .nav-link {
+  color: var(--pst-color-primary) !important;
+  font-weight: 600;
+  border-left: 2px solid var(--pst-color-primary);
+  background-color: var(--pst-color-primary-rgba);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
-html[data-theme="dark"] .bd-header-announcement {
-  background-color: #162130 !important;
-  color: #f1ece1 !important;
-  border-left-color: #3a6c97 !important;
-}
-
-.bd-header-announcement__content {
+/* Prev / Next navigation cards & global footer */
+html:not(:has(.bd-landing)) .prev-next-area {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--pst-color-border);
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem 0.75rem;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+html:not(:has(.bd-landing)) .prev-next-area a {
+  border: 1px solid var(--pst-color-border);
+  border-radius: 10px;
   padding: 0.75rem 1rem;
-  font-size: 1.05rem;
-  font-weight: 650;
-  line-height: 1.25;
+  background-color: var(--pst-color-on-background);
+  transition: border-color 150ms ease;
 }
 
-.bd-header-announcement__content a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-thickness: 2px;
+html:not(:has(.bd-landing)) .prev-next-area a:hover {
+  border-color: var(--pst-color-primary);
 }
 
-.bd-header-announcement__content a.braindecode-announcement-cta {
-  background-color: #2a527a;
-  color: #ffffff !important;
+html:not(:has(.bd-landing)) .prev-next-area a p.prev-next-title {
   text-decoration: none;
-  padding: 0.35rem 0.85rem;
-  border-radius: 999px;
-  font-weight: 700;
-  box-shadow: 0 4px 12px rgba(42, 82, 122, 0.22);
-  transition: background-color 200ms ease;
+  font-weight: 600;
 }
 
-.bd-header-announcement__content a.braindecode-announcement-cta:hover {
-  background-color: #1e3d5c;
+.bd-footer {
+  border-top: 1px solid var(--pst-color-border);
+  background-color: var(--pst-color-background);
+  color: var(--pst-color-text-muted);
+  font-size: 0.875rem;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .bd-header-announcement__content a.braindecode-announcement-cta {
-    transition: background-color 200ms ease, transform 200ms ease;
-  }
-
-  .bd-header-announcement__content a.braindecode-announcement-cta:hover {
-    transform: translateY(-1px);
-  }
+.bd-footer .bd-footer__inner {
+  width: min(100% - 56px, 1280px);
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 1.25rem 0;
 }
 
-.braindecode-announcement-secondary {
-  font-weight: 550;
+/* -------------------------------------------------------------------------
+   6. Existing Sphinx, Sphinx-Gallery & Project Utility Rules (Fixed RGB bugs)
+   ------------------------------------------------------------------------- */
+dl.field-list {
+  grid-template-columns: auto 1fr;
+}
+
+a.sphx-glr-backref-instance:hover {
+  text-decoration: underline;
+}
+
+a[class^="sphx-glr-backref-module"] {
+  color: var(--pst-color-text-base);
+}
+
+a[class^="sphx-glr-backref-module-braindecode"] {
+  font-weight: 600;
+  color: var(--pst-color-link);
+}
+
+div.sphx-glr-download-link-note,
+p.sphx-glr-signature {
+  visibility: hidden;
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.sphx-glr-download a.download {
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+}
+
+iframe.sg_report {
+  width: 95%;
+  height: 70vh;
+  margin: 20px auto;
+  display: block;
+  border: 1px solid var(--pst-color-border);
+  border-radius: 8px;
+}
+
+.sphx-glr-thumbcontainer[tooltip]:hover::before,
+.sphx-glr-thumbcontainer[tooltip]:hover::after {
+  display: none;
+}
+
+table.dataframe {
+  display: block;
+  overflow: auto;
+}
+
+div[id^="braindecode-"] h1,
+div[id^="examples-using-"] h2 {
+  word-break: break-word;
+}
+
+div.sidebar,
+aside.sidebar {
+  background-color: var(--pst-color-primary-rgba);
+  border: 1px solid var(--pst-color-info);
+  border-radius: 8px;
+}
+
+img.logo {
+  max-width: 500px;
+  width: 100%;
+}
+
+ul.quicklinks {
+  font-weight: 600;
+}
+
+ul.quicklinks a:hover {
+  text-decoration: none;
+}
+
+ul.funders li {
+  margin-left: 36px;
+  text-indent: -36px;
+  padding-bottom: 9px;
+}
+
+ul.funders li img {
+  width: 30px;
+  max-height: 24px;
+  object-fit: contain;
+}
+
+.institution-logo-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.institution-logo {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  padding: 0.5rem;
+}
+
+h5.card-header {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+h5.card-header::before {
+  height: 0;
+  margin-top: 0;
+}
+
+.dropdown {
+  padding: 0 0.5rem;
+}
+
+.dropdown-toggle {
+  font-weight: 600;
+}
+
+#navbar-icon-links i.fa-github-square::before {
+  color: var(--braindecode-color-github);
+}
+
+#navbar-icon-links i.fa-twitter-square::before {
+  color: var(--braindecode-color-twitter);
+}
+
+#navbar-icon-links i.fa-discourse::before {
+  color: var(--braindecode-color-discourse);
+}
+
+#navbar-icon-links i.fa-discord::before {
+  color: var(--braindecode-color-discord);
+}
+
+ul.icon-bullets {
+  list-style-type: none;
+  padding-left: 2em;
+  text-indent: -1.5em;
+}
+
+.small-stack {
+  font-size: 0.5em;
+}
+
+button.copybtn {
+  opacity: var(--copybtn-opacity);
+}
+
+.hidden {
+  display: none;
+}
+
+img.hidden {
+  visibility: hidden;
+}
+
+.horizontal-scroll-container {
+  display: flex;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 1rem;
+}
+
+.horizontal-scroll-container > .sd-grid {
+  flex-wrap: nowrap;
+}
+
+.horizontal-scroll-container .sd-card {
+  min-width: 250px;
+}
+
+figure.unavailable img,
+img.unavailable {
+  filter: grayscale(100%);
+  opacity: 0.45;
+}
+
+figure.unavailable {
+  position: relative;
+}
+
+figure.unavailable::after {
+  content: "Unavailable";
+  position: absolute;
+  top: 0.6rem;
+  right: -0.6rem;
+  transform: rotate(15deg);
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgba(128, 128, 128, 0.25);
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  border-radius: 0.25rem;
+  pointer-events: none;
+}
+
+.plot-caption {
+  font-size: 0.9em;
+  color: var(--pst-color-text-muted, #515e70);
+}
+
+/* Override PyData Sphinx Theme purple back-to-top button across all pages */
+#pst-back-to-top {
+  background-color: #163350 !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  border-radius: 8px !important;
+  font-family: var(--pst-font-family-monospace) !important;
+  font-size: 0.84375rem !important;
+  box-shadow: 0 10px 24px -10px rgba(16, 35, 56, 0.45) !important;
+}
+
+html[data-theme="dark"] #pst-back-to-top {
+  background-color: #215380 !important;
+  border-color: rgba(125, 180, 230, 0.35) !important;
+}
+
+html:has(.bd-landing) #pst-back-to-top {
+  display: none !important;
 }

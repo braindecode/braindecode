@@ -59,6 +59,9 @@ def test_generate_zoo_data_writes_static_html(tmp_path):
     extra = re.findall(r'data-fold="extra"', html)
     assert len(featured) == 12
     assert len(featured) + len(extra) == len(cards)
+    assert 'id="bd-zoo-pop"' in html
+    assert "Channel &amp; 3D Montage-Aware" in html
+    assert len(re.findall(r'class="zoo-card"[^>]*data-api-code="', html)) == len(cards)
 
 
 def test_cross_modal_and_links_match_api_reference():

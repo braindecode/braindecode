@@ -348,7 +348,7 @@ html_theme_options = {
     "use_edit_page_button": False,
     "navigation_with_keys": False,
     "collapse_navigation": False,
-    "header_links_before_dropdown": 6,
+    "header_links_before_dropdown": 7,
     "navigation_depth": 6,
     "show_toc_level": 1,
     "navbar_end": ["theme-switcher", "version-switcher"],
@@ -358,8 +358,8 @@ html_theme_options = {
     },
     "logo": {
         "image_light": "_static/braindecode_long.svg",
-        "image_dark": "_static/braindecode_long.svg",
-        "alt_text": "Braindecode Logo",
+        "image_dark": "_static/braindecode_long_dark.svg",
+        "alt_text": "Braindecode",
     },
     "secondary_sidebar_items": {
         "**": [
@@ -380,7 +380,7 @@ html_theme_options = {
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
-html_logo = "_static/braindecode_symbol.png"
+html_logo = "_static/braindecode_small.svg"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -398,7 +398,7 @@ html_css_files = [
 # Google-Fonts request to every doc page for no benefit.
 
 # Favicon for the site
-html_favicon = "_static/braindecode_symbol.png"
+html_favicon = "_static/favicon.svg"
 
 # If true, links to the reST sources are added to the pages.
 html_show_sourcelink = False
