@@ -4,8 +4,7 @@ import inspect
 
 import pytest
 
-import braindecode.augmentation as augmentation
-import braindecode.datasets as datasets
+from braindecode import augmentation, datasets
 
 from .models.test_models import _documented_parameters
 
