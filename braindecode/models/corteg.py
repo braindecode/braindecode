@@ -252,6 +252,10 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"n_merge_blocks must be in [1, depth={depth}], got {n_merge_blocks}."
             )
+        # A whole-number float, such as the 4.0 of STEEGFormer's config, gives the
+        # same blocks as the integer; a fraction has no integer expansion
+        if isinstance(mlp_ratio, bool) or mlp_ratio != int(mlp_ratio):
+            raise ValueError(f"mlp_ratio must be a whole number, got {mlp_ratio!r}.")
         vocab_positions = _vocab_positions()  # (n_slots, 3)
         n_slots = len(vocab_positions)
         self.embed_dim = embed_dim
@@ -308,7 +312,7 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
                     MultiHeadAttention(embed_dim, num_heads, drop_prob),
                     FeedForwardBlock(
                         embed_dim,
-                        expansion=mlp_ratio,
+                        expansion=int(mlp_ratio),
                         drop_p=drop_prob,
                         activation=activation,
                     ),
@@ -559,7 +563,7 @@ def _knn_log_prior(
     weights = torch.exp(-0.5 * (distances / sigma) ** 2)  # (n_chans, k)
     weights = weights / weights.sum(dim=-1, keepdim=True).clamp(min=weight_eps)
     # (n_chans, n_slots), zero outside the k nearest slots
-    dense = torch.zeros(len(positions), len(vocab_positions)).scatter_(
+    dense = weights.new_zeros((len(positions), len(vocab_positions))).scatter_(
         1, slots, weights
     )
     return torch.log(dense + weight_eps).mean(dim=0)  # (n_slots,)
