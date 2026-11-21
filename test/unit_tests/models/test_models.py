@@ -6619,10 +6619,12 @@ def _interleaved_fnirs_chs(n_pairs=4):
         (MtReNIRS, {"depth": 1, "num_heads": 2, "embed_dim": 32}),
     ],
 )
-def test_fnirs_features_feed_head(model_cls, kwargs):
+def test_fnirs_features_feed_head_and_reset(model_cls, kwargs):
     """HbO/HbR ``chs_info`` (5 pairs, FNIRST's default spatial kernel) or an
     explicit ``n_chans``; ``final_layer(features)`` equals the logits in eval and
-    train mode, and gradients reach the input."""
+    train mode, gradients reach the input, and ``reset_parameters`` redraws every
+    parameter (test_model_init compares distributions only, so it cannot see a
+    parameter that the reset skips)."""
     if "n_chans" not in kwargs:
         kwargs = dict(kwargs, chs_info=_interleaved_fnirs_chs(5))
     model = model_cls(n_outputs=3, n_times=100, **kwargs)
@@ -6636,6 +6638,11 @@ def test_fnirs_features_feed_head(model_cls, kwargs):
         torch.testing.assert_close(model.final_layer(features), logits)
     logits.sum().backward()
     assert torch.isfinite(x.grad).all()
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
 
 
 class _AuthorsFNIRSNet(torch.nn.Module):
