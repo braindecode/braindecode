@@ -15,14 +15,11 @@ import torch.multiprocessing as mp
 from mne.io.constants import FIFF
 
 from braindecode.models import BrainOmni, BrainTokenizer
-from braindecode.models.brainomni import (
-    _geometry_from_chs_info,
-    _RotaryPositionalEmbedding,
-    _SpatialTemporalBlock,
-)
-from braindecode.modules import SEANetConv1d
+from braindecode.models.util import geometry_from_chs_info
+from braindecode.modules import SEANetConv1d, SpatialTemporalBlock
 from braindecode.modules.quantization import EMACodebook as _Codebook
 from braindecode.modules.quantization import ResidualVectorQuantizer
+from braindecode.modules.spatial_temporal import _RotaryPositionalEmbedding
 
 _SMALL = dict(
     emb_dim=16,
@@ -111,7 +108,7 @@ def _meg_info_chs(n_triplets=4, n_eeg=3, axial_coil=None, plain_int=False):
 )
 def test_geometry_sensor_type(ch, expected):
     ch = {"ch_name": "A", "loc": _loc(1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0, 0, 0, 0, 0, 1)} | ch
-    assert _geometry_from_chs_info([ch])[1].tolist() == [expected]
+    assert geometry_from_chs_info([ch])[1].tolist() == [expected]
 
 
 @pytest.mark.parametrize("make_model", [_small_tokenizer, _small_brainomni])
@@ -123,12 +120,12 @@ def test_channel_strategy_uses_the_native_sensor_type(make_model):
             "loc": _loc(0.04, 0.03, 0.07, 1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0),
         }
     ]
-    assert _geometry_from_chs_info(chs)[1].tolist() == [1]
+    assert geometry_from_chs_info(chs)[1].tolist() == [1]
     with pytest.raises(ValueError, match="native"):
         make_model(chs_info=chs, channel_strategy="exact")
     model = make_model(chs_info=chs)
     restored = type(model).from_config(model.get_config())
-    assert _geometry_from_chs_info(restored.chs_info)[1].tolist() == [1]
+    assert geometry_from_chs_info(restored.chs_info)[1].tolist() == [1]
 
 
 @pytest.mark.parametrize(
@@ -140,16 +137,16 @@ def test_geometry_meg_orientation_axis(kind, coil_type, axes):
     loc = _loc(0.1, 0.2, 0.3)
     loc[axes] = (0.4, 0.5, 0.6)
     ch = {"ch_name": "M1", "kind": kind, "coil_type": coil_type, "loc": loc}
-    np.testing.assert_allclose(_geometry_from_chs_info([ch])[0][0, 3:], (0.4, 0.5, 0.6))
+    np.testing.assert_allclose(geometry_from_chs_info([ch])[0][0, 3:], (0.4, 0.5, 0.6))
     loc[axes] = np.nan
     with pytest.raises(ValueError, match="finite MEG coil orientation"):
-        _geometry_from_chs_info([ch])
+        geometry_from_chs_info([ch])
 
 
 @pytest.mark.parametrize("plain_int", [False, True], ids=["named_int", "plain_int"])
 def test_geometry_vectorview_meg_info(plain_int):
     chs = _meg_info_chs(plain_int=plain_int)
-    pos, sensor_type = _geometry_from_chs_info(chs)
+    pos, sensor_type = geometry_from_chs_info(chs)
     assert sensor_type.tolist() == [1, 2, 2] * 4 + [0] * 3
     np.testing.assert_allclose(pos[-3:, 3:], 0.0)
     for mask in (sensor_type == 0, sensor_type > 0):  # EEG and MEG each normalized
@@ -168,18 +165,18 @@ def test_geometry_axial_gradiometer_types_follow_release(plain_int, coil, expect
     # MNE types axial gradiometers "mag"; the release says GRAD unless the coil
     # name contains "MAG" (FIFFV_COIL_MAGNES_GRAD).
     chs = _meg_info_chs(n_eeg=0, axial_coil=coil, plain_int=plain_int)
-    assert _geometry_from_chs_info(chs)[1].tolist() == [expected] * len(chs)
+    assert geometry_from_chs_info(chs)[1].tolist() == [expected] * len(chs)
 
 
 @pytest.mark.parametrize("loc", [np.full(12, np.nan), None], ids=["nan", "absent"])
 def test_geometry_rejects_bad_channels(loc):
     ch = {"ch_name": "A", "kind": "eeg"} | ({} if loc is None else {"loc": loc})
     with pytest.raises(ValueError, match="set_montage"):
-        _geometry_from_chs_info([ch])
+        geometry_from_chs_info([ch])
     chs = _meg_info_chs(n_triplets=1, n_eeg=0)
     chs[0]["kind"] = FIFF.FIFFV_REF_MEG_CH
     with pytest.raises(ValueError, match="Unsupported channel type"):
-        _geometry_from_chs_info(chs)
+        geometry_from_chs_info(chs)
 
 
 # ---- quantizer -------------------------------------------------------------------
@@ -490,7 +487,7 @@ def test_spatial_temporal_block_matches_frozen_released_output():
     """``SpatialTemporalAttentionBlock(16, 4, 0.0, False)`` of OpenTSLab/BrainOmni
     340d6b5 (complex RoPE, CPU float32) on the same state dict (cosine-only
     ``rotate``, bfloat16-rounded ``freqs``) and input."""
-    block = _SpatialTemporalBlock(16, 4, 0.0).eval()
+    block = SpatialTemporalBlock(16, 4, 0.0).eval()
     gen = torch.Generator().manual_seed(0)
     state = {}
     for key, value in block.state_dict().items():
