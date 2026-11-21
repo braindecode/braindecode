@@ -118,10 +118,10 @@ def corr(a, b):
     """
     Computes correlation only between terms of a and terms of b, not within.
 
+    a and b.
+
     .. deprecated:: 2.1
         It has no user in braindecode and will be removed in 2.2.
-
-    a and b.
 
     Parameters
     ----------
@@ -143,10 +143,10 @@ def cov(a, b):
     """
     Computes covariance only between terms of a and terms of b, not within.
 
+    a and b.
+
     .. deprecated:: 2.1
         It has no user in braindecode and will be removed in 2.2.
-
-    a and b.
 
     Parameters
     ----------
@@ -228,13 +228,13 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
 def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None):
     """Create indices for batches balanced in size.
 
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2.
-
     (batches will have maximum size difference of 1).
     Supply either batch size or number of batches. Resulting batches
     will not have the given batch size but rather the next largest batch size
     that allows to split the set into balanced batches (maximum size difference 1).
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
 
     Parameters
     ----------
@@ -564,10 +564,10 @@ def _update_moabb_docstring(base_class, docstring):
 def read_all_file_names(directory, extension):
     """Read all files with specified extension from given path and sorts them.
 
+    based on a given sorting key.
+
     .. deprecated:: 2.1
         It has no user in braindecode and will be removed in 2.2.
-
-    based on a given sorting key.
 
     Parameters
     ----------
