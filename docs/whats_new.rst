@@ -75,10 +75,7 @@ Enhancements
   average and a linear head. Its ``mapping`` loads the
   authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
-  (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
-  transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
-  samples. :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias``
-  (default ``True``, unchanged) for fNIRS-T's bias-free q/k/v (:gh:`1584` by
+  (Wang et al., IEEE JBHI 2022); :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias`` (:gh:`1584` by
   `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first
   fNIRS model of braindecode: a delayed-hemodynamic-response convolution and a
