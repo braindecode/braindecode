@@ -7,7 +7,7 @@ This tutorial trains a seizure detector on two patients of the CHB-MIT Scalp
 EEG Database [1]_ and tests it on a third patient, so the model never sees the
 test patient. A causal post-processing turns the window scores into alarms.
 :func:`braindecode.training.szcore_event_scores` then scores the alarms with the
-event-based SzCORE rules [2]_: sensitivity and false alarms per hour.
+event-based SzCORE rules [2]_, and we report sensitivity and false alarms per hour.
 
 We read seven EDF files (about 250 MB) directly from PhysioNet. We do not use
 :class:`braindecode.datasets.CHBMIT`, which downloads a 21.7 GB BIDS archive.
@@ -166,8 +166,8 @@ clf = clf.fit(train_windows, y=None)
 # On each test record we slide 4 s windows with a 2 s stride and take the
 # probability of the seizure class. Two causal filters smooth the scores: the
 # mean of the last 5 scores, then the minimum of the last 3, so one noisy
-# window cannot raise an alarm. Both filters use only past windows, so an
-# alarm could fire in real time.
+# window cannot raise an alarm. Both filters use only past, full windows, so an
+# alarm could fire in real time, at the earliest 16 s into a record.
 #
 # A window whose smoothed score exceeds the threshold raises an alarm for the
 # last 2 s it covers, ``[start + 2, start + 4)``.
@@ -190,8 +190,8 @@ def smoothed_scores(dataset):
     )
     prob = clf.predict_proba(windows)[:, 1]
     starts = windows.get_metadata()["i_start_in_trial"].to_numpy() / SFREQ
-    score = pd.Series(prob).rolling(5, min_periods=1).mean()
-    return starts, score.rolling(3, min_periods=1).min().to_numpy()
+    score = pd.Series(prob).rolling(5).mean()
+    return starts, score.rolling(3).min().to_numpy()
 
 
 scores = {name: smoothed_scores(ds) for name, ds in test_set.items()}
@@ -235,10 +235,9 @@ table = pd.DataFrame([pooled_scores(t) for t in (0.5, 0.7, 0.8, 0.9, 0.95)])
 print(table.to_string(index=False))
 
 ######################################################################
-# Raising the threshold lowers the false alarms per hour. Sensitivity drops
-# only when the threshold gets high enough to miss a seizure. The numbers come
-# from one seed, three seizures and three hours of one patient, so they only
-# illustrate the scoring.
+# A higher threshold keeps fewer alarm windows: it trades false alarms for
+# missed seizures. The numbers come from one seed, three seizures and three
+# hours of one patient, so they only illustrate the scoring.
 
 ######################################################################
 # Look at one record
