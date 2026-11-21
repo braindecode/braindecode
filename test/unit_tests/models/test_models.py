@@ -6675,6 +6675,19 @@ def test_fnirs4d_smallest_valid_configurations_build():
 
 
 @pytest.mark.parametrize(
+    "kwargs", [{"a_real_init": 2.0}, {"dt_min": 0.01}, {"dt_max": 0.05}]
+)
+def test_fnirs4d_s4d_initialization_parameters_reach_the_kernels(kwargs):
+    """Each S4D initialization parameter, alone, changes the seeded model."""
+    x = torch.randn(2, 8, 30)
+    outputs = []
+    for extra in ({}, kwargs):
+        torch.manual_seed(0)
+        outputs.append(FNIRS4D(n_chans=8, n_outputs=2, n_times=30, **extra).eval()(x))
+    assert not torch.equal(*outputs)
+
+
+@pytest.mark.parametrize(
     "kwargs, match",
     [
         ({"mean_branch": "kfold"}, "mean_branch"),
