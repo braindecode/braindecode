@@ -6631,10 +6631,26 @@ def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
     assert torch.isfinite(x.grad).all()
 
 
-@pytest.mark.parametrize("kernel, n_params", [(None, 419), (30, 619), (20, 819), (10, 1019)])
-def test_fnirsnet_parameter_counts_of_table_iv(kernel, n_params):
-    """UFFT (C = S = 40) parameter counts of the paper's Tables III and IV."""
-    model = FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=kernel)
+@pytest.mark.parametrize(
+    "n_chans, n_times, n_outputs, f1, f2, kernel, n_params",
+    [
+        (72, 30, 2, 4, 8, None, 498),  # Table III, MA
+        (40, 40, 3, 4, 8, None, 419),  # Table III, UFFT
+        (72, 30, 2, 16, 32, None, 2370),  # Table III, MA subject-independent
+        (40, 40, 3, 16, 32, None, 2051),  # Table III, UFFT subject-independent
+        (40, 40, 3, 4, 8, 30, 619),  # Table IV, UFFT
+        (40, 40, 3, 4, 8, 20, 819),
+        (40, 40, 3, 4, 8, 10, 1019),
+    ],
+)
+def test_fnirsnet_parameter_counts_of_tables_iii_and_iv(
+    n_chans, n_times, n_outputs, f1, f2, kernel, n_params
+):
+    """Parameter counts of the paper's Tables III and IV."""
+    model = FNIRSNet(
+        n_chans=n_chans, n_outputs=n_outputs, n_times=n_times, n_dhr_filters=f1,
+        n_pw_filters=f2, dhr_kernel_length=kernel,
+    )
     assert sum(p.numel() for p in model.parameters()) == n_params
 
 
@@ -6644,26 +6660,31 @@ def test_fnirsnet_kernel_length_out_of_range_raises():
             FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=bad)
 
 
-def test_fnirs_cnn1d_parameter_count_of_table_10():
-    """GeoNIRS Table 10: 88.4 K parameters at 52 fNIRS channels (104 rows)."""
-    model = FNIRSCNN1D(n_chans=104, n_outputs=2, n_times=50)
-    assert sum(p.numel() for p in model.parameters()) == 88_386
+@pytest.mark.parametrize(
+    "kwargs, n_params",
+    [
+        ({}, 88_386),  # GeoNIRS Table 10: 88.4 K at 52 fNIRS channels (104 rows)
+        (dict(n_filters_conv1=16, n_filters_conv2=24, kernel_size_conv1=9,
+              kernel_size_conv2=3), 16_298),
+    ],
+)
+def test_fnirs_cnn1d_parameter_count_of_table_10(kwargs, n_params):
+    model = FNIRSCNN1D(n_chans=104, n_outputs=2, n_times=50, **kwargs)
+    assert sum(p.numel() for p in model.parameters()) == n_params
 
 
 def test_fnirs_cnn1d_reads_inf_as_missing():
-    """An inf sample is missing data, as a NaN one: read as zero."""
+    """A NaN or inf sample is missing data: read as zero."""
     torch.manual_seed(0)
     model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20).eval()
     x = torch.randn(2, 4, 20)
+    x[0, 1, 5] = 0.0
     with torch.no_grad():
-        for value in (float("inf"), float("-inf")):
+        expected = model(x)
+        for value in (float("nan"), float("inf"), float("-inf")):
             x_bad = x.clone()
             x_bad[0, 1, 5] = value
-            x_nan = x.clone()
-            x_nan[0, 1, 5] = float("nan")
-            out = model(x_bad)
-            assert torch.isfinite(out).all()
-            torch.testing.assert_close(out, model(x_nan), rtol=0, atol=0)
+            torch.testing.assert_close(model(x_bad), expected, rtol=0, atol=0)
 
 
 def test_s4d_real_arithmetic_matches_complex_fft():
