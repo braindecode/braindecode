@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 # Import registry for dynamic class lookup
@@ -67,7 +68,11 @@ def convert_to_zarr(
         For pre-cut windowed data (WindowsDataset), this controls how many windows are
         grouped together in each chunk (i.e., multiple windows can be stored per chunk).
     overwrite : bool, default=False
-        Whether to overwrite existing directory.
+        Whether to replace an existing directory after writing the complete new
+        store. The two stores must fit on the same filesystem during export.
+        Lazy datasets loaded from the replaced store keep reading it in their
+        process; pickling, copying or sending them to new DataLoader workers
+        raises ``FileNotFoundError``, so reload them.
 
     Returns
     -------
@@ -98,17 +103,41 @@ def convert_to_zarr(
     """
     output_path = Path(output_path)
 
-    if output_path.exists():
-        if not overwrite:
-            raise FileExistsError(
-                f"{output_path} already exists. Set overwrite=True to replace it."
-            )
-        # Remove existing directory if overwrite is True
-        shutil.rmtree(output_path)
+    if output_path.exists() and not overwrite:
+        raise FileExistsError(
+            f"{output_path} already exists. Set overwrite=True to replace it."
+        )
+    # Refuse a file or symlink before the export, as v2.0.0 did
+    if output_path.is_symlink() or (output_path.exists() and not output_path.is_dir()):
+        raise NotADirectoryError(f"{output_path} is not a Zarr directory")
 
-    # Delegate to HubDatasetMixin method
-    dataset._convert_to_zarr_inline(
-        output_path, compression, compression_level, chunk_size
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # The backup lives outside the temporary directory, so a failed rollback
+    # leaves the old store on disk instead of deleting it with the directory.
+    previous = output_path.with_name(f".{output_path.name}.previous")
+    with TemporaryDirectory(dir=output_path.parent) as tmp:
+        staged = Path(tmp) / "store"
+        dataset._convert_to_zarr_inline(
+            staged, compression, compression_level, chunk_size
+        )
+        try:
+            if output_path.exists():
+                if not overwrite:  # another writer published during the export
+                    raise FileExistsError(
+                        f"{output_path} already exists. Set overwrite=True to replace it."
+                    )
+                if output_path.is_symlink() or not output_path.is_dir():
+                    raise NotADirectoryError(f"{output_path} is not a Zarr directory")
+                output_path.rename(previous)
+            staged.rename(output_path)
+        except BaseException:
+            if previous.exists() and not output_path.exists():
+                previous.rename(output_path)
+            raise
+    shutil.rmtree(previous, ignore_errors=True)
+    # Remove the memmaps of earlier stores; open lazy datasets keep their mapping.
+    shutil.rmtree(
+        output_path.parent / f".{output_path.name}_memmap", ignore_errors=True
     )
 
     return output_path

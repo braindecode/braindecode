@@ -7,10 +7,7 @@ Self-supervised learning samplers.
 #
 # License: BSD (3-clause)
 
-import warnings
-
 import numpy as np
-import torch.distributed as dist
 
 from . import DistributedRecordingSampler, RecordingSampler
 
@@ -153,7 +150,10 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
         windows x1 and x2 which are separated by at least `tau_neg` samples and
         at most `tau_max` samples. Ignored if `same_rec_neg` is False.
     n_examples : int
-        Number of pairs to extract.
+        Number of pairs requested across all ranks. Each rank yields an equal
+        number of pairs. A remainder rounds the global count up to a multiple
+        of the world size, or down with ``drop_last=True``. If dropping the last
+        recordings leaves each rank empty, every rank yields zero pairs.
     tau_max : int | None
         See `tau_neg`.
     same_rec_neg : bool
@@ -190,13 +190,11 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
         self.tau_max = np.inf if tau_max is None else tau_max
         self.same_rec_neg = same_rec_neg
 
-        self.n_examples = n_examples * self.n_recordings // self.info.shape[0]
-        warnings.warn(
-            f"Rank {dist.get_rank()} - Number of datasets: {self.n_recordings}"
-        )
-        warnings.warn(f"Rank {dist.get_rank()} - Number of samples: {self.n_examples}")
+        if not self.drop_last:
+            n_examples += self.num_replicas - 1
+        self.n_examples = n_examples // self.num_replicas if self.n_recordings else 0
 
-        if not same_rec_neg and self.n_recordings < 2:
+        if self.n_examples > 0 and not same_rec_neg and self.n_recordings < 2:
             raise ValueError(
                 "More than one recording must be available when "
                 "using across-recording negative sampling."
