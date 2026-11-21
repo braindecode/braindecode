@@ -35,18 +35,20 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
     Jung, Lee and An :footcite:`jung2025mae` pretrain a masked autoencoder on
     unlabelled fNIRS recordings, so that a decoder needs fewer labelled ones.
-    This class is the encoder of the GeoNIRS authors' implementation of it
-    (:footcite:`li2026geonirs`, ``GeoNIRS/GeoNIRS`` at commit ``81f8995``) with
+    Their paper (IEEE BCI 2025) came without code: this class is the encoder of
+    the GeoNIRS authors' implementation, whose Jung-MAE baseline it is
+    (:footcite:`li2026geonirs`, ``GeoNIRS/GeoNIRS`` at commit ``81f8995``), with
     a linear head; the pretraining decoder is not part of it.
 
     .. rubric:: Architecture Overview
 
     Every HbO/HbR pair (one source-detector channel) is a sequence of its own:
     its window is cut into 2 s patches, each patch becomes one token holding
-    both chromophores, and a Transformer with the same weights for every pair
-    encodes the tokens. With :math:`B` the batch size, :math:`C` =
-    ``n_chans // 2`` pairs, :math:`Q` = ``patch_size``, :math:`P` patches and
-    :math:`D` = ``embed_dim``::
+    both chromophores, and a Transformer encodes the tokens of each pair. The
+    same weights serve every pair, which is how one checkpoint handles montages
+    of any size; the classifier then flattens the tokens of all the pairs. With
+    :math:`B` the batch size, :math:`C` = ``n_chans // 2`` pairs, :math:`Q` =
+    ``patch_size``, :math:`P` patches and :math:`D` = ``embed_dim``::
 
         x (B, 2C, n_times): HbO and HbR rows, NaN = missing sample
         1. HbO/HbR split, invalid samples to zero  -> (B, C, P*Q) each
@@ -60,10 +62,15 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
     - ``JungMAE.patch_embed`` **Patch tokenization**
 
-      *Operations.* A patch interleaves the :math:`Q` HbO and :math:`Q` HbR
-      samples of a pair, :math:`[o_t, r_t, o_{t+1}, r_{t+1}, \dots]`. One
-      :class:`~torch.nn.Linear` maps it to a :math:`D`-wide token, and the
-      fixed sinusoidal encoding of the patch index is added.
+      *Operations.* A patch interleaves the :math:`Q` HbO samples :math:`o` and
+      HbR samples :math:`r` of pair :math:`c`. One :class:`~torch.nn.Linear`
+      maps it to a :math:`D`-wide token, and the fixed sinusoidal encoding of
+      the patch index :math:`p` is added:
+
+      .. math::
+
+          \mathbf{z}_{c,p} = \mathbf{W}\,[o_{c,pQ},\, r_{c,pQ},\, \dots,\,
+          o_{c,pQ+Q-1},\, r_{c,pQ+Q-1}] + \mathbf{b} + \mathrm{PE}(p).
 
       *Role.* One token per patch, with both chromophores of each time step.
 
@@ -72,6 +79,9 @@ class JungMAE(EEGModuleMixin, nn.Module):
       *Operations.* Four pre-norm :class:`~torch.nn.TransformerEncoderLayer`
       blocks (8 heads, feed-forward width 768, GELU) and a final
       :class:`~torch.nn.LayerNorm`, over the :math:`P` tokens of one pair.
+      Invalid patches are masked as attention keys; the reference packs the
+      valid tokens instead, which gives the same features up to float32
+      rounding.
 
       *Role.* Context across the time of a pair, with the same weights for
       every pair.
@@ -92,8 +102,10 @@ class JungMAE(EEGModuleMixin, nn.Module):
     - **Spatial.** None. Pairs never attend to each other and the model sees
       no optode position. A pair is identified only by where its features sit
       in the head input, so the pairs must keep the order used in training.
-    - **Spectral.** None. HbO and HbR share each token, sample by sample, and
-      HbT is not used.
+    - **Spectral.** None: there is no frequency decomposition.
+    - **Chromophores.** HbO and HbR share each token, sample by sample; HbT is
+      not used. The rows must be the HbO and the HbR rows of the same pairs
+      (see ``channel_order``).
 
     .. rubric:: Additional Mechanisms
 
@@ -110,8 +122,11 @@ class JungMAE(EEGModuleMixin, nn.Module):
     The encoder of ``jung_mae.pt``, trained by the GeoNIRS authors and
     converted to these parameter names, is on the Hugging Face Hub at
     ``braindecode/jungmae-pretrained``; the head is not pretrained. The
-    weights expect HbO and HbR in µmol/L at 5 Hz, each z-scored per recording
-    over all its valid channels and time points.
+    weights expect the inputs of the GeoNIRS paper (Appendix B.1): HbO and HbR
+    in µmol/L resampled to 5 Hz, each chromophore z-scored per recording over
+    all its valid channels and time points. With them and the GeoNIRS
+    benchmark's linear-probe loop, this class reproduces the paper's
+    Jung-MAE-LP results (:gh:`1589`).
 
     .. code-block:: python
 
@@ -124,19 +139,19 @@ class JungMAE(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     patch_size : int, default=10
-        Samples per patch, 2 s at 5 Hz.
+        Samples per patch (``patch_samples`` in the reference), 2 s at 5 Hz.
     embed_dim : int, default=192
-        Width of the tokens.
+        Width of the tokens (``encoder_dim`` in the reference).
     depth : int, default=4
-        Number of Transformer layers.
+        Number of Transformer layers (``encoder_layers`` in the reference).
     num_heads : int, default=8
-        Attention heads per layer.
+        Attention heads per layer (``encoder_heads`` in the reference).
     mlp_ratio : float, default=4.0
         Feed-forward width over ``embed_dim``.
     drop_prob : float, default=0.1
-        Dropout of the encoder layers.
+        Dropout of the encoder layers (``dropout`` in the reference).
     head_drop_prob : float, default=0.1
-        Dropout before ``final_layer``.
+        Dropout before ``final_layer`` (``head_dropout`` in the benchmark).
     minimum_patch_valid_fraction : float, default=0.8
         Fraction of valid samples a patch needs, in (0, 1].
     activation : type[nn.Module], default=nn.GELU
@@ -146,8 +161,9 @@ class JungMAE(EEGModuleMixin, nn.Module):
         ``None`` reads it from ``chs_info`` (``"stacked"`` without it).
         ``n_chans`` must be even.
     on_non_divisible : {"error", "pad", "crop"}, default="error"
-        ``n_times`` not a multiple of ``patch_size``: raise; pad with missing
-        samples, to which the validity rule applies; or crop.
+        ``n_times`` not a multiple of ``patch_size``: raise, as the reference
+        does; pad with missing samples, to which the validity rule applies; or
+        crop.
 
     References
     ----------
