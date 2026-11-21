@@ -4,7 +4,15 @@ import torch
 from braindecode.models import TinyMyo
 
 
-@pytest.mark.parametrize("kwargs", [{"n_chans": 0}, {"num_heads": 0}, {"embed_dim": 0}])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"n_chans": 0},
+        {"num_heads": 0},
+        {"embed_dim": 0},
+        {"embed_dim": 14, "num_heads": 3},
+    ],
+)
 def test_tinymyo_requires_positive_geometry(kwargs):
     config = dict(
         n_chans=2, n_outputs=3, n_times=40, embed_dim=12, num_heads=2, depth=1

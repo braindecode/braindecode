@@ -957,7 +957,8 @@ def test_load_state_dict_preserves_batch_norm_version():
 # after ``torch.manual_seed(0)`` (``proj_out`` of CBraMod set to the identity, as 2.1
 # does not apply it), ``y = model.eval()(x)`` for an ``x`` drawn with seed 1.
 # ``v2_pickles.pth`` holds ``torch.save(model)`` after that forward pass, for the models
-# that can be pickled whole. EEGNet, whose weights are parametrized, cannot: its
+# that can be pickled whole, and a bare ``tfm_tokenizer._GroupNorm(2, 4)`` with random
+# affine parameters. EEGNet, whose weights are parametrized, cannot be pickled: its
 # ``state_dict()`` is in ``v2_state_dicts.pth``.
 _V2_DATA = Path(__file__).parent / "data"
 _V2_MODELS = {
@@ -1012,7 +1013,9 @@ def test_v2_checkpoints_load(name):
         torch.testing.assert_close(model(saved["x"]), saved["y"])
 
 
-@pytest.mark.parametrize("name", ["CBraMod", "EEGCLIP", "LUNA", "PBT"])
+@pytest.mark.parametrize(
+    "name", ["CBraMod", "EEGCLIP", "LUNA", "PBT", "tfm_tokenizer._GroupNorm"]
+)
 def test_v2_pickles_run(name):
     saved = _v2_pickle(name)
     with torch.no_grad():

@@ -1,10 +1,14 @@
 # Authors: Jiquan Wang et al. (original implementation)
+#          ptlnextdoor <67443596+ptlnextdoor@users.noreply.github.com>
+#          (braindecode adaptation)
 #
 # License: MIT
 # Adapted from https://github.com/wjq-learning/CareSleepNet (MIT).
 """CareSleepNet: a hybrid CNN-transformer sleep stager over EEG and EOG."""
 
 from __future__ import annotations
+
+from functools import partial
 
 import torch
 from einops.layers.torch import Rearrange
@@ -115,6 +119,7 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
+        *,
         # Model parameters.
         n_epochs: int = 20,
         n_eog_chans: int = 2,
@@ -138,7 +143,7 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
             )
         if n_epochs < 1:
             raise ValueError(f"n_epochs must be at least 1, got {n_epochs}.")
-        if self.n_times < n_epochs or self.n_times % n_epochs:
+        if self.n_times % n_epochs:
             raise ValueError(
                 f"n_times ({self.n_times}) must be a positive multiple of n_epochs ({n_epochs})."
             )
@@ -178,11 +183,11 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
             dim,
             drop_prob,
             activation=activation(),
-            layer_norm_eps=1e-6,
+            layer_norm_eps=_LAYER_NORM_EPS,
             batch_first=True,
             norm_first=True,
         )
-        self.sequence_norm = nn.LayerNorm(dim, eps=1e-6)
+        self.sequence_norm = nn.LayerNorm(dim, eps=_LAYER_NORM_EPS)
         self.final_layer = nn.Linear(dim, self.n_outputs)
         self._init_parameters()
 
@@ -255,32 +260,62 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
 # Shortest epoch the epoch encoder accepts: the stride-12 convolution and the
 # stride-2 pooling must leave at least 8 steps for the three pool-by-2 layers.
 _MIN_EPOCH_SAMPLES = 169
+# Epsilon of the layer norms outside the BERT layers (``eps=1e-6`` in the reference).
+_LAYER_NORM_EPS = 1e-6
+# Epsilon of the layer norms of the BERT layers (``BertLayerNorm(..., eps=1e-12)``
+# in the reference).
+_BERT_LAYER_NORM_EPS = 1e-12
 
 
 def _epoch_encoder(
     in_chans: int, drop_prob: float, activation: type[nn.Module]
 ) -> nn.Sequential:
-    """``(batch, in_chans, epoch_samples)`` to ``(batch, 512)``."""
+    """Encode each sleep epoch of one signal type into a vector.
+
+    ``(batch, in_chans, epoch_samples)`` to ``(batch, 512)``. Steps: four
+    multi-scale dilated convolutions (``_MSDConv``) that widen the channels to
+    64, 128, 256 and 512, each followed by max pooling; after each of the last
+    three, a BERT layer over the time steps; then the average over time. The time
+    axis has ``T1 = ceil(epoch_samples / 12)`` steps after the first convolution,
+    then ``T2 = ceil(T1 / 2)``, ``T3 = T2 // 2``, ``T4 = T3 // 2`` and
+    ``T5 = T4 // 2`` after the poolings, which is why an epoch needs
+    ``_MIN_EPOCH_SAMPLES``.
+    """
+    msd_conv = partial(_MSDConv, drop_prob=drop_prob, activation=activation)
+    # the BERT layers take (batch, time, channels), the convolutions and the
+    # pooling (batch, channels, time)
     to_tokens = Rearrange("batch chans time -> batch time chans")
     to_channels = Rearrange("batch time chans -> batch chans time")
     return nn.Sequential(
-        _MSDConv(in_chans, 64, 49, 12, 24, drop_prob, activation),
-        nn.MaxPool1d(9, 2, 4),
-        _MSDConv(64, 128, 9, 1, 4, drop_prob, activation),
-        nn.MaxPool1d(2, 2),
+        # (batch, 64, T1)
+        msd_conv(in_chans, 64, kernel_size=49, stride=12, padding=24),
+        # (batch, 64, T2)
+        nn.MaxPool1d(kernel_size=9, stride=2, padding=4),
+        # (batch, 128, T2)
+        msd_conv(64, 128, kernel_size=9, stride=1, padding=4),
+        # (batch, 128, T3)
+        nn.MaxPool1d(kernel_size=2, stride=2),
+        # (batch, T3, 128), a BERT layer, then back to (batch, 128, T3)
         to_tokens,
         _bert_layer(128, drop_prob, activation),
         to_channels,
-        _MSDConv(128, 256, 9, 1, 4, drop_prob, activation),
-        nn.MaxPool1d(2, 2),
+        # (batch, 256, T3)
+        msd_conv(128, 256, kernel_size=9, stride=1, padding=4),
+        # (batch, 256, T4)
+        nn.MaxPool1d(kernel_size=2, stride=2),
+        # (batch, T4, 256), a BERT layer, then back to (batch, 256, T4)
         to_tokens,
         _bert_layer(256, drop_prob, activation),
         to_channels,
-        _MSDConv(256, 512, 9, 1, 4, drop_prob, activation),
-        nn.MaxPool1d(2, 2),
+        # (batch, 512, T4)
+        msd_conv(256, 512, kernel_size=9, stride=1, padding=4),
+        # (batch, 512, T5)
+        nn.MaxPool1d(kernel_size=2, stride=2),
+        # (batch, T5, 512), a BERT layer, then back to (batch, 512, T5)
         to_tokens,
         _bert_layer(512, drop_prob, activation),
         to_channels,
+        # average over time: (batch, 512, 1), then (batch, 512)
         nn.AdaptiveAvgPool1d(1),
         nn.Flatten(),
     )
@@ -289,14 +324,15 @@ def _epoch_encoder(
 def _bert_layer(
     dim: int, drop_prob: float, activation: type[nn.Module]
 ) -> nn.TransformerEncoderLayer:
-    """BERT layer of the reference (post-norm, 8 heads, 4x MLP)."""
+    """BERT layer of the reference (post-norm, 8 heads, 4x MLP), from
+    ``(batch, time, dim)`` to the same shape."""
     layer = nn.TransformerEncoderLayer(
         dim,
         8,
         4 * dim,
         drop_prob,
         activation=activation(),
-        layer_norm_eps=1e-12,
+        layer_norm_eps=_BERT_LAYER_NORM_EPS,
         batch_first=True,
     )
     layer.dropout = nn.Identity()  # BERT has no dropout after the GELU
@@ -304,9 +340,15 @@ def _bert_layer(
 
 
 class _MSDConv(nn.Module):
-    """Multi-scale dilated convolution: three dilated convolutions (dilation
-    1, 2, 4) with batch norm and activation, plus a 1x1 shortcut with batch norm,
-    summed, then dropout and layer norm over channels."""
+    """Multi-scale dilated convolution.
+
+    Steps: three dilated convolutions (dilation 1, 2, 4) with batch norm and
+    activation, plus a 1x1 shortcut with batch norm, are summed; then dropout and
+    a layer norm over the channels. Each convolution pads ``padding`` times its
+    dilation, with ``padding = (kernel_size - 1) // 2``, so that every branch has
+    the length of the strided shortcut: ``(batch, in_chans, time)`` to
+    ``(batch, out_chans, ceil(time / stride))``.
+    """
 
     def __init__(
         self,
@@ -340,13 +382,17 @@ class _MSDConv(nn.Module):
             for dilation in (1, 2, 4)
         )
         self.dropout = nn.Dropout(drop_prob)
-        self.norm = nn.LayerNorm(out_chans, eps=1e-6)
+        self.norm = nn.LayerNorm(out_chans, eps=_LAYER_NORM_EPS)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # strided 1x1 shortcut: (batch, in_chans, time) -> (batch, out_chans, new_time)
         out = self.shortcut(x)
         for branch in self.branches:
+            # add each dilated branch, of the same shape as the shortcut
             out = out + branch(x)
         out = self.dropout(out)
+        # the layer norm takes the channels last: (batch, new_time, out_chans),
+        # then back to (batch, out_chans, new_time)
         return self.norm(out.transpose(1, 2)).transpose(1, 2)
 
 
@@ -356,6 +402,11 @@ class _CrossModalBlock(nn.Module):
     Unlike a transformer decoder block it has no self-attention, and the
     residual is the attended sequence ``x``, not the queries; no shared block
     does that.
+
+    Steps: dropout and layer norm of ``x`` and of ``query``; multi-head
+    attention of the queries over ``x``, added to ``x``; an MLP on a layer-normed
+    ``x``, added to ``x``; a last layer norm. ``x`` and ``query`` are
+    ``(batch, n_epochs, dim)`` and so is the output.
     """
 
     def __init__(
@@ -369,21 +420,26 @@ class _CrossModalBlock(nn.Module):
         super().__init__()
         self.drop_x = nn.Dropout(drop_prob)
         self.drop_query = nn.Dropout(drop_prob)
-        self.norm_x = nn.LayerNorm(dim, eps=1e-6)
-        self.norm_query = nn.LayerNorm(dim, eps=1e-6)
+        self.norm_x = nn.LayerNorm(dim, eps=_LAYER_NORM_EPS)
+        self.norm_query = nn.LayerNorm(dim, eps=_LAYER_NORM_EPS)
         self.attention = nn.MultiheadAttention(
             dim, num_heads, dropout=drop_prob, batch_first=True
         )
         self.drop_attention = nn.Dropout(drop_prob)
-        self.norm_mlp = nn.LayerNorm(dim, eps=1e-6)
+        self.norm_mlp = nn.LayerNorm(dim, eps=_LAYER_NORM_EPS)
         self.mlp = TimmMlp(dim, mlp_dim, act_layer=activation, drop=drop_prob)
-        self.norm_out = nn.LayerNorm(dim, eps=1e-6)
+        self.norm_out = nn.LayerNorm(dim, eps=_LAYER_NORM_EPS)
 
     def forward(self, x: torch.Tensor, query: torch.Tensor) -> torch.Tensor:
+        # x: (batch, n_epochs, dim), the keys, values and residual
         x = self.drop_x(x)
+        # query: (batch, n_epochs, dim), from the other signal
         query = self.norm_query(self.drop_query(query))
         x_normed = self.norm_x(x)
+        # each epoch of the query signal attends over the epochs of x:
+        # (batch, n_epochs, dim)
         attended, _ = self.attention(query, x_normed, x_normed, need_weights=False)
         x = x + self.drop_attention(attended)
+        # MLP block: (batch, n_epochs, dim)
         x = x + self.mlp(self.norm_mlp(x))
         return self.norm_out(x)

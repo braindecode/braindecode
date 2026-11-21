@@ -83,7 +83,7 @@ TFMTokenizer,General,"Pretraining, Tokenization",200,"n_chans, n_outputs, n_time
 EEGDINO,General,Classification,200,"n_chans, n_outputs, n_times",4539698,"EEGDINO(n_chans=19, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer",EEG
 DANCE,General,Event Detection,200,"n_chans, n_outputs, n_times, sfreq, chs_info",29813542,"DANCE(n_chans=19, n_outputs=4, n_times=6400, sfreq=200, input_window_seconds=32.0, chs_info=[{'ch_name': f'E{i+1}', 'kind': 'eeg', 'loc': numpy.random.default_rng(2024).random(12)} for i in range(19)])","Convolution,Attention/Transformer,Channel",EEG
 STEEGFormer,General,Classification,250,"n_chans, n_outputs, n_times",25305604,"STEEGFormer(n_chans=22, n_outputs=4, n_times=1000)","Attention/Transformer,Foundation Model",EEG
-CORTEG,General,"Prediction, Embedding",128,"chs_info, n_outputs, n_times",25461011,"CORTEG(chs_info=<user>, n_outputs=4, n_times=128)","Attention/Transformer,Foundation Model,Channel",iEEG
+CORTEG,General,"Prediction, Embedding",128,"chs_info, n_outputs, n_times",25459475,"CORTEG(chs_info=<user>, n_outputs=4, n_times=128)","Attention/Transformer,Foundation Model,Channel",iEEG
 MVPFormer,General,"Prediction, Embedding",512,"n_chans, n_outputs, n_times, sfreq",3356978,"MVPFormer(n_chans=22, n_outputs=4, n_times=2000, sfreq=100)","Foundation Model,Attention/Transformer",EEG
 ZUNA,General,"Classification,Embedding",256,"chs_info, n_outputs, n_times",172104100,"ZUNA(chs_info=<user>, n_outputs=4, n_times=1280)","Foundation Model,Channel,Attention/Transformer",EEG
 MIRepNet,Motor Imagery,"Prediction, Embedding",250,"n_chans, n_outputs",5143300,"MIRepNet(n_chans=45, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer,Foundation Model",EEG
@@ -101,3 +101,4 @@ GeoNIRS,General,"Prediction, Embedding",5,"chs_info, n_outputs, n_times",4504904
 MtReNIRS,General,"Prediction, Embedding",10,"chs_info, n_outputs, n_times",1231490,"MtReNIRS(chs_info=<user>, n_outputs=2, n_times=100, sfreq=10.0)","Attention/Transformer,Channel,Foundation Model",fNIRS
 JungMAE,General,"Prediction, Embedding",5,"n_chans, n_outputs, n_times",1899074,"JungMAE(n_chans=40, n_outputs=2, n_times=150, sfreq=5.0)","Attention/Transformer,Foundation Model",fNIRS
 FNIRSCNN1D,General,Prediction,5,"n_chans, n_outputs",59714,"FNIRSCNN1D(n_chans=40, n_outputs=2, n_times=60, sfreq=5.0)",Convolution,fNIRS
+SAMBA,General,"Classification,Embedding",128,"chs_info, n_outputs",392733,"SAMBA(chs_info=<user>, target_positions=<94 positions>, n_outputs=4, n_times=256)","Convolution,Recurrent,Channel,Foundation Model",EEG

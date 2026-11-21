@@ -222,6 +222,7 @@ interface for all EEG models and can derive variable names when needed.
     PopulationTransformer
      Pratibha2
      REVE
+     SAMBA
      SCCNet
      SeizureTransformer
      SensingDynamics
@@ -470,6 +471,21 @@ codec models (BrainOmni, BBL).
     SEANetEncoder
     SEANetLSTM
     SEANetResBlock
+
+Spatial-temporal
+================
+
+The attention block that works over time with rotary positions on one half of the
+features and over the channels on the other, shared by BrainOmni and MEGXL.
+
+:py:mod:`braindecode.modules.spatial_temporal`:
+
+.. autosummary::
+    :toctree: generated/spatial_temporal
+    :template: class_in_subdir
+    :recursive:
+
+    SpatialTemporalBlock
 
 Stats
 =====
