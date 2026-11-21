@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import subprocess
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from typing import Any
@@ -28,7 +28,7 @@ ci_plan = _load_ci_plan()
 
 
 def _git(cwd: Path, *args: str) -> str:
-    return subprocess.run(
+    return subprocess.run(  # nosec B603, B607
         ["git", "-C", str(cwd), *args],
         capture_output=True,
         text=True,

@@ -30,7 +30,7 @@ import io
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -189,7 +189,7 @@ SINGLE_SHARD_MAX_WALL_S = 150.0
 
 
 def _git_show(repo_git_dir: Path, rev: str, rel_path: str) -> str | None:
-    res = subprocess.run(
+    res = subprocess.run(  # nosec B603, B607
         ["git", "-C", str(repo_git_dir), "show", f"{rev}:{rel_path}"],
         capture_output=True,
         text=True,
@@ -778,7 +778,7 @@ def compute_plan(
             durations_map=durations,
         )
 
-    diff_proc = subprocess.run(
+    diff_proc = subprocess.run(  # nosec B603, B607
         [
             "git",
             "-C",
@@ -793,7 +793,7 @@ def compute_plan(
         check=False,
     )
     if diff_proc.returncode != 0:
-        diff_proc = subprocess.run(
+        diff_proc = subprocess.run(  # nosec B603, B607
             [
                 "git",
                 "-C",
