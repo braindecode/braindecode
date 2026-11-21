@@ -173,7 +173,7 @@ class Labram(EEGModuleMixin, nn.Module):
     attn_head_dim : bool (default=None)
         The head dimension to be used in the attention layer, to be used only
         during pre-training.
-    activation: nn.Module, default=nn.GELU
+    activation : nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
 

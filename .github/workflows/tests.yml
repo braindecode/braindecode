@@ -118,8 +118,25 @@ jobs:
         TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
         # PRs compile one model per family; master compiles every model.
         BRAINDECODE_COMPILE_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
-      # Redistribute individual tests: the integration module dominates runtime.
-      run: python .github/scripts/with_memory_log.py pytest -vv --durations=0 -n auto --dist worksteal --max-worker-restart=2 --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
+      shell: bash
+      # Two xdist workers keep what their heaviest file needed, so one call over
+      # the whole suite outgrew the 16 GB runner. Each heavy model file gets its
+      # own call, whose workers exit (freeing that memory) before the next one.
+      # Coverage is appended across the calls; the slow tier below reports it.
+      run: |
+        models=test/unit_tests/models
+        heavy=($models/test_{models,foundation_models,pretrained_compat,model_contract,return_features,huggingface,model_init,config}.py)
+        suite() {
+          python .github/scripts/with_memory_log.py pytest -vv --durations=0 -n auto \
+            --dist worksteal --max-worker-restart=2 --cov=braindecode --cov-append \
+            --cov-report= "$@"
+        }
+        status=0
+        suite test/ --ignore=$models/test_integration.py "${heavy[@]/#/--ignore=}" || status=1
+        suite $models/test_integration.py -k "not test_model_compiled" || status=1
+        suite $models/test_integration.py -k test_model_compiled || status=1
+        for file in "${heavy[@]}"; do suite "$file" || status=1; done
+        exit $status
 
     - name: Run Full Test Suite
       if: ${{ !matrix.run-coverage }}

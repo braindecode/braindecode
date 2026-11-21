@@ -33,41 +33,45 @@ from braindecode.preprocessing.windowers import (
     create_windows_from_events,
 )
 
-# We can't use fixtures with scope='module' as the dataset objects are modified
-# inplace during preprocessing. To avoid the long setup time caused by calling
-# the dataset/windowing functions multiple times, we instantiate the dataset
-# objects once and deep-copy them in fixture.
-raw_ds = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1, 2])
-windows_ds = create_fixed_length_windows(
-    raw_ds,
-    start_offset_samples=100,
-    stop_offset_samples=None,
-    window_size_samples=1000,
-    window_stride_samples=1000,
-    drop_last_window=True,
-    mapping=None,
-    preload=True,
-)
-mne_windows_ds = create_windows_from_events(
-    raw_ds,
-    preload=True,
-    use_mne_epochs=True,
-)
+
+# The tests modify the datasets in place, so each test gets a deep copy of
+# objects built once per module. Building them in a module fixture, not at
+# import, keeps them out of every xdist worker that collects this file without
+# running it, and frees them when the module's tests are done.
+@pytest.fixture(scope="module")
+def _datasets():
+    raw_ds = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
+    windows_ds = create_fixed_length_windows(
+        raw_ds,
+        start_offset_samples=100,
+        stop_offset_samples=None,
+        window_size_samples=1000,
+        window_stride_samples=1000,
+        drop_last_window=True,
+        mapping=None,
+        preload=True,
+    )
+    mne_windows_ds = create_windows_from_events(
+        raw_ds,
+        preload=True,
+        use_mne_epochs=True,
+    )
+    return raw_ds, windows_ds, mne_windows_ds
 
 
 @pytest.fixture
-def base_concat_ds():
-    return copy.deepcopy(raw_ds)
+def base_concat_ds(_datasets):
+    return copy.deepcopy(_datasets[0])
 
 
 @pytest.fixture
-def windows_concat_ds():
-    return copy.deepcopy(windows_ds)
+def windows_concat_ds(_datasets):
+    return copy.deepcopy(_datasets[1])
 
 
 @pytest.fixture
-def mne_windows_concat_ds():
-    return copy.deepcopy(mne_windows_ds)
+def mne_windows_concat_ds(_datasets):
+    return copy.deepcopy(_datasets[2])
 
 
 def modify_windows_object(epochs, factor=1):
@@ -757,9 +761,7 @@ def test_preprocessor_overwrites_apply_on_array():
 @pytest.mark.parametrize("overwrite", [True, False])
 # None and 1 take the same sequential path, -1 and 2 the same joblib one.
 @pytest.mark.parametrize("n_jobs", [None, 2])
-def test_preprocess_save_dir(
-    base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
-):
+def test_preprocess_save_dir(request, tmp_path, kind, save, overwrite, n_jobs):
     preproc_kwargs = [
         {
             "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
@@ -775,10 +777,9 @@ def test_preprocess_save_dir(
     # also for windows it is called raw_preproc_kwargs
     # as underlying data is always raw
     preproc_kwargs_name = "raw_preproc_kwargs"
-    if kind == "raw":
-        concat_ds = base_concat_ds
-    elif kind == "windows":
-        concat_ds = windows_concat_ds
+    # Copy only the dataset this case preprocesses.
+    fixture = {"raw": "base_concat_ds", "windows": "windows_concat_ds"}[kind]
+    concat_ds = request.getfixturevalue(fixture)
 
     concat_ds = preprocess(
         concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs

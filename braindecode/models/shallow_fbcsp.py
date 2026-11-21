@@ -34,35 +34,35 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
 
     Parameters
     ----------
-    n_filters_time: int
+    n_filters_time : int
         Number of temporal filters.
-    filter_time_length: int
+    filter_time_length : int
         Length of the temporal filter.
-    n_filters_spat: int
+    n_filters_spat : int
         Number of spatial filters.
-    pool_time_length: int
+    pool_time_length : int
         Length of temporal pooling filter.
-    pool_time_stride: int
+    pool_time_stride : int
         Length of stride between temporal pooling filters.
-    final_conv_length: int | str
+    final_conv_length : int | str
         Length of the final convolution layer.
         If set to "auto", length of the input signal must be specified.
-    conv_nonlin: type[nn.Module] | Callable
+    conv_nonlin : type[nn.Module] | Callable
         Non-linear module class to be used after convolution layers.
         For backward compatibility, callables are also accepted and wrapped
         with :class:`~braindecode.modules.Expression`.
-    pool_mode: str
+    pool_mode : str
         Method to use on pooling layers. "max" or "mean".
-    activation_pool_nonlin: type[nn.Module]
+    activation_pool_nonlin : type[nn.Module]
         Non-linear module class to be used after pooling layers.
-    split_first_layer: bool
+    split_first_layer : bool
         Split first layer into temporal and spatial layers (True) or just use temporal (False).
         There would be no non-linearity between the split layers.
-    batch_norm: bool
+    batch_norm : bool
         Whether to use batch normalisation.
-    batch_norm_alpha: float
+    batch_norm_alpha : float
         Momentum for BatchNorm2d.
-    drop_prob: float
+    drop_prob : float
         Dropout probability.
 
     References

@@ -20,6 +20,10 @@ from braindecode.modules.channels import STRATEGIES
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 SUBSET = ["Fp1", "F3", "Fz", "C3", "Cz", "P4", "Pz", "O2"]
+# BENDR's default is 157M parameters (628 MB); the channel layer around it is
+# the same at any width, so the tests build it small.
+SMALL = {BENDR: dict(encoder_h=16, contextualizer_hidden=32, transformer_layers=1,
+                     transformer_heads=4)}
 
 
 def chs(names, kind="eeg"):
@@ -350,7 +354,7 @@ def test_no_target_observed_is_declared(strategy, kw):
 @pytest.mark.parametrize("cls", [BENDR, LUNA, Labram])
 def test_forward_applies_the_layer_once(cls):
     model = cls(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
-                channel_strategy="spline").eval()
+                channel_strategy="spline", **SMALL.get(cls, {})).eval()
     calls = []
     model.channel_layer.register_forward_hook(lambda *a: calls.append(1))
     x = torch.randn(1, 8, 800)
@@ -360,8 +364,9 @@ def test_forward_applies_the_layer_once(cls):
         y_perm = model.forward(x.flip(1), chs_info=chs(SUBSET[::-1]))
         torch.testing.assert_close(y_perm, y)
     assert len(calls) == 3
+    # native: the class forward
     assert "forward" not in vars(cls(chs_info=chs(SUBSET), n_outputs=2, n_times=800,
-                                     sfreq=200))  # native: the class forward
+                                     sfreq=200, **SMALL.get(cls, {})))
 
 
 def test_strategy_model_survives_deepcopy_and_pickle():
@@ -384,7 +389,7 @@ def test_latent_half_precision_stays_finite():
 @pytest.mark.parametrize("cls", [BENDR, LUNA])  # forward(x, ...) / forward(X, ...)
 def test_input_by_keyword(cls):
     model = cls(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
-                channel_strategy="spline").eval()
+                channel_strategy="spline", **SMALL.get(cls, {})).eval()
     x = torch.randn(1, 8, 800)
     name = list(inspect.signature(type(model).forward).parameters)[1]
     assert torch.equal(model(**{name: x}, chs_info=chs(SUBSET)), model(x))
@@ -399,10 +404,8 @@ def test_labram_ch_names_describe_the_input():
 
 
 def test_config_saves_the_input_montage_not_the_target(tmp_path):
-    small = dict(encoder_h=16, contextualizer_hidden=32, transformer_layers=1,
-                 transformer_heads=4)  # the saved weights stay small
     model = BENDR(chs_info=chs(SUBSET), n_outputs=2, n_times=1280, sfreq=256,
-                  channel_strategy="spline", **small).eval()
+                  channel_strategy="spline", **SMALL[BENDR]).eval()
     x = torch.randn(1, 8, 1280)
     config = model.get_config()
     assert [c["ch_name"] for c in config["chs_info"]] == SUBSET

@@ -18,11 +18,7 @@ from einops.layers.torch import Rearrange
 from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import geometry_from_chs_info, warn_if_sfreq_differs
-from braindecode.modules import (
-    ResidualVectorQuantizer,
-    SEANetEncoder,
-    SpatialTemporalBlock,
-)
+from braindecode.modules import SEANetEncoder, SpatialTemporalBlock
 
 
 class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
@@ -101,7 +97,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         Weights converted from the released ``meg-xl-med-v2.ckpt``
         (``pnpl/MEG-XL``, step 113000, with its frozen BioCodec tokenizer) are
         on the Hugging Face Hub at ``braindecode/megxl-pretrained`` (revision
-        ``5b5dcbcc``); the head is not pretrained::
+        ``0446ce5d``); the head is not pretrained::
 
             from braindecode.models import MEGXL
             model = MEGXL.from_pretrained("braindecode/megxl-pretrained", chs_info=raw.info["chs"], n_outputs=2)
@@ -152,6 +148,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
 
     def __init__(
         self,
+        # braindecode parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
@@ -159,6 +156,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         input_window_seconds=None,
         sfreq=None,
         *,
+        # model-specific parameters
         latent_dim: int = 512,
         num_layers: int = 8,
         num_heads: int = 8,
@@ -182,13 +180,15 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        warn_if_sfreq_differs("MEGXL", self._sfreq, 50)
+        warn_if_sfreq_differs("MEGXL", self._sfreq, _RELEASE_SFREQ)
         if num_heads % 2 or latent_dim % num_heads or (latent_dim // num_heads) % 2:
             raise ValueError(
                 f"num_heads ({num_heads}) must be even and divide latent_dim "
                 f"({latent_dim}) into even head dimensions."
             )
         self.latent_dim = latent_dim
+        # An attribute, as TorchScript reads no module globals.
+        self.min_rms = _MIN_RMS
         # Derived from chs_info, so not saved: one checkpoint serves any montage.
         pos, sensor_type = geometry_from_chs_info(self.chs_info)
         pos = torch.from_numpy(pos)
@@ -210,11 +210,8 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
             true_skip=True,
             causal=True,
         )
-        self.quantizer = ResidualVectorQuantizer(
-            dim=tokenizer_dim,
-            codebook_dim=codebook_dim,
-            codebook_size=codebook_size,
-            num_quantizers=n_q,
+        self.quantizer = _BioCodecQuantizer(
+            tokenizer_dim, codebook_dim, codebook_size, n_q
         )
         self.encoder.requires_grad_(False)
         self.quantizer.requires_grad_(False)
@@ -231,10 +228,11 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         )
         self.orientation_projector = nn.Linear(fourier_pos_dim, latent_dim)
         self.sensor_type_layer = nn.Embedding(2, latent_dim)
-        # RoPE table of the 150 s pretraining window (625 tokens at 50 Hz).
         self.blocks = nn.ModuleList(
             [
-                SpatialTemporalBlock(latent_dim, num_heads, drop_prob, 625)
+                SpatialTemporalBlock(
+                    latent_dim, num_heads, drop_prob, _N_ROPE_POSITIONS
+                )
                 for _ in range(num_layers)
             ]
         )
@@ -249,9 +247,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for ``n_outputs`` classes."""
         self._set_n_outputs(n_outputs)
-        reference = next(self.parameters())
         self.final_layer = nn.Linear(self.n_chans * self.latent_dim, n_outputs)
-        self.final_layer.to(device=reference.device, dtype=reference.dtype)
 
     def tokenize(self, x: torch.Tensor) -> torch.Tensor:
         """BioCodec codes ``(batch, n_chans, n_tokens, n_q)`` of ``x``."""
@@ -260,28 +256,14 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         x = x.reshape(batch * chans, 1, -1)
         # Each channel is scaled to unit RMS over the window.
         # (batch * n_chans, 1, 1)
-        scale = x.pow(2).mean(dim=2, keepdim=True).sqrt().clamp(min=1e-8)
+        scale = x.pow(2).mean(dim=2, keepdim=True).sqrt().clamp(min=self.min_rms)
         # (batch * n_chans, 1, n_times) -> (batch * n_chans, tokenizer_dim, n_tokens)
         # -> (batch * n_chans, n_tokens, tokenizer_dim)
         residual = self.encoder(x / scale).transpose(1, 2)
-        # Not the shared RVQ forward: BioCodec picks codes by cosine similarity,
-        # the shared quantizer by Euclidean distance.
-        codes = []
-        for vq in self.quantizer.layers:
-            # (batch * n_chans, n_tokens, tokenizer_dim)
-            # -> (batch * n_chans, n_tokens, codebook_dim)
-            z = F.normalize(vq.project_in(residual), p=2.0, dim=-1)
-            # (codebook_size, codebook_dim)
-            codebook = F.normalize(vq._codebook.embed, p=2.0, dim=1)
-            # (batch * n_chans, n_tokens, codebook_size) -> (batch * n_chans, n_tokens)
-            index = (z @ codebook.to(z).t()).max(dim=-1).indices
-            # (batch * n_chans, n_tokens, tokenizer_dim)
-            selected = F.embedding(index, vq._codebook.embed).to(residual)
-            residual = residual - vq.project_out(selected)
-            codes.append(index)
-        # n_q x (batch * n_chans, n_tokens) -> (batch * n_chans, n_tokens, n_q)
-        # -> (batch, n_chans, n_tokens, n_q)
-        return torch.stack(codes, dim=-1).reshape(batch, chans, -1, len(codes))
+        # (batch * n_chans, n_tokens, tokenizer_dim) -> (batch * n_chans, n_tokens, n_q)
+        codes = self.quantizer(residual)
+        # (batch * n_chans, n_tokens, n_q) -> (batch, n_chans, n_tokens, n_q)
+        return codes.reshape(batch, chans, -1, codes.shape[-1])
 
     def encode(
         self,
@@ -289,19 +271,16 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         mask: Optional[torch.Tensor] = None,
         mask_value: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Encode clean signals, optionally hiding code content before context.
+        """Contextual tokens ``(batch, n_chans, n_tokens, latent_dim)`` of ``x``.
 
-        ``x`` has shape ``(batch, n_chans, n_times)``. Returns the actual
-        contextual tokens ``(batch, n_chans, n_tokens, latent_dim)``. See
-        :meth:`encode_codes` for the corruption mask and replacement vector.
-        All samples must have the same valid length and the full ``chs_info``
-        montage: do not right-pad shorter raw recordings. Global RMS scaling,
-        convolutions and the tokenizer LSTM would change their valid codes.
-
-        With hop ``H = prod(ratios)``, ``n_tokens = ceil(n_times / H)`` includes
-        the native boundary-extension token of a partial final hop. An encoded
-        mask is not a waveform mask: neighboring codes can contain information
-        from overlapping receptive fields and the whole-window RMS.
+        ``x`` is ``(batch, n_chans, n_times)``, with the same length for every
+        sample and the full ``chs_info`` montage: padding a shorter recording
+        would change its RMS scale, convolutions and LSTM state. ``n_tokens =
+        ceil(n_times / prod(ratios))``: a partial final hop adds a boundary token,
+        at index ``n_times // prod(ratios)``, which a loss on complete hops leaves
+        out. ``mask`` and ``mask_value`` hide code content, see
+        :meth:`encode_codes`; neighbouring codes still carry that content in
+        their receptive fields.
         """
         check_n_chans(
             x,
@@ -319,50 +298,34 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         mask: Optional[torch.Tensor] = None,
         mask_value: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Contextualize clean BioCodec codes, tokenizing only once for SSL.
+        """Contextual tokens ``(batch, n_chans, n_tokens, latent_dim)`` of BioCodec codes.
+
+        Tokenizing once lets a self-supervised loss reuse the clean ``codes`` as
+        targets. There is no padding mask: batch recordings of equal length.
 
         Parameters
         ----------
         codes : torch.Tensor
-            Clean integer targets from :meth:`tokenize`, shape
-            ``(batch, n_chans, n_tokens, n_q)``. Keep these targets detached.
+            Integer codes ``(batch, n_chans, n_tokens, n_q)`` from :meth:`tokenize`.
         mask : torch.Tensor, optional
-            Boolean ``(batch, n_chans, n_tokens)``, True to hide the entire
-            projected RVQ content at that token. Replacement is BEFORE adding
-            sensor metadata and BEFORE attention. Corrupted valid tokens still
-            participate in attention; this is not a padding mask. The native
-            sampler selects temporal spans shared across all channels.
+            Boolean ``(batch, n_chans, n_tokens)``: True replaces the projected
+            code content of that token by ``mask_value``, before the sensor
+            metadata is added and before attention. Masked tokens still take
+            part in attention.
         mask_value : torch.Tensor, optional
-            Replacement vector of shape ``(latent_dim,)``, required with
-            ``mask``. A caller can own a learnable vector and a prediction head
-            ``Linear(latent_dim, n_q * codebook_size)``. The native objective is
-            selected-code cross-entropy per RVQ level, averaged across levels;
-            it is not causal next-token prediction or raw-signal MSE.
+            Replacement vector ``(latent_dim,)``, required with ``mask``; the
+            caller owns it, and any prediction head.
 
         Returns
         -------
         torch.Tensor
-            Actual contextual tokens ``(batch, n_chans, n_tokens, latent_dim)``.
-            No new parameters are allocated; default checkpoint keys and the
-            ordinary forward/return_features dictionary are unchanged.
-
-        Notes
-        -----
-        All tokens must belong to equal-valid-length, full-montage windows.
-        There is no temporal key-padding mask. For complete-hop-only loss,
-        exclude token indices >= ``n_times // prod(ratios)``; this excludes the
-        partial boundary token, not its context. Do not batch padded code
-        sequences and merely hide their loss. Bucket recordings by length.
+            The tokens ``(batch, n_chans, n_tokens, latent_dim)``. No parameter is
+            added to the model.
         """
-        levels = []
-        for q, vq in enumerate(self.quantizer.layers):
-            # (batch, n_chans, n_tokens) -> (batch, n_chans, n_tokens, codebook_dim)
-            levels.append(F.embedding(codes[..., q], vq._codebook.embed))
-        # (batch, n_chans, n_tokens, n_q, codebook_dim)
+        # (batch, n_chans, n_tokens, n_q) -> (batch, n_chans, n_tokens, n_q, codebook_dim)
         # -> (batch, n_chans, n_tokens, n_q * codebook_dim)
         # -> (batch, n_chans, n_tokens, latent_dim)
-        features = torch.stack(levels, dim=3).flatten(3).to(self.rvq_projector.weight)
-        h = self.rvq_projector(features)
+        h = self.rvq_projector(self.quantizer.embed(codes).flatten(3))
         if mask is not None:
             if mask.dtype != torch.bool or list(mask.shape) != list(codes.shape[:3]):
                 raise ValueError("mask must be boolean (batch, n_chans, n_tokens).")
@@ -440,9 +403,88 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         return self.final_layer(feat)  # (batch, n_outputs)
 
 
+# Constants and helpers, below the model class.
+
+# Sampling rate of the released checkpoint (the authors' preprocessing).
+_RELEASE_SFREQ = 50.0
+# RoPE positions of the 150 s pretraining window: 150 s x 50 Hz / 12 samples per token.
+_N_ROPE_POSITIONS = 625
+# Floor of the per-channel RMS, so that a flat channel is not divided by zero.
+_MIN_RMS = 1e-8
+
+
 def _fourier_features(x: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
     """Gaussian random Fourier features ``[sin, cos](2 pi x @ freqs)``."""
     # (n, 3) @ (3, fourier_pos_dim // 2) -> (n, fourier_pos_dim // 2)
     proj = 2 * math.pi * (x @ freqs)
     # -> (n, fourier_pos_dim)
     return torch.cat([torch.sin(proj), torch.cos(proj)], dim=-1)
+
+
+class _BioCodecLevel(nn.Module):
+    """One residual level of the BioCodec quantizer: its projections and codebook.
+
+    ``project_in`` maps ``(..., dim)`` to ``(..., codebook_dim)``, ``project_out``
+    back; ``codebook`` is ``(codebook_size, codebook_dim)``, a buffer that is zero
+    until a checkpoint fills it. The attribute names are the checkpoint's keys.
+    """
+
+    def __init__(self, dim: int, codebook_dim: int, codebook_size: int):
+        super().__init__()
+        self.project_in = nn.Linear(dim, codebook_dim)
+        self.project_out = nn.Linear(codebook_dim, dim)
+        self.register_buffer("codebook", torch.zeros(codebook_size, codebook_dim))
+
+
+class _BioCodecQuantizer(nn.Module):
+    """Frozen residual vector quantizer of BioCodec: codes by cosine similarity.
+
+    Not the shared :class:`~braindecode.modules.ResidualVectorQuantizer`, which
+    picks entries by Euclidean distance and carries the EMA training state.
+
+    Steps of ``forward``, for each of the ``n_q`` levels in turn:
+
+    1. ``project_in`` maps the residual to ``codebook_dim``; it and the codebook
+       entries are L2-normalized.
+    2. The code is the entry with the highest cosine similarity; the scores are
+       computed in at least float32, also in a half-precision model.
+    3. The chosen entry, as stored (not normalized), is mapped back by
+       ``project_out`` and subtracted from the residual for the next level.
+
+    ``forward`` maps the residual ``(n, n_tokens, dim)`` to the integer codes
+    ``(n, n_tokens, n_q)``; ``embed`` maps codes ``(..., n_q)`` to their entries
+    ``(..., n_q, codebook_dim)``.
+    """
+
+    def __init__(self, dim: int, codebook_dim: int, codebook_size: int, n_q: int):
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [_BioCodecLevel(dim, codebook_dim, codebook_size) for _ in range(n_q)]
+        )
+
+    def forward(self, residual: torch.Tensor) -> torch.Tensor:
+        # float32 for a half-precision model, whose scores would tie too often
+        work = torch.promote_types(residual.dtype, torch.float32)
+        codes = []
+        for level in self.layers:
+            # (n, n_tokens, dim) -> (n, n_tokens, codebook_dim), unit length
+            z = F.normalize(level.project_in(residual).to(work), p=2.0, dim=-1)
+            # (codebook_size, codebook_dim), unit length
+            entries = F.normalize(level.codebook.to(work), p=2.0, dim=1)
+            # (n, n_tokens, codebook_size) cosine similarities -> (n, n_tokens)
+            index = (z @ entries.t()).max(dim=-1).indices
+            # (n, n_tokens) -> (n, n_tokens, codebook_dim), the stored entries
+            selected = F.embedding(index, level.codebook)
+            # (n, n_tokens, codebook_dim) -> (n, n_tokens, dim), taken off the residual
+            residual = residual - level.project_out(selected)
+            codes.append(index)
+        # n_q x (n, n_tokens) -> (n, n_tokens, n_q)
+        return torch.stack(codes, dim=-1)
+
+    def embed(self, codes: torch.Tensor) -> torch.Tensor:
+        levels = []
+        for q, level in enumerate(self.layers):
+            # (...) -> (..., codebook_dim)
+            levels.append(F.embedding(codes[..., q], level.codebook))
+        # n_q x (..., codebook_dim) -> (..., n_q, codebook_dim)
+        return torch.stack(levels, dim=-2)

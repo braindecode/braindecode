@@ -29,30 +29,20 @@ def test_network():
 @pytest.mark.network
 def test_slow_network():
     pass
-
-# conftest marks the REVE and Pratibha2 cases slow, with no marker of their own.
-@pytest.mark.parametrize("model", ["REVE", "Pratibha2", "EEGNet"])
-def test_param(model):
-    pass
 """
 
 NETWORK = {"test_network", "test_slow_network"}
-FULL_SIZE = {"test_param[REVE]", "test_param[Pratibha2]"}
-ALL = {"test_plain", "test_slow", "test_param[EEGNet]"} | NETWORK | FULL_SIZE
+ALL = {"test_plain", "test_slow"} | NETWORK
 
 
 @pytest.mark.parametrize(
     "args, passed, skipped",
     [
-        ([], {"test_plain", "test_param[EEGNet]"}, NETWORK),
+        ([], {"test_plain"}, NETWORK),
         # Network tests that are also slow (the Hub module) need no --run-slow.
-        (["--run-network"], {"test_plain", "test_param[EEGNet]"} | NETWORK, set()),
-        (
-            ["--run-slow"],
-            {"test_plain", "test_slow", "test_param[EEGNet]"} | FULL_SIZE,
-            NETWORK,
-        ),
-        (["-m", "slow"], {"test_slow"} | FULL_SIZE, {"test_slow_network"}),
+        (["--run-network"], {"test_plain"} | NETWORK, set()),
+        (["--run-slow"], {"test_plain", "test_slow"}, NETWORK),
+        (["-m", "slow"], {"test_slow"}, {"test_slow_network"}),
         (["--run-slow", "--run-network"], ALL, set()),
     ],
     ids=["default", "run-network", "run-slow", "m-slow", "run-slow-and-network"],

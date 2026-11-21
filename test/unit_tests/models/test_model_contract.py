@@ -181,6 +181,7 @@ def test_registered_model_serialization_contract(
 ):
     """Config + state_dict reconstruction, deepcopy and pickle preserve outputs."""
     model, x = _build_case(model_name, required_params, signal_params)
+    _check_mapping_targets(model_name, model)
 
     with torch.no_grad():
         expected = list(_tensor_leaves(model(x)))
@@ -764,3 +765,26 @@ def test_foundation_model_fewer_channels_contract(
             assert torch.isfinite(leaf).all(), (
                 f"{model_name} emitted non-finite values on fewer channels"
             )
+
+
+# Legacy-key targets that only exist for a non-default configuration.
+_MAPPING_TARGET_EXCEPTIONS = {
+    "Deep4Net": {"conv_time_spat.conv_spat.bias"},  # only with batch_norm=False
+    "ShallowFBCSPNet": {"conv_time_spat.conv_spat.bias"},  # only with batch_norm=False
+    "LUNA": {
+        "channel_location_embedder.norm.weight",
+        "channel_location_embedder.norm.bias",
+    },  # issue #1588
+}
+
+
+def _check_mapping_targets(name, model):
+    """Every legacy-key ``mapping`` value is a distinct ``state_dict`` key."""
+    keys = set(model.state_dict())
+    skip = _MAPPING_TARGET_EXCEPTIONS.get(name, set())
+    targets = list((model.mapping or {}).values())
+    missing = [t for t in targets if t not in keys and t not in skip]
+    assert not missing, (
+        f"{name}.mapping points at keys that are not in state_dict: {missing}"
+    )
+    assert len(targets) == len(set(targets)), f"{name}.mapping repeats a target"

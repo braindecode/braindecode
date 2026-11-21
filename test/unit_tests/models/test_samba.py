@@ -1,4 +1,5 @@
-"""SAMBA: the scan over time, the coordinate-driven input and the initialization."""
+"""SAMBA: the scan over time, the coordinate-driven input, the initialization and the
+released weights."""
 
 import numpy as np
 import pytest
@@ -65,7 +66,7 @@ def test_scan_in_chunks_equals_the_recurrence(n_steps):
     b, c = uniform(2, n_steps, 5) - 0.5, uniform(2, n_steps, 5) - 0.5
     d = uniform(3)
     torch.testing.assert_close(
-        _ssd_scan(x, dt, a, b, c, d), _recurrence(x, dt, a, b, c, d)
+        _ssd_scan(x, dt, a, b, c, d, chunk_size=64), _recurrence(x, dt, a, b, c, d)
     )
 
 
@@ -133,6 +134,35 @@ def test_window_shorter_than_the_pooling_is_refused():
     assert model(torch.randn(2, 3, 8)).shape == (2, 3)
 
 
+def test_sizes_follow_the_stack_parameters():
+    """Other poolings, kernels and head widths set the weights. The shortest window
+    is pool_size ** 3 and leaves one step, so the standard deviation over time (the
+    second half of the features) is zero there. The heads of the first stage must
+    divide base_channels * expand, and the kernels must be odd to keep the steps."""
+    model = _samba(
+        _chs_info(3),
+        branch_kernel_sizes=(1, 5),
+        pool_size=3,
+        stage_kernel_size=5,
+        encoder1_head_dim=32,
+    )
+    shapes = {name: tuple(value.shape) for name, value in model.state_dict().items()}
+    assert shapes["encoder.input_embedding.branches.1.weight"] == (8, 3, 5)
+    assert shapes["encoder.input_embedding.fuse.weight"] == (8, 2 * 8, 1)
+    assert shapes["encoder.encoder2.weight"] == (8, 8, 5)
+    assert shapes["encoder.encoder3.weight"] == (8, 8, 5)
+    assert shapes["encoder.encoder1_mamba.A_log"] == (2,)  # 8 * 8 channels, heads of 32
+    with pytest.raises(ValueError, match="at least 27 samples"):
+        model(torch.randn(2, 3, 26))
+    features = model(torch.randn(2, 3, 27), return_features=True)["features"]
+    assert features.shape == (2, 16) and not features[:, 8:].any()
+    with pytest.raises(ValueError, match="encoder1_head_dim"):
+        _samba(_chs_info(3), encoder1_head_dim=48)
+    for kwargs in ({"stage_kernel_size": 4}, {"branch_kernel_sizes": (1, 4)}):
+        with pytest.raises(ValueError, match="must be odd"):
+            _samba(_chs_info(3), **kwargs)
+
+
 def test_reset_parameters_draws_every_parameter_again():
     model = _samba(_chs_info(3))
     with torch.no_grad():
@@ -140,3 +170,42 @@ def test_reset_parameters_draws_every_parameter_again():
             parameter.fill_(float("nan"))
     model.reset_parameters()
     assert all(parameter.isfinite().all() for parameter in model.parameters())
+
+
+# features[0, :5] (mean over time) and features[0, -5:] (std over time) of the encoders
+# of Dcode-AI/SAMBA-2s@e553287 and Dcode-AI/SAMBA-100s@3a235a1 on the input of the
+# test, loaded as released, with the 94 target electrodes of the weights as chs_info
+@pytest.mark.network
+@pytest.mark.huggingface
+@pytest.mark.parametrize(
+    "repo_id, revision, expected_mean, expected_std",
+    [
+        (
+            "braindecode/samba-2s-pretrained",
+            "a1ccb6c09eb1fe82f18aca6198c3c4a1cf2d676c",
+            [-0.430467904, 0.292152464, 0.329552829, 0.073628992, -0.769551814],
+            [0.125874534, 0.189685628, 0.611500859, 0.472888798, 0.666319072],
+        ),
+        (
+            "braindecode/samba-100s-pretrained",
+            "af77956623ef6cbb6eae7816dec3b57329deb730",
+            [-0.082055420, -0.087322578, 0.000102654, 0.025375422, 0.025857089],
+            [0.032365620, 0.073571838, 0.031242646, 0.063421756, 0.089154541],
+        ),
+    ],
+    ids=["2s", "100s"],
+)
+def test_samba_pretrained_matches_the_release(
+    repo_id, revision, expected_mean, expected_std
+):
+    pytest.importorskip("huggingface_hub")
+    model = SAMBA.from_pretrained(repo_id, revision=revision, n_outputs=3).eval()
+    x = torch.arange(94 * 256.0).reshape(1, 94, 256).mul(0.05).sin()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(
+        features[0, :5], torch.tensor(expected_mean), rtol=0, atol=1e-5
+    )
+    torch.testing.assert_close(
+        features[0, -5:], torch.tensor(expected_std), rtol=0, atol=1e-5
+    )
