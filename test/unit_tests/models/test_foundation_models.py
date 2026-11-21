@@ -2281,7 +2281,7 @@ def test_pratibha2_pretrained_matches_the_release():
     chs_info = [{"ch_name": n} for n in ("Fp1", "Cz", "O2", "AFZ")]
     model = Pratibha2.from_pretrained(
         "braindecode/pratibha2-pretrained",
-        revision="REHOST_PENDING",  # pin after re-host
+        revision="c21b8c51eb6089452acb7f7d911748e64f3eb00c",
         chs_info=chs_info,
         n_outputs=2,
         n_times=400,

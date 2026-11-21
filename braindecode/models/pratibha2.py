@@ -213,16 +213,16 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # An attribute, as TorchScript reads no module globals.
         self.std_floor = _STD_FLOOR
 
-        # positions: (n_kept, 3) in m; kept: indices of the placed input channels.
+        # positions: (n_kept_chans, 3) in m; kept: indices of the placed input channels.
         positions, kept = resolve_channel_positions(
             self.chs_info, _pratibha2_position_bank(), on_missing=on_missing
         )
-        # channel_index: (n_kept,) input channels the model reads; None reads all.
+        # channel_index: (n_kept_chans,) input channels the model reads; None reads all.
         dropped = len(kept) < len(self.chs_info)
         self.register_buffer(
             "channel_index", torch.tensor(kept) if dropped else None, persistent=False
         )
-        # channel_positions: (n_kept, 3), in the release's centimetres. Not
+        # channel_positions: (n_kept_chans, 3), in the release's centimetres. Not
         # persistent: the pretrained weights must load onto any montage.
         positions_cm = torch.tensor(positions, dtype=torch.float32) * _CM_PER_M
         self.register_buffer(
