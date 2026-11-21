@@ -61,7 +61,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Number of output channels from the MixedConv2d layer.
     temporal_layer : str, default='LogVarLayer'
         Temporal aggregation layer to use.
-    n_dim: int, default=3
+    n_dim : int, default=3
         Dimension of the temporal reduction layer.
     stride_factor : int, default=4
         Stride factor for temporal segmentation.
@@ -82,7 +82,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Dictionary of parameters to use for the FilterBankLayer.
         If None, a default Chebyshev Type II filter with transition bandwidth of
         2 Hz and stop-band ripple of 30 dB will be used.
-    verbose: bool, default False
+    verbose : bool, default False
         Verbose parameter to create the filter using mne.
 
     References

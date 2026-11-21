@@ -91,12 +91,12 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
          \bar{K}_\ell = \sum_{n} C_n \bar{A}_n^{\ell} \bar{B}_n .
 
       :math:`A` is diagonal and complex, initialized with S4D-Lin,
-      :math:`A_n = -\tfrac{1}{2} + i \pi n` (Eq. (9)); the step
-      :math:`\Delta` is learned per row from a log-uniform start in
-      [0.001, 0.1]. :math:`B = 1`, the sum keeps ``d_state // 2`` entries and
-      the kernel is twice its real part (conjugate pairs). The layer adds a
-      skip term :math:`D u`, then GELU, dropout and a :math:`1 \times 1`
-      convolution with a GLU.
+      :math:`A_n = -a + i \pi n` with :math:`a` = ``a_real_init`` (1/2 in
+      Eq. (9)); the step :math:`\Delta` is learned per row from a log-uniform
+      start in [``dt_min``, ``dt_max``]. :math:`B = 1`, the sum keeps
+      ``d_state // 2`` entries and the kernel is twice its real part
+      (conjugate pairs). The layer adds a skip term :math:`D u`, then GELU,
+      dropout and a :math:`1 \times 1` convolution with a GLU.
     - ``mean_hemoglobin_branch`` **MHB and MAMHB.** The mean hemoglobin
       branch (``mean_branch="time_mean"``) is the mean of each row over time
       (:math:`\mathrm{AP}_1`). The multi-scale aggregated one
@@ -129,6 +129,14 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     d_state : int, default=64
         State size of each S4D kernel, even: it keeps ``d_state // 2``
         conjugate pairs.
+    dt_min : float, default=0.001
+        Lower end of the log-uniform initial range of the S4D step
+        :math:`\Delta`, positive.
+    dt_max : float, default=0.1
+        Upper end of that range, at least ``dt_min``.
+    a_real_init : float, default=0.5
+        Initial decay rate of every state, :math:`-\mathrm{Re}(A_n)`, positive;
+        0.5 is S4D-Lin (Eq. (9)).
     avg_size : int, default=10
         Width of the :math:`\mathrm{AP}_3` moving average of the
         ``"multiscale"`` branch, at most ``n_times``.
@@ -168,6 +176,9 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Model-specific parameters
         n_layers: int = 4,
         d_state: int = 64,
+        dt_min: float = 0.001,
+        dt_max: float = 0.1,
+        a_real_init: float = 0.5,
         avg_size: int = 10,
         drop_prob: float = 0.5,
         prenorm: bool = False,
@@ -277,6 +288,9 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 _S4DLayer(
                     d_model=self.n_chans,
                     d_state=d_state,
+                    dt_min=dt_min,
+                    dt_max=dt_max,
+                    a_real_init=a_real_init,
                     drop_prob=drop_prob,
                     activation=activation,
                 )
@@ -482,14 +496,6 @@ class _MultiscaleMeanHemoglobinBranch(nn.Module):
         return features
 
 
-# Initial values of the S4D-Lin kernel, as in Gu et al. (2022) and the S4D code
-# of state-spaces/s4: the step dt is log-uniform in [dt_min, dt_max] and the
-# real part of A is -1 / 2 (Eq. (9) of the paper).
-_DT_MIN = 0.001
-_DT_MAX = 0.1
-_A_REAL_INIT = 0.5
-
-
 class _S4DKernel(nn.Module):
     """Convolution kernel of a diagonal state space model (S4D-Lin).
 
@@ -505,10 +511,29 @@ class _S4DKernel(nn.Module):
     d_state : int
         State size; ``d_state // 2`` complex entries are kept, the kernel
         being twice the real part (conjugate pairs).
+    dt_min : float
+        Lower end of the log-uniform initial range of ``dt``.
+    dt_max : float
+        Upper end of that range.
+    a_real_init : float
+        Initial value of ``-Re(A)`` for every state; 1 / 2 in S4D-Lin.
     """
 
-    def __init__(self, d_model: int, d_state: int) -> None:
+    def __init__(
+        self,
+        d_model: int,
+        d_state: int,
+        dt_min: float,
+        dt_max: float,
+        a_real_init: float,
+    ) -> None:
         super().__init__()
+        # Initial values, as in Gu et al. (2022) and the S4D code of
+        # state-spaces/s4, kept for reset_parameters(): the step dt is
+        # log-uniform in [dt_min, dt_max] and the real part of A is -a_real_init
+        self.dt_min = dt_min
+        self.dt_max = dt_max
+        self.a_real_init = a_real_init
         # Output matrix C, complex: real and imaginary parts on the last axis
         self.C = nn.Parameter(torch.empty(d_model, d_state // 2, 2))
         # Step of the discretization, one per channel, learned in log scale
@@ -523,9 +548,10 @@ class _S4DKernel(nn.Module):
         # C ~ complex N(0, 1): each part has variance 1 / 2
         nn.init.normal_(self.C, 0.0, math.sqrt(0.5))
         # dt log-uniform in [dt_min, dt_max]
-        nn.init.uniform_(self.log_dt, math.log(_DT_MIN), math.log(_DT_MAX))
-        # S4D-Lin (Gu et al., Eq. (9)): A_n = -1 / 2 + i pi n
-        nn.init.constant_(self.log_A_real, math.log(_A_REAL_INIT))
+        nn.init.uniform_(self.log_dt, math.log(self.dt_min), math.log(self.dt_max))
+        # S4D-Lin (Gu et al., Eq. (9)): A_n = -a_real_init + i pi n, with
+        # a_real_init = 1 / 2
+        nn.init.constant_(self.log_A_real, math.log(self.a_real_init))
         with torch.no_grad():
             self.A_imag.copy_(
                 math.pi * torch.arange(self.A_imag.shape[1]).to(self.A_imag)
@@ -598,6 +624,12 @@ class _S4DLayer(nn.Module):
         Number of S4D channels.
     d_state : int
         State size of each state space model.
+    dt_min : float
+        Lower end of the log-uniform initial range of the step ``dt``.
+    dt_max : float
+        Upper end of that range.
+    a_real_init : float
+        Initial value of ``-Re(A)`` for every state.
     drop_prob : float
         Dropout probability, over whole channels.
     activation : type[nn.Module]
@@ -608,6 +640,9 @@ class _S4DLayer(nn.Module):
         self,
         d_model: int,
         d_state: int,
+        dt_min: float,
+        dt_max: float,
+        a_real_init: float,
         drop_prob: float,
         activation: type[nn.Module],
     ) -> None:
@@ -615,7 +650,13 @@ class _S4DLayer(nn.Module):
         # Skip term D of the state space model, y = C x + D u, one per channel
         self.D = nn.Parameter(torch.randn(d_model))
         # Impulse response of the state space model, as a convolution kernel
-        self.kernel = _S4DKernel(d_model=d_model, d_state=d_state)
+        self.kernel = _S4DKernel(
+            d_model=d_model,
+            d_state=d_state,
+            dt_min=dt_min,
+            dt_max=dt_max,
+            a_real_init=a_real_init,
+        )
         self.activation = activation()
         self.dropout = nn.Dropout1d(drop_prob)
         # Output linear layer: a position-wise map to 2 d_model channels,

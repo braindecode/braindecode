@@ -53,7 +53,7 @@ from braindecode.models.util import (
     models_dict,
     models_mandatory_parameters,
 )
-from test.unit_tests.models._fixtures import _get_signal_params
+from test.unit_tests.models._fixtures import _architecture_kwargs, _get_signal_params
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
 # Window length per model, from the registry.
@@ -281,6 +281,7 @@ _MODELS = [
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
 def test_return_features(cls, nc, kw, has_cls):
     n_times = _N_TIMES[cls.__name__]
+    kw = {**_architecture_kwargs(cls.__name__), **kw}
     model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.eval()
     with torch.no_grad():
@@ -296,6 +297,7 @@ def test_return_features(cls, nc, kw, has_cls):
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
 def test_default_forward_returns_tensor(cls, nc, kw, has_cls):
     n_times = _N_TIMES[cls.__name__]
+    kw = {**_architecture_kwargs(cls.__name__), **kw}
     model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.eval()
     with torch.no_grad():
@@ -353,6 +355,7 @@ _RESET_MODELS = [p for p in _MODELS if p.id != "SignalJEPA"]
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _RESET_MODELS)
 def test_reset_head(cls, nc, kw, has_cls):
     n_times = _N_TIMES[cls.__name__]
+    kw = {**_architecture_kwargs(cls.__name__), **kw}
     model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.reset_head(10)
     model.eval()

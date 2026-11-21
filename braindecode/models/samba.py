@@ -31,17 +31,17 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     onto a fixed target montage from their 3D positions, so the layers behind it
     never see the recording montage. Mamba-2 state space blocks [mamba2]_, with
     max-pooling and convolutions in between, then read the time axis in linear
-    time::
+    time (``p`` is ``pool_size``, 2 by default)::
 
         (batch, n_chans, n_times)
         -> CDSE                       (batch, n_targets, n_times)
         -> multi-branch convolution   (batch, base_channels, n_times)
         -> Linear, residual Mamba-2   (batch, n_times, base_channels)
-        -> pool, convolution          (batch, base_channels, n_times // 2)
-        -> pool, convolution          (batch, bottleneck_channels, n_times // 4)
-        -> pool                       (batch, bottleneck_channels, n_times // 8)
+        -> pool, convolution          (batch, base_channels, n_times // p)
+        -> pool, convolution          (batch, bottleneck_channels, n_times // p**2)
+        -> pool                       (batch, bottleneck_channels, n_times // p**3)
         -> Linear, differential Mamba-2, Linear
-                                      (batch, n_times // 8, bottleneck_channels)
+                                      (batch, n_times // p**3, bottleneck_channels)
         -> mean and std over time     (batch, 2 * bottleneck_channels)
         -> final_layer                (batch, n_outputs)
 
@@ -56,21 +56,23 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         the same layers.
 
     ``SAMBA.encoder.input_embedding``
-        **Operations.** Three ``Conv1d`` with kernel size 1, 3 and 7 over the
-        target channels, concatenated and fused by a pointwise convolution.
-        **Role.** Temporal features at three scales on the target montage.
+        **Operations.** One ``Conv1d`` per entry of ``branch_kernel_sizes`` (1,
+        3 and 7 by default) over the target channels, concatenated and fused by
+        a pointwise convolution.
+        **Role.** Temporal features at several scales on the target montage.
 
     ``SAMBA.encoder.encoder1_mamba``
         **Operations.** After a ``Linear``, a residual Mamba-2 block:
         input-dependent step sizes, a causal depthwise convolution, a scan over
-        the time axis in chunks of 64 steps and a gated RMS norm.
+        the time axis in chunks of ``chunk_size`` steps and a gated RMS norm.
         **Role.** Models the signal at the input rate.
 
     ``SAMBA.encoder.encoder2``, ``SAMBA.encoder.encoder3``
-        **Operations.** ``Conv1d`` of kernel size 3 behind a max-pooling by 2
-        each, with no activation in between, as in the authors' code.
-        **Role.** Halve the time axis and widen the features to
-        ``bottleneck_channels``.
+        **Operations.** ``Conv1d`` of kernel size ``stage_kernel_size`` behind a
+        max-pooling by ``pool_size`` each, with no activation in between, as in
+        the authors' code.
+        **Role.** Divide the time axis by ``pool_size`` at each stage and widen
+        the features to ``bottleneck_channels``.
 
     ``SAMBA.encoder.bottleneck_mamba``
         **Operations.** The channels are split into heads of ``head_dim``. Two
@@ -78,8 +80,8 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         a GroupNorm cancels what the two readings share, with ``lam`` a learned
         scale per channel. A ``Linear`` mixes the heads, with a residual
         connection.
-        **Role.** The multi-head differential Mamba of the paper, at one eighth
-        of the input rate.
+        **Role.** The multi-head differential Mamba of the paper, at
+        ``1 / pool_size ** 3`` of the input rate (one eighth by default).
 
     ``SAMBA.final_layer``
         **Operations.** ``Linear`` on the mean and the standard deviation of the
@@ -88,9 +90,9 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - **Temporal:** Mamba-2 state space blocks at the input rate and at one
-      eighth of it; the time axis is halved three times by max-pooling. The
-      output has ``n_times // 8`` steps.
+    - **Temporal:** Mamba-2 state space blocks at the input rate and at the
+      rate left by three max-poolings by ``pool_size``; the output has
+      ``n_times // pool_size ** 3`` steps (``n_times // 8`` by default).
     - **Spatial:** electrodes enter only through their 3D positions, so any
       montage with positions can be read.
     - **Spectral:** no explicit spectral transform; the convolutions and the
@@ -110,8 +112,15 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     - **Not causal.** The convolutions and the GroupNorm look at the whole
       window, so the encoder is not a streaming model. The Mamba-2 blocks alone
       are causal.
-    - **Weights.** The authors' checkpoints are not distributed with
-      braindecode.
+    - **Mamba-2 defaults.** ``encoder1_head_dim``, ``dt_min``, ``dt_max``,
+      ``dt_init_floor``, ``a_init_range`` and ``norm_eps`` default to the values
+      of the reference ``Mamba2`` of state-spaces/mamba.
+    - **Weights.** The encoders of the authors' SAMBA-2s and SAMBA-100s
+      (pretrained on 2 s and 100 s windows) are on the Hugging Face Hub at
+      ``braindecode/samba-2s-pretrained`` and
+      ``braindecode/samba-100s-pretrained``. ``SAMBA.from_pretrained(repo_id)``
+      uses their 94 target electrodes as ``chs_info`` unless you pass yours.
+      The head is not pretrained.
 
     .. versionadded:: 2.1
 
@@ -133,13 +142,40 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Kernel size of the causal depthwise convolution of every Mamba-2 block.
     expand : int
         Inner width of every Mamba-2 block, as a multiple of its input width; it
-        is split into heads. ``base_channels * expand`` must be divisible by 64,
-        the head width of the first stage.
+        is split into heads. ``base_channels * expand`` must be divisible by
+        ``encoder1_head_dim``.
     head_dim : int
         Channels per head of the differential bottleneck; divides
         ``bottleneck_channels``.
     cdse_hidden_dim : int
         Hidden width of the MLP of the CDSE.
+    branch_kernel_sizes : tuple of int, default=(1, 3, 7)
+        Kernel size of each branch of the multi-branch embedding, as in the
+        authors' code. Odd, so that the padding of ``k // 2`` keeps the steps.
+    pool_size : int, default=2
+        Kernel size and stride of the three max-poolings: each divides the
+        number of steps by ``pool_size``, so ``n_times >= pool_size ** 3``.
+    stage_kernel_size : int, default=3
+        Kernel size of the two convolutions behind the first two poolings. Odd,
+        so that the padding of ``k // 2`` keeps the steps.
+    encoder1_head_dim : int, default=64
+        Channels per head of the Mamba-2 of the first stage (``headdim`` in the
+        reference ``Mamba2``). ``head_dim`` is that of the bottleneck.
+    chunk_size : int, default=64
+        Steps per chunk of the Mamba-2 scan; bounds the size of its quadratic
+        form.
+    dt_min : float, default=1e-3
+        Lower end of the log-uniform range of the initial step sizes of the
+        Mamba-2 blocks.
+    dt_max : float, default=1e-1
+        Upper end of that range.
+    dt_init_floor : float, default=1e-4
+        Floor of the initial step sizes.
+    a_init_range : tuple of float, default=(1.0, 16.0)
+        ``(low, high)`` of the uniform draw of the initial decay rates ``A`` of
+        the Mamba-2 blocks (``A_init_range`` in the reference ``Mamba2``).
+    norm_eps : float, default=1e-5
+        Epsilon of the RMS norm that follows the gate of every Mamba-2 block.
     channel_strategy : str
         How another montage reaches the encoder; see
         :class:`~braindecode.models.base.EEGModuleMixin`. The model reads the
@@ -178,6 +214,16 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         expand: int = 8,
         head_dim: int = 16,
         cdse_hidden_dim: int = 32,
+        branch_kernel_sizes: tuple[int, ...] = (1, 3, 7),
+        pool_size: int = 2,
+        stage_kernel_size: int = 3,
+        encoder1_head_dim: int = 64,
+        chunk_size: int = 64,
+        dt_min: float = 1e-3,
+        dt_max: float = 1e-1,
+        dt_init_floor: float = 1e-4,
+        a_init_range: tuple[float, float] = (1.0, 16.0),
+        norm_eps: float = 1e-5,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):
@@ -224,13 +270,13 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._update_init_kwargs(target_positions=targets.tolist())
 
         # Every Mamba-2 head takes a whole number of channels: the first stage
-        # reads base_channels * expand of them in heads of _MAMBA_HEAD_DIM, the
+        # reads base_channels * expand of them in heads of encoder1_head_dim, the
         # bottleneck splits bottleneck_channels into heads of head_dim
-        if base_channels * expand % _MAMBA_HEAD_DIM:
+        if base_channels * expand % encoder1_head_dim:
             raise ValueError(
                 f"base_channels * expand ({base_channels * expand}) must be "
-                f"divisible by {_MAMBA_HEAD_DIM}, the head width of the first "
-                "Mamba-2 block."
+                f"divisible by encoder1_head_dim ({encoder1_head_dim}), the head "
+                "width of the first Mamba-2 block."
             )
         if bottleneck_channels % head_dim:
             raise ValueError(
@@ -238,9 +284,17 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"by head_dim ({head_dim}): a head takes bottleneck_channels / "
                 "head_dim channels."
             )
+        # A padding of half the kernel keeps the number of steps for odd kernels only
+        if any(k % 2 == 0 for k in (*branch_kernel_sizes, stage_kernel_size)):
+            raise ValueError(
+                "branch_kernel_sizes and stage_kernel_size must be odd, so that a "
+                "padding of half the kernel keeps the number of steps; got "
+                f"{tuple(branch_kernel_sizes)} and {stage_kernel_size}."
+            )
 
-        # Shortest window: the three max-poolings by 2 leave n_times // 8 steps
-        self.min_n_times = _DOWNSAMPLING
+        # Shortest window: the three max-poolings by pool_size leave
+        # n_times // pool_size ** 3 steps, and at least one is needed
+        self.min_n_times = pool_size**3
         # Derived from chs_info, so not saved with the weights
         self.register_buffer("input_positions", positions, persistent=False)
         self.encoder = _SambaEncoder(
@@ -252,6 +306,16 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             expand=expand,
             head_dim=head_dim,
             cdse_hidden_dim=cdse_hidden_dim,
+            branch_kernel_sizes=branch_kernel_sizes,
+            pool_size=pool_size,
+            stage_kernel_size=stage_kernel_size,
+            encoder1_head_dim=encoder1_head_dim,
+            chunk_size=chunk_size,
+            dt_min=dt_min,
+            dt_max=dt_max,
+            dt_init_floor=dt_init_floor,
+            a_init_range=a_init_range,
+            norm_eps=norm_eps,
         )
         # Head on the mean and the standard deviation of the encoder output
         self.final_layer = nn.Linear(2 * bottleneck_channels, self.n_outputs)
@@ -265,7 +329,7 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ----------
         x : torch.Tensor
             EEG of shape ``(batch, n_chans, n_times)``, in the channel order of
-            ``chs_info``, with ``n_times >= 8``.
+            ``chs_info``, with ``n_times >= pool_size ** 3`` (8 by default).
         return_features : bool, default=False
             Return the features that ``final_layer`` reads instead of its
             outputs.
@@ -285,12 +349,13 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"step it keeps after its max-poolings; got {x.shape[-1]}."
             )
 
-        # Encoder: n_times // 8 steps of bottleneck_channels features
-        # (batch, n_chans, n_times) -> (batch, n_times // 8, bottleneck_channels)
+        # Encoder: n_steps = n_times // pool_size ** 3 steps of bottleneck_channels
+        # features
+        # (batch, n_chans, n_times) -> (batch, n_steps, bottleneck_channels)
         hidden = self.encoder(x, self.input_positions)
 
         # Mean and population standard deviation over time, side by side
-        # (batch, n_times // 8, bottleneck_channels) -> (batch, 2 * bottleneck_channels)
+        # (batch, n_steps, bottleneck_channels) -> (batch, 2 * bottleneck_channels)
         features = torch.cat([hidden.mean(dim=1), hidden.std(dim=1, correction=0)], -1)
         if return_features:
             return {"features": features, "cls_token": None}
@@ -312,49 +377,25 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
 
 # -----------------------------------------------------------------------------
-# Constants and blocks of SAMBA, below the model class
+# Blocks of SAMBA, below the model class
 # -----------------------------------------------------------------------------
-
-# The time axis is halved by three max-poolings
-_DOWNSAMPLING = 8
-
-# Kernel sizes of the branches of the multi-branch embedding, from the authors'
-# code
-_BRANCH_KERNELS = (1, 3, 7)
-
-# Mamba-2: the initial step sizes and decay rates, the epsilon of the norm and
-# the head width of the first stage are the defaults of the reference ``Mamba2``
-# of state-spaces/mamba.
-# Initial step size, log-uniform in [_DT_MIN, _DT_MAX] and at least _DT_FLOOR
-_DT_MIN = 1e-3
-_DT_MAX = 1e-1
-_DT_FLOOR = 1e-4
-# Initial decay rate A, uniform in [_A_MIN, _A_MAX]
-_A_MIN = 1.0
-_A_MAX = 16.0
-# Epsilon of the RMS norm that follows the gate
-_NORM_EPS = 1e-5
-# Width of one head of the Mamba-2 block of the first stage
-_MAMBA_HEAD_DIM = 64
-# Steps per chunk of the scan: bounds the size of the quadratic form
-_CHUNK_SIZE = 64
 
 
 class _SambaEncoder(nn.Module):
     """Encoder of SAMBA: the electrodes onto the target montage, then Mamba-2
-    stages and convolutions that shorten the time axis eight-fold.
+    stages and convolutions that shorten the time axis ``pool_size ** 3``-fold.
 
     For ``x`` of shape ``(batch, n_chans, n_times)`` and the electrode
-    ``positions`` ``(n_chans, 3)``:
+    ``positions`` ``(n_chans, 3)``, with ``n_steps = n_times // pool_size ** 3``:
 
     1. CDSE: ``(batch, n_targets, n_times)``;
     2. multi-branch convolution: ``(batch, base_channels, n_times)``;
     3. ``Linear`` and a residual Mamba-2 block over time;
-    4. max-pooling by 2 and a convolution, twice, widening the features to
-       ``bottleneck_channels``, then a last max-pooling by 2:
-       ``(batch, bottleneck_channels, n_times // 8)``;
+    4. max-pooling by ``pool_size`` and a convolution, twice, widening the
+       features to ``bottleneck_channels``, then a last max-pooling by
+       ``pool_size``: ``(batch, bottleneck_channels, n_steps)``;
     5. ``Linear``, differential Mamba-2 and ``Linear`` over time:
-       ``(batch, n_times // 8, bottleneck_channels)``.
+       ``(batch, n_steps, bottleneck_channels)``.
 
     Parameters
     ----------
@@ -370,6 +411,22 @@ class _SambaEncoder(nn.Module):
         Channels per head of the differential bottleneck.
     cdse_hidden_dim : int
         Hidden width of the MLP of the CDSE.
+    branch_kernel_sizes : tuple of int
+        Kernel size of each branch of the multi-branch embedding.
+    pool_size : int
+        Kernel size and stride of the max-poolings.
+    stage_kernel_size : int
+        Kernel size of the convolutions of the second and third stages.
+    encoder1_head_dim : int
+        Channels per head of the first-stage Mamba-2 block.
+    chunk_size : int
+        Steps per chunk of the Mamba-2 scan, see ``SAMBA``.
+    dt_min, dt_max, dt_init_floor : float
+        Parameters of the Mamba-2 blocks, see ``SAMBA``.
+    a_init_range : tuple of float
+        Parameter of the Mamba-2 blocks, see ``SAMBA``.
+    norm_eps : float
+        Parameter of the Mamba-2 blocks, see ``SAMBA``.
     """
 
     def __init__(
@@ -382,36 +439,71 @@ class _SambaEncoder(nn.Module):
         expand: int,
         head_dim: int,
         cdse_hidden_dim: int,
+        branch_kernel_sizes: tuple[int, ...],
+        pool_size: int,
+        stage_kernel_size: int,
+        encoder1_head_dim: int,
+        chunk_size: int,
+        dt_min: float,
+        dt_max: float,
+        dt_init_floor: float,
+        a_init_range: tuple[float, float],
+        norm_eps: float,
     ):
         super().__init__()
         self.cdse = _CoordinateDrivenSpatialEmbedding(target_positions, cdse_hidden_dim)
         self.input_embedding = _MultiBranchEmbedding(
-            len(target_positions), base_channels
+            len(target_positions), base_channels, branch_kernel_sizes
         )
 
         # First stage, at the input rate
         self.encoder1_linear = nn.Linear(base_channels, base_channels)
         self.encoder1_mamba = _Mamba2(
-            base_channels, d_state, d_conv, expand, _MAMBA_HEAD_DIM
+            base_channels,
+            d_state,
+            d_conv,
+            expand,
+            encoder1_head_dim,
+            chunk_size=chunk_size,
+            dt_min=dt_min,
+            dt_max=dt_max,
+            dt_init_floor=dt_init_floor,
+            a_init_range=a_init_range,
+            norm_eps=norm_eps,
         )
-        # Second and third stages, behind a max-pooling each
-        self.pool = nn.MaxPool1d(kernel_size=2)
+        # Second and third stages, behind a max-pooling each; a padding of half
+        # the kernel keeps the number of steps
+        self.pool = nn.MaxPool1d(kernel_size=pool_size)
+        padding = stage_kernel_size // 2
         self.encoder2 = nn.Conv1d(
-            base_channels, base_channels, kernel_size=3, padding=1
+            base_channels, base_channels, kernel_size=stage_kernel_size, padding=padding
         )
         self.encoder3 = nn.Conv1d(
-            base_channels, bottleneck_channels, kernel_size=3, padding=1
+            base_channels,
+            bottleneck_channels,
+            kernel_size=stage_kernel_size,
+            padding=padding,
         )
 
-        # Bottleneck, at one eighth of the input rate
+        # Bottleneck, at 1 / pool_size ** 3 of the input rate
         self.bottleneck_in = nn.Linear(bottleneck_channels, bottleneck_channels)
         self.bottleneck_mamba = _DifferentialMamba(
-            bottleneck_channels, head_dim, d_state, d_conv, expand
+            bottleneck_channels,
+            head_dim,
+            d_state,
+            d_conv,
+            expand,
+            chunk_size=chunk_size,
+            dt_min=dt_min,
+            dt_max=dt_max,
+            dt_init_floor=dt_init_floor,
+            a_init_range=a_init_range,
+            norm_eps=norm_eps,
         )
         self.bottleneck_out = nn.Linear(bottleneck_channels, bottleneck_channels)
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        """``(batch, n_chans, n_times)`` -> ``(batch, n_times // 8, bottleneck)``."""
+        """``(batch, n_chans, n_times)`` -> ``(batch, n_steps, bottleneck)``."""
         # Electrodes onto the target montage
         # (batch, n_chans, n_times) -> (batch, n_targets, n_times)
         x = self.cdse(x, positions)
@@ -426,15 +518,18 @@ class _SambaEncoder(nn.Module):
         # Residual Mamba-2 block; shape unchanged
         x = x + self.encoder1_mamba(x)
 
-        # Second and third stages: half the steps each
-        # (batch, n_times, base_channels) -> (batch, base_channels, n_times // 2)
+        # Second and third stages: each max-pooling divides the steps by pool_size
+        # (batch, n_times, base_channels)
+        # -> (batch, base_channels, n_times // pool_size)
         x = self.pool(x.transpose(1, 2))
         x = self.encoder2(x)
-        # (batch, base_channels, n_times // 2) -> (batch, bottleneck, n_times // 4)
+        # (batch, base_channels, n_times // pool_size)
+        # -> (batch, bottleneck, n_times // pool_size ** 2)
         x = self.encoder3(self.pool(x))
 
-        # Bottleneck: half the steps again, back to (batch, steps, features)
-        # (batch, bottleneck, n_times // 4) -> (batch, n_times // 8, bottleneck)
+        # Bottleneck: the steps are divided by pool_size once more, back to
+        # (batch, steps, features)
+        # (batch, bottleneck, n_times // pool_size ** 2) -> (batch, n_steps, bottleneck)
         x = self.pool(x).transpose(1, 2)
         # Pointwise mixing into the bottleneck; shape unchanged
         x = self.bottleneck_in(x)
@@ -495,9 +590,10 @@ class _MultiBranchEmbedding(nn.Module):
 
     For ``x`` of shape ``(batch, in_channels, n_times)``:
 
-    1. one ``Conv1d`` per kernel size of ``_BRANCH_KERNELS``, each
+    1. one ``Conv1d`` per entry of ``kernel_sizes``, each
        ``(batch, out_channels, n_times)``;
-    2. the branches side by side, ``(batch, 3 * out_channels, n_times)``;
+    2. the branches side by side,
+       ``(batch, len(kernel_sizes) * out_channels, n_times)``;
     3. a pointwise convolution fuses them, ``(batch, out_channels, n_times)``.
 
     Parameters
@@ -506,26 +602,30 @@ class _MultiBranchEmbedding(nn.Module):
         Number of input channels.
     out_channels : int
         Number of channels of each branch and of the output.
+    kernel_sizes : tuple of int
+        Kernel size of each branch.
     """
 
-    def __init__(self, in_channels: int, out_channels: int):
+    def __init__(
+        self, in_channels: int, out_channels: int, kernel_sizes: tuple[int, ...]
+    ):
         super().__init__()
         # Padding of half the kernel keeps the number of steps
         self.branches = nn.ModuleList(
             [
                 nn.Conv1d(in_channels, out_channels, kernel, padding=kernel // 2)
-                for kernel in _BRANCH_KERNELS
+                for kernel in kernel_sizes
             ]
         )
         self.fuse = nn.Conv1d(
-            len(_BRANCH_KERNELS) * out_channels, out_channels, kernel_size=1
+            len(kernel_sizes) * out_channels, out_channels, kernel_size=1
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """``(batch, in_channels, n_times)`` -> ``(batch, out_channels, n_times)``."""
-        # (batch, in_channels, n_times) -> 3 x (batch, out_channels, n_times)
+        # (batch, in_channels, n_times) -> n_branches x (batch, out_channels, n_times)
         branches = [branch(x) for branch in self.branches]
-        # (batch, 3 * out_channels, n_times) -> (batch, out_channels, n_times)
+        # (batch, n_branches * out_channels, n_times) -> (batch, out_channels, n_times)
         return self.fuse(torch.cat(branches, dim=1))
 
 
@@ -552,27 +652,54 @@ class _DifferentialMamba(nn.Module):
         Channels per head; divides ``width``.
     d_state, d_conv, expand : int
         Parameters of the Mamba-2 blocks, see ``SAMBA``.
+    chunk_size : int
+        Steps per chunk of the Mamba-2 scan, see ``SAMBA``.
+    dt_min, dt_max, dt_init_floor : float
+        Parameters of the Mamba-2 blocks, see ``SAMBA``.
+    a_init_range : tuple of float
+        Parameter of the Mamba-2 blocks, see ``SAMBA``.
+    norm_eps : float
+        Parameter of the Mamba-2 blocks, see ``SAMBA``.
     """
 
     def __init__(
-        self, width: int, head_dim: int, d_state: int, d_conv: int, expand: int
+        self,
+        width: int,
+        head_dim: int,
+        d_state: int,
+        d_conv: int,
+        expand: int,
+        *,
+        chunk_size: int,
+        dt_min: float,
+        dt_max: float,
+        dt_init_floor: float,
+        a_init_range: tuple[float, float],
+        norm_eps: float,
     ):
         super().__init__()
         n_heads = width // head_dim
         self.head_dim = head_dim
-        # Two Mamba-2 blocks per head; each one's heads are as wide as the head
-        self.first = nn.ModuleList(
-            [
-                _Mamba2(head_dim, d_state, d_conv, expand, head_dim)
-                for _ in range(n_heads)
-            ]
-        )
-        self.second = nn.ModuleList(
-            [
-                _Mamba2(head_dim, d_state, d_conv, expand, head_dim)
-                for _ in range(n_heads)
-            ]
-        )
+
+        def mamba2() -> _Mamba2:
+            # Each block's heads are as wide as the head it reads
+            return _Mamba2(
+                head_dim,
+                d_state,
+                d_conv,
+                expand,
+                head_dim,
+                chunk_size=chunk_size,
+                dt_min=dt_min,
+                dt_max=dt_max,
+                dt_init_floor=dt_init_floor,
+                a_init_range=a_init_range,
+                norm_eps=norm_eps,
+            )
+
+        # Two Mamba-2 blocks per head
+        self.first = nn.ModuleList([mamba2() for _ in range(n_heads)])
+        self.second = nn.ModuleList([mamba2() for _ in range(n_heads)])
         self.lam = nn.Parameter(torch.ones(width))
         self.norms = nn.ModuleList(
             [nn.GroupNorm(num_groups=1, num_channels=head_dim) for _ in range(n_heads)]
@@ -628,10 +755,32 @@ class _Mamba2(nn.Module):
         ``d_inner = expand * d_model``, the total width of the heads.
     head_dim : int
         Width of one head; divides ``d_inner``.
+    chunk_size : int
+        Steps per chunk of the scan: bounds the size of the quadratic form.
+    dt_min, dt_max : float
+        The initial step size is log-uniform in ``[dt_min, dt_max]``.
+    dt_init_floor : float
+        Floor of the initial step size.
+    a_init_range : tuple of float
+        The initial decay rate ``A`` is uniform in ``a_init_range``.
+    norm_eps : float
+        Epsilon of the RMS norm that follows the gate.
     """
 
     def __init__(
-        self, d_model: int, d_state: int, d_conv: int, expand: int, head_dim: int
+        self,
+        d_model: int,
+        d_state: int,
+        d_conv: int,
+        expand: int,
+        head_dim: int,
+        *,
+        chunk_size: int,
+        dt_min: float,
+        dt_max: float,
+        dt_init_floor: float,
+        a_init_range: tuple[float, float],
+        norm_eps: float,
     ):
         super().__init__()
         d_inner = expand * d_model
@@ -639,6 +788,12 @@ class _Mamba2(nn.Module):
         self.d_state = d_state
         self.head_dim = head_dim
         self.n_heads = d_inner // head_dim
+        self.chunk_size = chunk_size
+        # Read by reset_parameters, which the model also calls without arguments
+        self.dt_min = dt_min
+        self.dt_max = dt_max
+        self.dt_init_floor = dt_init_floor
+        self.a_init_range = a_init_range
 
         # Width of the convolved sequence: the input x of the heads, and the
         # projections b and c of the state, shared by all heads
@@ -652,7 +807,7 @@ class _Mamba2(nn.Module):
         self.dt_bias = nn.Parameter(torch.empty(self.n_heads))
         self.A_log = nn.Parameter(torch.empty(self.n_heads))
         self.D = nn.Parameter(torch.empty(self.n_heads))
-        self.norm = nn.RMSNorm(d_inner, eps=_NORM_EPS)
+        self.norm = nn.RMSNorm(d_inner, eps=norm_eps)
         self.out_proj = nn.Linear(d_inner, d_model, bias=False)
 
         self.reset_parameters()
@@ -660,14 +815,15 @@ class _Mamba2(nn.Module):
     def reset_parameters(self) -> None:
         """Draw the step sizes, decay rates and skip as the reference Mamba-2."""
         with torch.no_grad():
-            # Step sizes log-uniform in [_DT_MIN, _DT_MAX]; dt_bias is their
-            # inverse softplus, so that softplus(dt_bias) starts at dt
+            # Step sizes log-uniform in [dt_min, dt_max], at least dt_init_floor;
+            # dt_bias is their inverse softplus, so that softplus(dt_bias) starts
+            # at dt
             log_dt = torch.empty_like(self.dt_bias)
-            log_dt.uniform_(math.log(_DT_MIN), math.log(_DT_MAX))
-            dt = log_dt.exp().clamp(min=_DT_FLOOR)
+            log_dt.uniform_(math.log(self.dt_min), math.log(self.dt_max))
+            dt = log_dt.exp().clamp(min=self.dt_init_floor)
             self.dt_bias.copy_(dt + torch.log(-torch.expm1(-dt)))
-            # Decay rates A uniform in [_A_MIN, _A_MAX], kept as log(A)
-            decay = torch.empty_like(self.A_log).uniform_(_A_MIN, _A_MAX)
+            # Decay rates A uniform in a_init_range, kept as log(A)
+            decay = torch.empty_like(self.A_log).uniform_(*self.a_init_range)
             self.A_log.copy_(decay.log())
             self.D.fill_(1.0)
 
@@ -697,7 +853,9 @@ class _Mamba2(nn.Module):
         a = -self.A_log.to(dtype).exp()
         # Heads of the input: (batch, n_steps, n_heads, head_dim)
         x = x.to(dtype).unflatten(-1, (self.n_heads, self.head_dim))
-        y = _ssd_scan(x, dt, a, b.to(dtype), c.to(dtype), self.D.to(dtype))
+        y = _ssd_scan(
+            x, dt, a, b.to(dtype), c.to(dtype), self.D.to(dtype), self.chunk_size
+        )
 
         # Heads side by side, back in the dtype of the model
         # (batch, n_steps, n_heads, head_dim) -> (batch, n_steps, d_inner)
@@ -714,7 +872,7 @@ def _ssd_scan(
     b: torch.Tensor,
     c: torch.Tensor,
     d: torch.Tensor,
-    chunk_size: int = _CHUNK_SIZE,
+    chunk_size: int,
 ) -> torch.Tensor:
     """Selective state space scan of Mamba-2, in chunks of ``chunk_size`` steps.
 

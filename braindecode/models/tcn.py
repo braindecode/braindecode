@@ -25,15 +25,15 @@ class BDTCN(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_filters: int
+    n_filters : int
         number of output filters of each convolution
-    n_blocks: int
+    n_blocks : int
         number of temporal blocks in the network
-    kernel_size: int
+    kernel_size : int
         kernel size of the convolutions
-    drop_prob: float
+    drop_prob : float
         dropout probability
-    activation: nn.Module, default=nn.ReLU
+    activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 

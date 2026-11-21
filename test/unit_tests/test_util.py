@@ -30,6 +30,11 @@ from braindecode.util import (
     th_to_np,
 )
 
+# the functions deprecated in #1734 warn on each call; test_orphan_deprecations checks it
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:.*will be removed in braindecode 2.2:FutureWarning"
+)
+
 
 def test_create_mne_dummy_raw(tmp_path):
     n_channels, n_times, sfreq = 2, 10000, 100
