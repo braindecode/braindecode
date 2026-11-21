@@ -43,6 +43,7 @@ from braindecode.models import (
     MEGXL,
     NICE,
     REVE,
+    SAMBA,
     ZUNA,
     BaRISTA,
     BrainBERT,
@@ -458,6 +459,16 @@ COMPAT = {
         n_times=250,
         canon=TEN_TWENTY,
         channels="fixed_order_unchecked",
+    ),
+    # Positions from chs_info, projected onto the 94 targets of the weights; any
+    # window of at least 8 samples (the released windows: 256 and 12800 at 128 Hz).
+    "SAMBA": dict(
+        cls=SAMBA,
+        sfreq=128,
+        n_times=256,
+        canon=TEN_TWENTY,
+        channels="coords",
+        coords_checked=True,
     ),
 }
 
