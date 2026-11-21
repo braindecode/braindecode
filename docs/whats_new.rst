@@ -182,6 +182,9 @@ Enhancements
   tolerance as a detection, merges events less than 90 s apart and splits events longer than
   5 min. It returns sensitivity, precision, F1 and false alarms per hour and per day, and
   matches timescoring 0.0.7 (:gh:`1735` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Add the :ref:`seizure-alarm-chbmit` tutorial. A seizure detector trained on two CHB-MIT
+  patients is tested on a third, and :func:`braindecode.training.szcore_event_scores`
+  scores its alarms (:gh:`PRNUM` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 API and behavior changes
 ========================
