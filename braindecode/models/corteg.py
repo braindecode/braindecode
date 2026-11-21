@@ -164,6 +164,13 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     (``LiuyinYang1101/CORTEG`` at ``caafb78``) for the same weights and inputs,
     up to float32 rounding, for both merge strategies (:gh:`1551`).
 
+    A bare ``STEEGFormer`` checkpoint (``braindecode/STEEGFormer-small``) is not
+    a CORTEG checkpoint. It has no high-gamma embedding and names the channel
+    table ``channel_pos.embedding.weight``, so ``strict=True`` raises, and
+    ``strict=False`` leaves ``channel_codebook`` at zero and derives
+    ``patch_embed_hi`` from the random initialization. Load
+    ``braindecode/corteg-small-pretrained`` instead.
+
     Parameters
     ----------
     patch_size : int, default=16
