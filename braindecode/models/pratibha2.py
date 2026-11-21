@@ -443,6 +443,7 @@ class _Pratibha2Encoder(nn.Module):
 
         # one sequence of C * P tokens per window, attended densely: (B, C * P, D)
         tokens = tokens.reshape(batch, n_chans * n_patches, self.embed_dim)
+        # depth pre-norm blocks of dense attention, then the final RMSNorm: (B, C * P, D)
         for block in self.blocks:
             tokens = block(tokens)
         tokens = self.final_norm(tokens)
@@ -487,5 +488,7 @@ class _Pratibha2PositionalEncoding(nn.Module):
         )
         # value, gate: (C, P, embed_dim) each
         value, gate = self.learned_linear(coords.to(weight_dtype)).chunk(2, dim=-1)
+        # gated learned branch, RMS-normalized: (C, P, embed_dim)
         learned = self.learned_norm(value * self.gate_activation(gate))
+        # sum of the two branches, RMS-normalized: (C, P, embed_dim)
         return self.final_norm(fourier + learned)
