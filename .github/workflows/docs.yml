@@ -216,6 +216,9 @@ jobs:
               exit 1
             fi
             printf '%s' "$CLEAN_KEY" > "/tmp/gh-pages/${CLEAN_KEY}.txt"
+            echo "has_indexnow=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_indexnow=false" >> "$GITHUB_OUTPUT"
           fi
 
           cd /tmp/gh-pages
@@ -244,10 +247,9 @@ jobs:
           fi
 
       - name: Notify IndexNow (Bing, ChatGPT Search, Copilot, Yandex, Naver, Seznam)
-        if: ${{ steps.tag_deploy.outputs.pushed == 'true' && env.INDEXNOW_PRESENT == 'true' }}
+        if: ${{ steps.tag_deploy.outputs.pushed == 'true' && steps.tag_deploy.outputs.has_indexnow == 'true' }}
         env:
           INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
-          INDEXNOW_PRESENT: ${{ secrets.INDEXNOW_KEY != '' }}
         run: |
           python - <<'PY'
           import json
