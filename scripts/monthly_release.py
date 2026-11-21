@@ -13,6 +13,8 @@ Three subcommands, used by ``.github/workflows/monthly-release.yml``:
     ``.devN`` / ``devN`` suffix) and flip the matching
     ``Current X.Y.Z (GitHub)`` heading in ``docs/whats_new.rst`` to
     ``Current X.Y.Z (YYYY-MM-DD)``.
+    With ``--next-dev-version`` it also relabels the documentation version
+    switcher, ``docs/_static/versions.json``.
 
 ``next-dev``
     Rewrite ``braindecode/version.py`` to the next dev seed (e.g.
@@ -157,7 +159,13 @@ def compute_versions(current: str, bump: str) -> dict[str, str]:
 
 
 def update_version_switcher(path: Path, release: str, next_dev: str) -> None:
-    """Label the release documentation and retain the previous stable series."""
+    """Relabel the documentation version switcher for a stable release.
+
+    ``path`` holds ``[dev, stable, *archives]``. The dev entry is named after the
+    series of ``next_dev`` and the stable entry after that of ``release``. When
+    the series changes, the previous stable series becomes the first archive,
+    served from ``/X.Y/`` instead of ``/stable/``.
+    """
     dev, stable, *archives = json.loads(path.read_text(encoding="utf-8"))
     series = ".".join(release.split(".")[:2])
     previous = stable["version"]
