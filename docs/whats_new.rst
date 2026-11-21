@@ -730,6 +730,13 @@ Code health
 - The numpydoc header test now covers every registered model, not nine. The
   parameter headers of 13 models read ``name: type`` and are now ``name : type``,
   so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Every documentation build emits ``https://braindecode.org/stable/`` canonical and
+  sitemap URLs (with ``noindex, follow`` on non-stable builds), raster PNG OpenGraph
+  cards, and ``model_seo`` descriptions, ``.md`` alternate links, and ``BreadcrumbList``,
+  ``SoftwareSourceCode``, and ``TechArticle`` JSON-LD; ``v*`` tag builds deploy
+  ``/stable/``, ``/X.Y/``, and origin-root ``robots.txt``, ``sitemap.xml``, ``index.html``,
+  and ``llms.txt`` to ``braindecode.github.io`` and submit changed URLs to IndexNow
+  (:gh:`1747` by `Bruno Aristimunha`_).
 - The cropped inference page is now the :ref:`cropped-inference` section of the cropped
   decoding tutorial and the docstrings of its functions; :ref:`channel-strategies` moves
   to the Models section, with tables (:gh:`1745` by `Bruno Aristimunha`_).
