@@ -33,22 +33,32 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
     :bdg-secondary:`Recurrent`
 
+    .. versionadded:: 2.1
+
     .. rubric:: Architecture Overview
+
+    With ``B`` the batch, ``C = n_chans``, ``D = embed_dim`` and ``S`` the number
+    of segments (``n_times``, padded or cropped to a multiple of the segment
+    length, divided by it):
 
     1. The EphysTokenizer encoder [ephystokenizer]_ turns each channel into a
        stream of discrete tokens, one per sample: a GRU runs over the channel,
        a linear layer and a layer norm give one logit per codebook entry, and
        the argmax is remapped to a token id through the released vocabulary.
+       ``x (B, C, T) -> token ids (B, C, S * 100)``.
     2. The token stream is cut into segments of ``n_patches[0] * patch_lens[0]``
        tokens (100, i.e. 0.4 s at 250 Hz). Token, time and channel embeddings
-       are summed.
+       are summed. ``-> (B * S, 100, C, D)``.
     3. A stack of causal time-attention layers runs on every channel. In layer
        ``i`` the keys and values are pooled into ``n_patches[i]`` patches of
        ``patch_lens[i]`` steps and the output keeps the last steps only, so the
        sequence shrinks to ``n_last_steps`` outputs per segment.
+       ``-> (B * S, n_last_steps, C, D)``, merged to
+       ``(B, S * n_last_steps, C, D)``.
     4. The outputs are averaged over time and segments into
        ``(batch, n_chans, embed_dim)`` features (Section 2.4 of the paper),
        flattened and classified by a linear layer.
+       ``-> (B, C, D) -> (B, C * D) -> (B, n_outputs)``.
 
     .. rubric:: Macro Components
 
@@ -86,29 +96,46 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     .. rubric:: Additional Mechanisms
 
     - **Input:** the 52 parcels of the Glasser 52 parcellation in the released
-      order, sign-flip aligned (Section 2.5.3), at 250 Hz and z-scored over the
-      recording; the model neither normalises nor checks ``sfreq``. With
-      ``on_non_divisible="pad"``, the feature mean skips the kept steps after
-      the end of the input.
-    - **Channel mask:** with ``return_features=True``, ``ch_mask`` (real channels
-      first) gives each recording the features of its real parcels run alone,
-      and zeros for padded channels. The flattened head is tied to
-      ``n_chans``, so without ``return_features`` it raises a ``ValueError``.
+      order, since the channel embedding is indexed by position, sign-flip
+      aligned (Section 2.5.3), at 250 Hz and z-scored over the recording
+      (``tokenize_session(standardize=True)`` in the reference); the model
+      neither normalises nor checks ``sfreq``. With ``on_non_divisible="pad"``,
+      the feature mean skips the kept steps after the end of the input.
+    - **Channel mask:** with ``return_features=True``, ``ch_mask`` (the mask of
+      :func:`~braindecode.datasets.pad_channels_collate`, real channels first)
+      gives each recording the features of its real parcels run alone, and
+      zeros for padded channels. The flattened head is tied to ``n_chans``, so
+      without ``return_features`` it raises a ``ValueError``.
     - **Token mask:** ``token_mask`` (True=hide) zeroes selected clean token
-      embeddings before the causal decoder, and :meth:`encode_tokens` returns
-      next-token targets for a downstream vocabulary head.
+      embeddings before the causal decoder, without changing the frozen
+      tokenizer or the attention masks; it is neither the released pretraining
+      method nor a bidirectional masked-sample reconstruction objective.
+      :meth:`encode_tokens` returns next-token targets for a downstream
+      vocabulary head; the encoder installs none.
     - **Session embedding:** the released model adds one for its 621 Cam-CAN
       sessions; the paper discards it downstream (Section 2.5.4), so the class
-      has none and the converted weights drop it.
-    - **Weights:** the released Cam-CAN MEG-GPT and EphysTokenizer weights,
-      converted to this class's keys without the next-token head and the
-      tokenizer's signal decoder, are at ``braindecode/meggpt-pretrained``
-      (revision ``5c49e27c``); the head is randomly initialized::
+      has none, the converted weights drop it, and the forward equals the
+      released model called without session labels.
+    - **Not ported:** only the released configuration, time attention with
+      patching. The reference's optional channel and cross attention, unpatched
+      keys, rotary or sinusoidal positions and batch/group norms are not
+      implemented.
 
-          from braindecode.models import MEGGPT
-          model = MEGGPT.from_pretrained("braindecode/meggpt-pretrained", n_outputs=4)
+    .. rubric:: Pretrained Weights
 
-    .. versionadded:: 2.1
+    The released Cam-CAN MEG-GPT and EphysTokenizer weights, converted to this
+    class's keys without the next-token head and the tokenizer's signal
+    decoder, are at ``braindecode/meggpt-pretrained`` (revision ``5c49e27c``);
+    the head is randomly initialized::
+
+        from braindecode.models import MEGGPT
+        model = MEGGPT.from_pretrained("braindecode/meggpt-pretrained", n_outputs=4)
+
+    They expect the input described above: source-space MEG at 250 Hz, the 52
+    parcels in the released order, sign-flip aligned and z-scored over the
+    recording (Section 2.5.3). On the same token ids, the decoder outputs and
+    the features equal those of the authors' model called without session
+    labels (:gh:`1555`).
 
     Parameters
     ----------
@@ -119,6 +146,10 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         Codebook size of the tokenizer.
     rnn_hidden_size : int, default=128
         Hidden size of the tokenizer GRU.
+    temperature : float, default=0.1
+        Divisor of the tokenizer's normalised logits before the argmax (the
+        released EphysTokenizer value). It leaves the argmax unchanged except for
+        float near-ties, so keep it to reproduce the released tokens.
     embed_dim : int, default=256
         Embedding and model dimension.
     num_heads : int, default=4
@@ -140,6 +171,9 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         Activation of the feed-forward blocks.
     drop_prob : float, default=0.2
         Dropout after the embeddings, the attention and the feed-forward blocks.
+    embedding_init_bound : float, default=0.05
+        Bound ``b`` of the uniform initialisation ``U(-b, b)`` of the token
+        embedding, as in the reference initializer.
     on_non_divisible : {"pad", "crop", "error"}, default="pad"
         How a window that is not a multiple of the segment length is handled:
         right zero-padded, cropped, or rejected.
@@ -183,6 +217,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         n_tokens: int = 66,
         n_codes: int = 128,
         rnn_hidden_size: int = 128,
+        temperature: float = 0.1,
         embed_dim: int = 256,
         num_heads: int = 4,
         feedforward_dim: int = 1024,
@@ -192,6 +227,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         patch_band: Sequence[Optional[int]] = (8, None, None, None, None),
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.2,
+        embedding_init_bound: float = 0.05,
         on_non_divisible: str = "pad",
         return_features: bool = False,
     ):
@@ -209,8 +245,12 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.on_non_divisible = on_non_divisible
         self.return_features = return_features
         self.n_last_steps = n_last_steps
+        # Read again by reset_parameters, through _init_parameters.
+        self.embedding_init_bound = embedding_init_bound
 
-        self.tokenizer = _EphysTokenizer(n_codes, n_tokens, rnn_hidden_size)
+        self.tokenizer = _EphysTokenizer(
+            n_codes, n_tokens, rnn_hidden_size, temperature
+        )
         self.to_segments = Rearrange("b c (s t) -> (b s) t c", t=self.segment_len)
         self.from_segments = Rearrange("b s t c d -> b (s t) c d")
         self.to_tokens = Rearrange("b t c d -> b c t d")
@@ -244,7 +284,8 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def _init_parameters(self) -> None:
         # Reference initialisation (meg_gpt/optim/initializer.py): Xavier linear
         # layers with zero bias, small uniform embeddings.
-        uniform = partial(nn.init.uniform_, a=-_EMBEDDING_INIT, b=_EMBEDDING_INIT)
+        bound = self.embedding_init_bound
+        uniform = partial(nn.init.uniform_, a=-bound, b=bound)
         rules = {nn.Linear: nn.init.xavier_uniform_, nn.Embedding: uniform}
         self.apply(partial(init_weights_, weights=rules))
         nn.init.xavier_uniform_(self.time_embedding)
@@ -510,27 +551,26 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer[1] = nn.Linear(self.final_layer[1].in_features, n_outputs)
 
 
-# Bound of the uniform embedding initialisation (meg_gpt/optim/initializer.py).
-_EMBEDDING_INIT = 0.05
-
-
 class _EphysTokenizer(nn.Module):
     """EphysTokenizer encoder: ``(batch, chans, time)`` floats to token ids.
 
     A GRU runs over each channel separately; the argmax of the normalised
-    logits is mapped through ``vocab`` (codebook entry to token id, frequency
-    ranked; unused entries map to 0 in the released vocabulary).
+    logits, divided by ``temperature`` beforehand, is mapped through ``vocab``
+    (codebook entry to token id, frequency ranked; unused entries map to 0 in
+    the released vocabulary).
     """
 
-    def __init__(self, n_codes: int, n_tokens: int, rnn_hidden_size: int):
+    def __init__(
+        self, n_codes: int, n_tokens: int, rnn_hidden_size: int, temperature: float
+    ):
         super().__init__()
         self.rnn = nn.GRU(1, rnn_hidden_size, batch_first=True)
         self.proj = nn.Linear(rnn_hidden_size, n_codes)
         self.norm = nn.LayerNorm(n_codes)
         self.to_series = Rearrange("b c t -> (b c) t 1")
-        # Released scaling of the logits (EphysTokenizer), kept so that float
-        # near-ties break as in the reference.
-        self.temperature = 0.1
+        # Released scaling of the logits (EphysTokenizer): float near-ties break
+        # as in the reference.
+        self.temperature = temperature
         # Placeholder until the released vocabulary is loaded.
         self.register_buffer("vocab", torch.arange(n_codes) % n_tokens)
         self.requires_grad_(False)

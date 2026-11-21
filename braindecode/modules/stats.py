@@ -73,18 +73,18 @@ def _power_fn(x: torch.Tensor, dim: int, keepdim: bool) -> torch.Tensor:
     return torch.mean(x**2, dim=dim, keepdim=keepdim)
 
 
-MeanLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.mean)
-MaxLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, _max_fn)
-VarLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.var)
-StdLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.std)
-LogVarLayer: Callable[[int, bool], StatLayer] = partial(
+MeanLayer = partial(StatLayer, torch.mean)
+MaxLayer = partial(StatLayer, _max_fn)
+VarLayer = partial(StatLayer, torch.var)
+StdLayer = partial(StatLayer, torch.std)
+LogVarLayer = partial(
     StatLayer,
     torch.var,
     clamp_range=(1e-6, 1e6),
     apply_log=True,
 )
 
-LogPowerLayer: Callable[[int, bool], StatLayer] = partial(
+LogPowerLayer = partial(
     StatLayer,
     _power_fn,
     clamp_range=(1e-4, 1e4),

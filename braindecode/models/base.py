@@ -14,7 +14,7 @@ import sys
 import warnings
 from collections import OrderedDict
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Dict, Iterable, Optional, Type, Union
+from typing import TYPE_CHECKING, Dict, Iterable, Optional, Union
 
 import numpy as np
 import torch
@@ -154,6 +154,9 @@ _HF_INSTALL_HINT = (
 
 
 class _BaseHubMixinStub:
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__()
+
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
         raise ImportError(f"{cls.__name__}.from_pretrained() {_HF_INSTALL_HINT}")
@@ -162,10 +165,15 @@ class _BaseHubMixinStub:
         raise ImportError(f"{type(self).__name__}.push_to_hub() {_HF_INSTALL_HINT}")
 
 
-# Define base class for hub mixin
-_BaseHubMixin: Type = (
-    huggingface_hub.PyTorchModelHubMixin if HAS_HF_HUB else _BaseHubMixinStub
-)
+# Define base class for hub mixin and docstring metaclass
+if TYPE_CHECKING:
+    _BaseHubMixin = _BaseHubMixinStub
+    _DocstringMetaBase = type
+else:
+    _BaseHubMixin = (
+        huggingface_hub.PyTorchModelHubMixin if HAS_HF_HUB else _BaseHubMixinStub
+    )
+    _DocstringMetaBase = NumpyDocstringInheritanceInitMeta
 
 
 def deprecated_args(obj, *old_new_args):
@@ -185,7 +193,7 @@ def deprecated_args(obj, *old_new_args):
     return out_args
 
 
-class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
+class _BraindecodeDocstringMeta(_DocstringMetaBase):
     """Defer ``__init__`` wrapping until after docstring inheritance.
 
     ``NumpyDocstringInheritanceInitMeta`` uses ``inspect.unwrap()``
@@ -261,7 +269,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         Sampling frequency of the EEG recordings.
     channel_strategy : str, default="native"
         How any montage reaches the backbone (pretrained models only; see
-        :doc:`/user_guide/channel_strategies`). ``"native"`` keeps the model as
+        :ref:`channel-strategies`). ``"native"`` keeps the model as
         it is. ``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
         ``"field"``, ``"source"``, ``"region"``, ``"wiener"`` (call
         ``model.channel_layer.fit`` first) or ``"latent"`` map the montage of ``chs_info`` (or of the

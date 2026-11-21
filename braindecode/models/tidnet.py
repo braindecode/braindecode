@@ -307,11 +307,15 @@ class _TemporalFilter(nn.Module):
         self.residual_style = str(residual)
         net = list()
 
+        is_dense = self.residual_style.lower() == "dense"
         for i in range(depth):
             dil = depth - i
+            in_ch = (
+                n_chans + i * filters if is_dense else (n_chans if i == 0 else filters)
+            )
             conv = weight_norm(
                 _TemporalConv(
-                    n_chans if i == 0 else filters,
+                    in_ch,
                     filters,
                     kernel_size=(1, temp_len),
                     dilation=dil,
@@ -321,11 +325,9 @@ class _TemporalFilter(nn.Module):
             net.append(
                 nn.Sequential(conv, activation(), nn.Dropout2d(p=float(drop_prob)))
             )
+        self.net = nn.Sequential(*net)
         if self.residual_style.lower() == "netwise":
-            self.net = nn.Sequential(*net)
             self.residual = nn.Conv2d(n_chans, filters, (1, 1))
-        elif residual.lower() == "dense":
-            self.net = net
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         style = self.residual_style.lower()

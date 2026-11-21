@@ -28,7 +28,11 @@ from braindecode.models import (
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import models_dict, models_mandatory_parameters
-from test.unit_tests.models._fixtures import _get_signal_params
+from test.unit_tests.models._fixtures import (
+    _get_all_possible_signal_params,
+    _get_possible_signal_params,
+    _get_signal_params,
+)
 
 if TYPE_CHECKING:
     from typing import Any as RuntimeOnlyMetadata
@@ -251,6 +255,56 @@ def test_all_params(
     assert module.n_times == 200
     assert module.input_window_seconds == 2.0
     assert module.sfreq == 100.0
+
+
+@pytest.mark.parametrize(
+    "required_params, expected_len",
+    [
+        ([], 42),
+        (["n_outputs"], 21),
+        (["chs_info"], 14),
+        (["n_chans", "n_outputs"], 14),
+        (["n_chans", "n_outputs", "n_times"], 8),
+        (["n_chans", "n_outputs", "n_times", "sfreq"], 6),
+        (["chs_info", "n_outputs", "n_times", "sfreq"], 3),
+    ],
+)
+def test_all_42_signal_param_combinations_on_dummy_module(
+    required_params, expected_len
+):
+    """Exhaustively test all valid signal-parameter combinations on DummyModule."""
+    sp = _get_signal_params(None)
+    all_combos = _get_all_possible_signal_params(sp, required_params)
+    minimal_combos = _get_possible_signal_params(sp, required_params)
+
+    assert len(all_combos) == expected_len
+    assert minimal_combos[0] == all_combos[0]
+    assert 2 <= len(minimal_combos) <= 3
+    for mc in minimal_combos:
+        assert mc in all_combos
+
+    for kw in all_combos:
+        module = DummyModule(**kw)
+        if kw["n_outputs"] is not None:
+            assert module.n_outputs == sp["n_outputs"]
+        else:
+            with pytest.raises(ValueError):
+                _ = module.n_outputs
+
+        if kw["chs_info"] is not None or kw["n_chans"] is not None:
+            assert module.n_chans == sp["n_chans"]
+        else:
+            with pytest.raises(ValueError):
+                _ = module.n_chans
+
+        n_time_given = sum(
+            kw[k] is not None for k in ("n_times", "sfreq", "input_window_seconds")
+        )
+        if n_time_given >= 2 or kw["n_times"] is not None:
+            assert module.n_times == sp["n_times"]
+        else:
+            with pytest.raises(ValueError):
+                _ = module.n_times
 
 
 @pytest.mark.parametrize(

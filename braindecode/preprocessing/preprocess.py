@@ -449,7 +449,9 @@ def _preprocess(
 
     if save_dir is not None:
         concat_ds: BaseConcatDataset[RecordDataset] = BaseConcatDataset([ds])
-        concat_ds.save(save_dir, overwrite=overwrite, offset=ds_index)
+        concat_ds.save(
+            save_dir, overwrite=overwrite, offset=ds_index, _check_subdirs=False
+        )
     else:
         return ds
 

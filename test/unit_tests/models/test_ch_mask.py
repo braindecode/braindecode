@@ -265,7 +265,7 @@ def test_fnirs_chs_info_ch_mask_matches_each_recording_alone(name, padding):
     if name == "GeoNIRS":
         model = GeoNIRS(chs_info=_mne_fnirs_chs(3), n_outputs=3, n_times=40,
                         embed_dim=32, num_heads=4, depth=1,
-                        n_latent_channels=4, feature_dim=8, projection_dims=(32, 8))
+                        n_latent_channels=4, feature_dim=8, projection_dims=())
         assert model.channel_order == "interleaved"
         alone = [{"geometry": model.default_geometry[:n_real]} for n_real in N_REAL]
     else:

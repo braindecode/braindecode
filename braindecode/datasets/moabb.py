@@ -174,16 +174,17 @@ class BNCI2014_001(MOABBDataset):
 
     Parameters
     ----------
-    subject_ids: list(int) | int | None
+    subject_ids : list(int) | int | None
         (list of) int of subject(s) to be fetched. If None, data of all
         subjects is fetched.
     """
     try:
-        from moabb.datasets import BNCI2014_001
+        from moabb.datasets import BNCI2014_001 as _moabb_bnci
 
-        __doc__ = _update_moabb_docstring(BNCI2014_001, doc)
+        __doc__ = _update_moabb_docstring(_moabb_bnci, doc)
+        del _moabb_bnci
     except ModuleNotFoundError:
-        pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
+        __doc__ = doc  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
 
     def __init__(self, subject_ids):
         super().__init__("BNCI2014_001", subject_ids=subject_ids)
@@ -194,16 +195,17 @@ class HGD(MOABBDataset):
 
     Parameters
     ----------
-    subject_ids: list(int) | int | None
+    subject_ids : list(int) | int | None
         (list of) int of subject(s) to be fetched. If None, data of all
         subjects is fetched.
     """
     try:
-        from moabb.datasets import Schirrmeister2017
+        from moabb.datasets import Schirrmeister2017 as _moabb_hgd
 
-        __doc__ = _update_moabb_docstring(Schirrmeister2017, doc)
+        __doc__ = _update_moabb_docstring(_moabb_hgd, doc)
+        del _moabb_hgd
     except ModuleNotFoundError:
-        pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
+        __doc__ = doc  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
 
     def __init__(self, subject_ids):
         super().__init__("Schirrmeister2017", subject_ids=subject_ids)

@@ -83,6 +83,7 @@ from braindecode.models import (
     MtReNIRS,
     NeuroRVQ,
     NeuroRVQTokenizer,
+    Pratibha2,
     SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
@@ -1015,12 +1016,97 @@ def test_caresleepnet_gives_one_prediction_per_epoch():
         (dict(n_epochs=0), "n_epochs must be at least 1"),
         (dict(n_times=901), "must be a positive multiple"),
         (dict(n_times=3 * 168), "at least 169 samples"),
+        (dict(encoder_strides=(12, 1, 1)), "one entry per stage"),
+        (dict(encoder_kernel_sizes=(48, 9, 9, 9)), "must be odd"),
+        (dict(n_heads=7), "must divide encoder_widths"),
+        (dict(n_heads=0), "must divide encoder_widths"),
+        (dict(transformer_n_heads=7), "must divide every entry"),
+        (dict(transformer_n_heads=0), "must divide every entry"),
+        (
+            dict(
+                encoder_widths=(),
+                encoder_kernel_sizes=(),
+                encoder_strides=(),
+                encoder_pool_kernel_sizes=(),
+                encoder_pool_strides=(),
+            ),
+            "at least one stage",
+        ),
     ],
 )
 def test_caresleepnet_rejects_bad_geometry(kwargs, match):
     params = dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1)
     with pytest.raises(ValueError, match=match):
         CareSleepNet(**(params | kwargs))
+
+
+def test_caresleepnet_runs_a_three_stage_encoder_at_its_shortest_epoch():
+    """A non-default epoch encoder, three stages, builds and runs on the shortest
+    epoch its strides and poolings leave one time step for (25 samples here). Its
+    two head counts differ: 8 heads divide the 24-wide fusion blocks, but not the
+    12-wide transformer layer, which takes 3."""
+    params = dict(
+        n_chans=3,
+        n_outputs=5,
+        n_epochs=3,
+        n_eog_chans=1,
+        n_heads=8,
+        encoder_widths=(8, 12, 24),
+        encoder_kernel_sizes=(9, 5, 5),
+        encoder_strides=(4, 1, 1),
+        encoder_pool_kernel_sizes=(3, 2, 2),
+        encoder_pool_strides=(2, 2, 2),
+        transformer_n_heads=3,
+    )
+    model = CareSleepNet(n_times=3 * 25, **params).eval()
+    assert model(torch.randn(2, 3, 75)).shape == (2, 5, 3)
+    with pytest.raises(ValueError, match="at least 25 samples"):
+        CareSleepNet(n_times=3 * 24, **params)
+
+
+@pytest.mark.parametrize(
+    "model_cls, params, extra",
+    [
+        (
+            CareSleepNet,
+            dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1),
+            {"msd_dilations": (1, 3, 9)},
+        ),
+        (
+            CareSleepNet,
+            dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1),
+            {"transformer_mlp_ratio": 2.0},
+        ),
+        (
+            TCCNet,
+            dict(n_chans=3, n_outputs=4, n_times=64, filters=((4, 4), (4,))),
+            {"dilation_growth": 3},
+        ),
+        (
+            Pratibha2,
+            dict(
+                chs_info=[{"ch_name": name} for name in ("Fp1", "Cz", "O2")],
+                n_outputs=2, n_times=400, embed_dim=32, n_freqs=2, depth=1,
+                num_heads=2,
+            ),
+            {"freq_range": (1.0, 20.0)},
+        ),
+    ],
+    ids=[
+        "CareSleepNet-msd_dilations",
+        "CareSleepNet-transformer_mlp_ratio",
+        "TCCNet-dilation_growth",
+        "Pratibha2-freq_range",
+    ],
+)  # fmt: skip
+def test_dilation_and_frequency_parameters_reach_the_model(model_cls, params, extra):
+    """Each of these parameters, alone, changes the seeded model's output."""
+    x = torch.randn(2, 3, params["n_times"])
+    outputs = []
+    for kwargs in ({}, extra):
+        torch.manual_seed(0)
+        outputs.append(model_cls(**params, **kwargs).eval()(x))
+    assert not torch.equal(*outputs)
 
 
 def test_caresleepnet_matches_authors_code():
@@ -6378,6 +6464,19 @@ def test_megxl_mask_token_hops(n_times):
         model.encode_codes(codes, torch.ones(1, dtype=torch.bool), torch.zeros(32))
 
 
+def test_megxl_min_rms_floors_the_scale_each_channel_is_divided_by():
+    """A floor above every channel's RMS replaces that RMS as the divisor of the
+    window the tokenizer's encoder sees. (The codes cannot show it: in this tiny
+    model the encoder output is almost its bias response, so every token gets the
+    same code.)"""
+    x = torch.randn(2, 3, 64)
+    model = _megxl(n_chans=3, n_times=64, min_rms=1e3)
+    seen = []
+    model.encoder.register_forward_pre_hook(lambda module, args: seen.append(args[0]))
+    model.tokenize(x)
+    torch.testing.assert_close(seen[0], x.reshape(6, 1, 64) / 1e3)
+
+
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_megxl_pretrained_matches_the_release():
@@ -6448,15 +6547,39 @@ def test_bbl_temporal_mask_hides_samples_before_context(hide_all):
 
 @pytest.mark.parametrize("n_times", [1, 39, 125])
 @pytest.mark.parametrize("ratios", [(4, 2, 2), (3, 2)])
-def test_bbl_temporal_features_are_the_sequence_before_pooling(n_times, ratios):
-    """``temporal_features`` has ``ceil(n_times / (2 * prod(ratios)))`` steps, and
+@pytest.mark.parametrize(
+    "sensor_kernel, downsample_kernel, stride", [(3, 3, 2), (5, 3, 4), (3, 5, 4)]
+)
+def test_bbl_temporal_features_are_the_sequence_before_pooling(
+    n_times, ratios, sensor_kernel, downsample_kernel, stride
+):
+    """With odd projector kernels, the projector outputs ``ceil(n_times / stride)``
+    steps and ``temporal_features`` has ``ceil(n_times / (stride * prod(ratios)))``;
     their mean over time is the pooled part of ``features``."""
-    model = _bbl(n_times=n_times, ratios=ratios)
+    model = _bbl(
+        n_times=n_times,
+        ratios=ratios,
+        sensor_kernel_size=sensor_kernel,
+        downsample_kernel_size=downsample_kernel,
+        downsample_stride=stride,
+    )
     with torch.no_grad():
+        n_projected = model.projector(torch.randn(2, 5, n_times)).shape[-1]
         out = model(torch.randn(2, 3, n_times), return_features=True)
-    n_steps = -(-n_times // (2 * math.prod(ratios)))
+    assert n_projected == -(-n_times // stride)
+    state = model.state_dict()  # the kernels reach the two convolutions
+    assert state["projector.0.weight"].shape[-1] == sensor_kernel
+    assert state["projector.2.weight"].shape[-1] == downsample_kernel
+    n_steps = -(-n_times // (stride * math.prod(ratios)))
     assert out["temporal_features"].shape == (2, 8, n_steps)
     assert torch.equal(out["features"][:, :8], out["temporal_features"].mean(-1))
+
+
+@pytest.mark.parametrize("name", ["sensor_kernel_size", "downsample_kernel_size"])
+def test_bbl_projector_kernels_must_be_odd(name):
+    """The padding ``kernel_size // 2`` keeps the length only for an odd kernel."""
+    with pytest.raises(ValueError, match="must be odd"):
+        _bbl(**{name: 4})
 
 
 def _nice():
@@ -6543,7 +6666,7 @@ def _interleaved_fnirs_chs(n_pairs=4):
         (FNIRSPreT, {"depth": 1, "num_heads": 2}),
         (JungMAE, {"depth": 1, "num_heads": 4, "embed_dim": 64}),
         (GeoNIRS, {"depth": 1, "num_heads": 4, "embed_dim": 64,
-                   "projection_dims": (64, 64)}),
+                   "projection_dims": ()}),
         (MtReNIRS, {"depth": 1, "num_heads": 2, "embed_dim": 32}),
     ],
 )
@@ -6949,7 +7072,7 @@ def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
     pytest.importorskip("huggingface_hub")
     model = MtReNIRS.from_pretrained(
         "braindecode/mtrenirs-pretrained",
-        revision="7c5e60535c3822dcac3ddcd2d19098504d57d38c",
+        revision="708cffe1c30c6bc2698b3025671ed70b220f4ea3",
         chs_info=_fnirs_chs_info(4),
         n_outputs=3,
         n_times=n_times,

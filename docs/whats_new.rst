@@ -28,6 +28,16 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Speed up serialized dataset saving and lazy reloading in
+  :func:`braindecode.datautil.serialization.load_concat_dataset` and
+  :meth:`braindecode.datasets.BaseConcatDataset.save` by dispatching
+  ``preload=False`` header reads across threads, serializing ``description.json``
+  directly with ``json``, scanning directory layouts in one ``os.scandir`` pass,
+  and streamlining the preprocessing, SAE/REVE, EEGPrep, and temporal
+  generalization gallery examples (:gh:`1756` by `Bruno Aristimunha`_).
+- Add ``scripts/ci_plan.py`` and ``pytest --select-models`` to select affected tests and
+  models from pull-request diffs, shard full runs across four workers, and schedule the
+  cross-OS, Python, and ``torch.compile`` matrix daily (:gh:`1753` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
   foundation model that reads electrode positions through a coordinate-driven
   spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
@@ -250,6 +260,20 @@ Requirements
 Bug fixes
 ==========
 
+- Suppress spurious directory-mismatch warnings when :func:`~braindecode.preprocessing.preprocess`
+  saves recordings to ``save_dir`` and replace ``memory_profiler`` process spawning in
+  :ref:`benchmark-preprocess-parallel-serial` so ``spawn`` and parallel gallery workers succeed (:gh:`1756` by `Bruno Aristimunha`_).
+- Speed up documentation builds (``make html-noplot`` no longer hangs with ``-j auto`` on macOS),
+  fix the duplicate ``Parameters`` section in :class:`braindecode.datasets.BNCI2014_001`, and
+  cache unchanged Sphinx-Gallery outputs in CI (:gh:`1752` by `Bruno Aristimunha`_).
+- Fix ``SincShallowNet(activation=None)``, dense ``TIDNet`` layer registration,
+  ``_EEGNeuralNet.get_iterator(drop_index=...)``, ``ft_surrogate`` tensor dtypes,
+  ``SleepPhysionetChallenge2018`` ``urllib.request``, and ``BBCIDataset`` init (:gh:`1751` by `Bruno Aristimunha`_).
+- Documentation: list all pre-trained models under ``braindecode[hub]`` in the API
+  reference, deduplicate the DataTables assets and apply an accessible light/dark
+  category palette on the models summary table, drop the render-blocking Google Fonts
+  ``@import`` from ``style.css``, and strip unreferenced ``<clipPath>`` definitions
+  from the logo SVGs (by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.create_windows_from_events` rounds event durations to
   samples instead of truncating them, so trials, and windows inferred from them, can be
   one sample longer (:gh:`1727` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
@@ -607,6 +631,9 @@ Bug fixes
 Code health
 ============
 
+- Replace ``mypy`` and ``isort`` with Astral ``ty`` and consolidated ``ruff`` hooks,
+  enable ``sys.monitoring`` coverage, drop dead ``setup.cfg`` sections, and preserve
+  class types through ``@register_dataset`` and :class:`~braindecode.models.EEGModuleMixin` (:gh:`1751` by `Bruno Aristimunha`_).
 - The test suite peaks lower: smaller inputs where no assertion depends on size,
   shared read-only data, freed TorchScript, compile and reference-cycle memory
   (:gh:`1713` by `Bruno Aristimunha`_).
@@ -709,7 +736,10 @@ Code health
   ``SoftwareSourceCode``, and ``TechArticle`` JSON-LD; ``v*`` tag builds deploy
   ``/stable/``, ``/X.Y/``, and origin-root ``robots.txt``, ``sitemap.xml``, ``index.html``,
   and ``llms.txt`` to ``braindecode.github.io`` and submit changed URLs to IndexNow
-  (by `Bruno Aristimunha`_).
+  (:gh:`1747` by `Bruno Aristimunha`_).
+- The cropped inference page is now the :ref:`cropped-inference` section of the cropped
+  decoding tutorial and the docstrings of its functions; :ref:`channel-strategies` moves
+  to the Models section, with tables (:gh:`1745` by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
@@ -770,8 +800,8 @@ Enhancements
 ============
 
 - The MOABB benchmark example no longer advises ``n_jobs=1`` on a GPU: with NVIDIA's Multi-Process Service running, ``n_jobs=18`` trained BNCI2014_001's 18 cross-session folds 2x faster than ``n_jobs=1`` for EEGNet, ShallowFBCSPNet and ATCNet, with the same score on every fold, and it notes that ``setup_seed`` does not reach the worker processes (:gh:`1500` by `Bhargav Kowshik`_).
-- Add a :ref:`CPU/Gloo distributed-window evaluation recipe
-  <distributed-window-evaluation>` with identity checks, chronological trial
+- Add a CPU/Gloo distributed-window evaluation recipe,
+  ``benchmarks/bench_distributed_windows.py``, with identity checks, chronological trial
   reconstruction and global metrics; it is a recipe, not an estimator backend
   (by `Bruno Aristimunha`_).
 - :class:`braindecode.datasets.BaseConcatDataset` takes the opt-in,
@@ -1045,7 +1075,7 @@ Enhancements
   bit-identical with the same ``state_dict``. It replaces the unreleased
   ``ChannelTokenizer``; BENDR adapts a non-canonical montage with an MNE spline and
   SignalJEPA no longer returns ``NaN`` for names without coordinates. See
-  :doc:`user_guide/channel_strategies` (:gh:`1227`, :gh:`1241` by `Bruno Aristimunha`_).
+  :ref:`channel-strategies` (:gh:`1227`, :gh:`1241` by `Bruno Aristimunha`_).
 
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
@@ -1293,7 +1323,7 @@ API and behavior changes
   Parameters and state-dict keys. ``_orig_mod.`` keys from skorch's wrapper are
   **not** rewritten on load, and a pickled or copied estimator runs eagerly until
   ``initialize()``;
-  see :ref:`compile-checkpoint-migration` (by `Bruno Aristimunha`_).
+  see ``compile`` in :class:`braindecode.EEGClassifier` (by `Bruno Aristimunha`_).
 - :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` returns an ``i_dataset`` column with the position of the dataset each window comes from, and raises a :class:`ValueError` if a description or the window metadata already has that key. The samplers in :mod:`braindecode.samplers` take each dataset as one recording; pass the metadata without ``i_dataset`` to group the one-trial datasets of :func:`braindecode.datasets.create_from_X_y` or :func:`braindecode.datasets.create_from_mne_epochs` by subject, session and run as before. The samplers' ``info`` gets a ``recording`` index level after subject, session and run (:gh:`1369` by `Raghav Rathi`_).
 - :class:`braindecode.models.Labram`, :class:`braindecode.models.CBraMod` and
   :class:`braindecode.models.LUNA` tokenize the time axis with the shared

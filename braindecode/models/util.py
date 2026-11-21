@@ -192,7 +192,7 @@ def track_model_init_kwargs(cls) -> None:
             if "channel_strategy" in kwargs:
                 raise TypeError(
                     f"{name} takes no channel_strategy: it reads its input "
-                    "natively (see the channel strategies page of the user guide)."
+                    "natively (see the channel strategies page of the models documentation)."
                 ) from None
             raise TypeError(f"{name}: {error}") from None
         bound.apply_defaults()

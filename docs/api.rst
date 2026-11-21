@@ -60,40 +60,78 @@ interface for all EEG models and can derive variable names when needed.
 
     **Available pre-trained models:**
 
-    Some models have pre-trained weights available on the Hugging Face BrainDecode
-    organization:
+    Some models have pre-trained weights available on the Hugging Face Hub or are
+    compatible with released checkpoints:
 
     .. currentmodule:: braindecode.models
 
+    - :class:`AXON` - Axis-factorized EEG foundation model with pre-trained weights
+    - :class:`BaRISTA` - Multi-scale spatial intracranial EEG foundation model with
+      pre-trained weights
+    - :class:`BBL` - MEG foundation encoder from *The Brain's Bitter Lesson* with
+      pre-trained weights
+    - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`BIOT` - Foundation model with pre-trained weights
     - :class:`BrainBERT` - Intracranial (sEEG/iEEG) foundation model with pre-trained
       weights
-    - :class:`BrainOmni` - Unified EEG/MEG foundation model with pre-trained weights
+    - :class:`BrainOmni` and :class:`BrainTokenizer` - Unified EEG/MEG foundation model
+      and sensor-conditioned tokenizer with pre-trained weights
+    - :class:`Brant` - Intracranial (sEEG/ECoG) foundation model with pre-trained
+      weights
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
-    - :class:`CSBrain` - Cross-scale spatiotemporal brain foundation model with
-      structured sparse attention
-    - :class:`Guetschel2026` - 58 MAE/JEPA encoders sharing one backbone, from the EEG
-      masking-geometry study
-    - :class:`Labram` - Large Brain Model with pre-trained weights
-    - :class:`REVE` - EEG foundation model with pre-trained weights
-    - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
-    - :class:`TinyMyo` - Small sEMG foundation model with pre-trained weights
-    - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
-    - :class:`MIRepNet` - Motor-imagery pre-trained model
-    - :class:`NeuroRVQ` - Multi-scale biosignal tokenizer foundation model
-    - :class:`NeuroRVQTokenizer` - Residual vector quantization EEG tokenizer
-    - :class:`BENDR` - Foundation model with pre-trained weights
-    - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
-    - :class:`EEGPT` - Pretrained transformer for universal EEG
-    - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
-      re-hosted weights
     - :class:`CORTEG` - ST-EEGFormer adapted to intracranial ECoG by electrode position,
       with a high-gamma token stream
+    - :class:`CSBrain` - Cross-scale spatiotemporal brain foundation model with
+      structured sparse attention
+    - :class:`DIVER1` - Any-variate EEG and intracranial foundation model with
+      pre-trained weights
+    - :class:`DuIN` - Subject-adaptive sEEG masked-autoencoder model with pre-trained
+      weights
+    - :class:`EEGDINO` - Self-distillation EEG foundation model with pre-trained weights
+    - :class:`EEGPT` - Pretrained transformer for universal EEG
+    - :class:`EpiNT` - Channel-independent epilepsy EEG/iEEG foundation model compatible
+      with released weights
+    - :class:`GeoNIRS` - Geometry-conditioned fNIRS foundation model with pre-trained
+      weights
+    - :class:`Guetschel2026` - 58 MAE/JEPA encoders sharing one backbone, from the EEG
+      masking-geometry study
+    - :class:`JungMAE` - Masked autoencoder for fNIRS with pre-trained weights
+    - :class:`Labram` - Large Brain Model with pre-trained weights
+    - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
+    - :class:`MEGGPT` - Source-space causal MEG foundation model with pre-trained
+      weights
+    - :class:`MEGXL` - Long-context criss-cross MEG foundation model with pre-trained
+      weights
+    - :class:`MIRepNet` - Motor-imagery pre-trained model
+    - :class:`MtReNIRS` - Montage-aware rotary-transformer fNIRS foundation model with
+      pre-trained weights
+    - :class:`MVPFormer` - Multi-scale wavelet intracranial EEG foundation model
+      compatible with released weights
+    - :class:`NeuroPose` - sEMG-to-hand-pose encoder-decoder with pre-trained weights
+    - :class:`NeuroRVQ` - Multi-scale biosignal tokenizer foundation model
+    - :class:`NeuroRVQTokenizer` - Residual vector quantization EEG tokenizer
+    - :class:`NICE` - Contrastive EEG/MEG image-decoding encoder compatible with
+      released weights
+    - :class:`PopulationTransformer` - Self-supervised intracranial population
+      transformer (PopT) with pre-trained weights
+    - :class:`Pratibha2` - Dense-attention EEG foundation model with pre-trained weights
+    - :class:`REVE` - EEG foundation model with pre-trained weights
+    - :class:`SAMBA` - Coordinate-driven Mamba-2 EEG foundation model with pre-trained
+      weights
+    - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
     - :class:`SleepFM` and :class:`SleepFMStager` - Multimodal PSG foundation encoder
       and token-wise sleep-staging model compatible with the authors' CC BY-NC
       checkpoints
+    - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
+      re-hosted weights
+    - :class:`TFMTokenizer` - Time-frequency motif EEG tokenizer with pre-trained
+      weights
+    - :class:`TinyMyo` - Small sEMG foundation model with pre-trained weights
+    - :class:`VEMG2Pose` - Streaming sEMG-to-hand-pose model with pre-trained weights
+    - :class:`ZUNA` - Montage-agnostic EEG foundation model with pre-trained weights
 
     **Example - Loading a pre-trained model:**
 
@@ -135,7 +173,6 @@ interface for all EEG models and can derive variable names when needed.
 
 .. autosummary::
     :toctree: generated/
-    :recursive:
 
      EEGModuleMixin
 
@@ -145,7 +182,6 @@ interface for all EEG models and can derive variable names when needed.
 
 .. autosummary::
     :toctree: generated/
-    :recursive:
 
      ATCNet
      AXON
@@ -280,7 +316,6 @@ stability.
 .. autosummary::
     :toctree: generated/activation
     :template: class_in_subdir
-    :recursive:
 
     GatedLinearUnit
     LogActivation
@@ -297,7 +332,6 @@ squeeze and excitation layers.
 .. autosummary::
     :toctree: generated/attention
     :template: class_in_subdir
-    :recursive:
 
     CAT
     CBAM
@@ -323,7 +357,6 @@ perceptrons (MLPs) and inception blocks.
 .. autosummary::
     :toctree: generated/blocks
     :template: class_in_subdir
-    :recursive:
 
     MLP
     TimmAttention
@@ -335,15 +368,13 @@ perceptrons (MLPs) and inception blocks.
 Channels
 ========
 
-The channel layer behind ``channel_strategy=`` (see
-:doc:`user_guide/channel_strategies`).
+The channel layer behind ``channel_strategy=`` (see :ref:`channel-strategies`).
 
 :py:mod:`braindecode.modules.channels`:
 
 .. autosummary::
     :toctree: generated/channels
     :template: class_in_subdir
-    :recursive:
 
     ChannelLayer
 
@@ -365,7 +396,6 @@ constraints and pooling layers.
 .. autosummary::
     :toctree: generated/convolution
     :template: class_in_subdir
-    :recursive:
 
     AvgPool2dWithConv
     CausalConv1d
@@ -384,7 +414,6 @@ These modules implement Filter Bank as Layer and generalizer Gaussian layer.
 .. autosummary::
     :toctree: generated/filter
     :template: class_in_subdir
-    :recursive:
 
     FilterBankLayer
     GeneralizedGaussianFilter
@@ -401,7 +430,6 @@ input shapes and dimensions.
 .. autosummary::
     :toctree: generated/layers
     :template: class_in_subdir
-    :recursive:
 
     ChannelMerger
     Chomp1d
@@ -430,7 +458,6 @@ initializations.
 .. autosummary::
     :toctree: generated/linear
     :template: class_in_subdir
-    :recursive:
 
     LinearWithConstraint
     MaxNormLinear
@@ -446,7 +473,6 @@ These modules implement the vector quantizers of the tokenizer models, such as
 .. autosummary::
     :toctree: generated/quantization
     :template: class_in_subdir
-    :recursive:
 
     EMACodebook
     VectorQuantizer
@@ -463,7 +489,6 @@ codec models (BrainOmni, BBL).
 .. autosummary::
     :toctree: generated/seanet
     :template: class_in_subdir
-    :recursive:
 
     SEANetConv1d
     SEANetConvTranspose1d
@@ -483,7 +508,6 @@ features and over the channels on the other, shared by BrainOmni and MEGXL.
 .. autosummary::
     :toctree: generated/spatial_temporal
     :template: class_in_subdir
-    :recursive:
 
     SpatialTemporalBlock
 
@@ -499,13 +523,11 @@ the log power and log variance of input data. Mostly used on FilterBank models.
 .. autosummary::
     :toctree: generated/stats
     :template: class_in_subdir
-    :recursive:
 
     StatLayer
 
 .. autosummary::
     :toctree: generated/stats
-    :recursive:
 
     LogPowerLayer
     LogVarLayer
@@ -525,7 +547,6 @@ model.
 .. autosummary::
     :toctree: generated/util
     :template: function_in_subdir
-    :recursive:
 
     aggregate_probas
 
@@ -540,7 +561,6 @@ models with multiple outputs and wrappers for models with intermediate outputs.
 .. autosummary::
     :toctree: generated/wrapper
     :template: class_in_subdir
-    :recursive:
 
     Expression
     IntermediateOutputWrapper
@@ -557,7 +577,6 @@ The functional module contains various functions that can be used like functiona
 
 .. autosummary::
     :toctree: generated
-    :recursive:
 
      check_ch_mask
      check_n_chans
@@ -986,7 +1005,8 @@ models and evaluate their performance.
      f1_event
      szcore_event_scores
 
-See :ref:`cropped-inference` for memory bounds, lifecycle and loader settings.
+The section :ref:`cropped-inference` of the cropped decoding tutorial runs the trial
+functions on a trained model.
 
 *******
  Utils

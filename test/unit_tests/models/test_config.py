@@ -15,9 +15,11 @@ if pydantic is False or numpydantic_imported is False:
 
 import numpy as np
 
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.config import make_model_config
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from test.unit_tests.models._fixtures import (
+    _get_all_possible_signal_params,
     _get_possible_signal_params,
     _get_signal_params,
 )
@@ -124,3 +126,56 @@ def test_fractional_input_window_seconds_inference_config(
         sfreq=sfreq,
     )
     assert cfg.n_times == expected_n_times
+
+
+@pytest.mark.parametrize(
+    "required_params",
+    [
+        [],
+        ["n_outputs"],
+        ["chs_info"],
+        ["n_chans", "n_outputs"],
+        ["n_chans", "n_outputs", "n_times"],
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        ["chs_info", "n_outputs", "n_times", "sfreq"],
+    ],
+)
+def test_exhaustive_42_signal_param_combinations_dummy_config(
+    monkeypatch, required_params
+):
+    """Test all 42 valid signal-parameter combinations on a lightweight DummyModule."""
+    from torch import nn
+
+    class _DummyConfigModel(EEGModuleMixin, nn.Sequential):
+        def __init__(
+            self,
+            n_outputs=None,
+            n_chans=None,
+            chs_info=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+        ):
+            super().__init__(
+                n_outputs=n_outputs,
+                n_chans=n_chans,
+                chs_info=chs_info,
+                n_times=n_times,
+                input_window_seconds=input_window_seconds,
+                sfreq=sfreq,
+            )
+
+    monkeypatch.setitem(models_dict, "_DummyConfigModel", _DummyConfigModel)
+    ModelConfig = make_model_config(_DummyConfigModel, required_params)
+    sp = _get_signal_params(None)
+    all_combos = _get_all_possible_signal_params(sp, required_params)
+    if not required_params:
+        assert len(all_combos) == 42
+    for kw in all_combos:
+        cfg = ModelConfig(**kw)
+        serialized = cfg.model_dump(mode="json")
+        restored = ModelConfig.model_validate(serialized)
+        np.testing.assert_equal(
+            restored.model_dump(mode="python"), cfg.model_dump(mode="python")
+        )
+        assert isinstance(cfg.create_instance(), _DummyConfigModel)

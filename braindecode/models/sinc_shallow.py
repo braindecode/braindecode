@@ -121,7 +121,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
         # Checkers and creating variables
         if activation is None:
-            activation = nn.ELU()
+            activation = nn.ELU
 
         if self.n_times is None:
             raise ValueError(

@@ -2,7 +2,7 @@
 from collections.abc import Callable
 from inspect import signature
 from types import UnionType
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
 import numpy as np
 import pydantic
@@ -19,7 +19,7 @@ from braindecode.models.util import (
 try:
     from numpydantic import NDArray, Shape
 
-    _loc_type = NDArray[Shape["12"], np.float64]
+    _loc_type = NDArray[Shape["12"], np.float64]  # ty: ignore[invalid-type-form]
 except ImportError:
     # Without numpydantic, loc (12,) is a plain ndarray written to JSON as floats
     _loc_type = Annotated[
@@ -209,7 +209,7 @@ def make_model_config(
     name = model_class.__name__
     model_config = pydantic.create_model(
         f"{name}Config",
-        model_name_=(Literal[name], name),
+        model_name_=(Literal[name], name),  # ty: ignore[invalid-type-form]
         __config__=pydantic.ConfigDict(
             arbitrary_types_allowed=True, extra=extra, validate_default=True
         ),
@@ -234,12 +234,16 @@ for model_name, req, _ in models_mandatory_parameters:
     __all__.append(model_cfg.__name__)
     models_configs.append(model_cfg)
 
-BraindecodeModelConfig = Annotated[  # type: ignore[valid-type]
-    Union[tuple(models_configs)],
+BraindecodeModelConfig = Annotated[
+    Union[tuple(models_configs)],  # ty: ignore[invalid-type-form]
     pydantic.Field(
         discriminator="model_name_", description="Braindecode model configuration"
     ),
 ]
+
+if TYPE_CHECKING:
+
+    def __getattr__(name: str) -> type[BaseBraindecodeModelConfig]: ...
 
 # # Example usage:
 #

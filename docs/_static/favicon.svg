@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <!-- Left cortical hemisphere silhouette & sulci -->
+  <path
+    d="M30 10C23.5 10 18.5 13.6 17.2 19C12.8 20.2 10 24.1 10 28.8C10 31.3 10.9 33.5 12.4 35.2C10.9 37 10 39.4 10 42C10 47.2 13.8 51.4 18.8 52.2C20.6 55.2 24 57 28 57H30C31.1 57 32 56.1 32 55V12C32 10.9 31.1 10 30 10Z"
+    fill="#3a6c97"
+    fill-opacity="0.14"
+    stroke="#3a6c97"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M17.5 23.5C21.5 23.5 24.5 26 26.5 29.5M16 36.5C20.5 36.2 24.2 38.5 26.8 42M22 16.5C24.5 18 26.5 20.2 27.5 23"
+    stroke="#3a6c97"
+    stroke-width="2.6"
+    stroke-linecap="round"
+  />
+  <!-- Synaptic edges from cortex to neural readout -->
+  <path
+    d="M32 20L43 16M32 33.5L43 16M32 20L43 33.5M32 33.5L43 33.5M32 47L43 33.5M32 33.5L43 51M32 47L43 51"
+    stroke="#3a6c97"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-opacity="0.72"
+  />
+  <path
+    d="M43 16L54 33.5M43 33.5L54 33.5M43 51L54 33.5"
+    stroke="#b46a2c"
+    stroke-width="2.5"
+    stroke-linecap="round"
+  />
+  <!-- Hidden cortical-interface nodes -->
+  <circle cx="43" cy="16" r="4.2" fill="#3a6c97" />
+  <circle cx="43" cy="33.5" r="4.2" fill="#3a6c97" />
+  <circle cx="43" cy="51" r="4.2" fill="#3a6c97" />
+  <!-- Decoded readout node -->
+  <circle cx="54" cy="33.5" r="5.2" fill="#b46a2c" />
+</svg>

@@ -7,6 +7,7 @@ from braindecode.augmentation.functional import (
     band_rotation,
     channels_rereference,
     channels_shuffle,
+    ft_surrogate,
     label_smoothing,
     mixup,
     segmentation_reconstruction,
@@ -358,3 +359,16 @@ def test_label_smoothing_rejects_invalid_targets():
         label_smoothing(X, torch.tensor([0.0, 1.5]), 0.1, num_classes=3)
     with pytest.raises(ValueError, match="dtype"):
         label_smoothing(X, torch.tensor([[0, 1], [1, 0]]), 0.1)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_ft_surrogate_accepts_tensor_phase_noise_magnitude(dtype):
+    X = torch.randn(2, 4, 32)
+    y = torch.tensor([0, 1])
+    mag = torch.tensor(0.5, dtype=dtype)
+    out_X, out_y = ft_surrogate(
+        X, y, phase_noise_magnitude=mag, channel_indep=False, random_state=0
+    )
+    assert out_X.shape == X.shape
+    assert out_X.dtype == torch.float32
+    assert torch.equal(out_y, y)

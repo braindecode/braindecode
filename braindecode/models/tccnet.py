@@ -26,6 +26,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
     :bdg-info:`Attention/Transformer`
 
+    .. versionadded:: 2.1
+
     .. figure:: https://braindecode.org/dev/_static/model/tccnet.png
        :align: center
        :alt: TCCNet architecture
@@ -36,6 +38,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
        logits, without the softmax.
 
     A temporal convolutional network that classifies a whole sEMG gesture.
+    The reference trains one model per subject of NinaPro DB1 (27 subjects,
+    10 sEMG channels at 100 Hz, 53 classes including rest).
 
     .. rubric:: Architecture Overview
 
@@ -50,7 +54,11 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     The defaults build the best model of the paper: the attention head and a
     receptive field of 255 samples (2550 ms at 100 Hz). Pass
     ``classification_head="aot"`` and/or ``filters=((32, 64), (64, 128))``
-    (31 samples, 310 ms) for its other three models.
+    (31 samples, 310 ms) for its other three models. With 10 channels and 53
+    classes the four models have 60,117 (AoT, 310 ms), 72,245 (AoT, 2550 ms),
+    76,629 (Att, 310 ms) and 88,757 (Att, 2550 ms) parameters; the authors'
+    poster lists them as 60K, 70K, 75K and 85K, and names the receptive fields
+    300 and 2500 ms.
 
     .. rubric:: Macro Components
 
@@ -58,10 +66,11 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         **Operations.** One residual block per inner sequence of ``filters``:
         its causal convolutions, each followed by the activation and a
         channel-wise dropout, plus a kernel-size-1 projection of the block
-        input that is added to the last convolution. The dilation doubles at
-        every convolution, across blocks too, so ``n`` convolutions of kernel
-        size ``k`` see :math:`1 + (k - 1)(2^n - 1)` samples. **Role.** One
-        feature vector per time step, computed from the past only.
+        input that is added to the last convolution. The dilation grows by the
+        factor ``dilation_growth`` at every convolution, across blocks too; it
+        doubles by default, so ``n`` convolutions of kernel size ``k`` see
+        :math:`1 + (k - 1)(2^n - 1)` samples. **Role.** One feature vector per
+        time step, computed from the past only.
 
     ``TCCNet.attention``
         **Operations.** With ``classification_head="att"``: a score
@@ -76,8 +85,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - **Temporal:** causal convolutions with dilations 1, 2, 4, ...: each step
-      sees only the past, and the receptive field grows exponentially.
+    - **Temporal:** causal convolutions with dilations 1, 2, 4, ... by default:
+      each step sees only the past, and the receptive field grows exponentially.
     - **Spatial:** every convolution mixes all its input channels; there is no
       per-channel branch.
     - **Spectral:** not modelled. The reference rectifies each channel and
@@ -90,6 +99,19 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
       out, as the reference's Keras ``Masking`` layer does. As in its
       ``CausalConv1D``, a convolution adds its bias only where its output is
       non-zero.
+    - **Attention.** The softmax over the scores ``s`` is the reference's
+      ``exp(s) / (sum(exp(s)) + eps)``, computed as
+      ``exp(s - m) / (sum(exp(s - m)) + eps * exp(-m))`` with ``m`` the row
+      maximum, at least 0 so that a fully padded gesture stays finite. The
+      values are the same, without the reference's overflow to NaN once the
+      context vector grows large.
+    - **Reference parity.** The reference sums every time step, padded ones
+      included, and divides by the number of valid steps; this port leaves
+      padded steps out. The two agree for pre-padding with an activation that
+      maps 0 to 0, such as the reference's ReLU. The bias rule changes the
+      result only where a convolution gives exactly zero at a valid step.
+      Initialisation follows Keras 2.2.4: truncated Glorot normal kernels,
+      zero biases, Glorot uniform attention weights.
 
     .. important::
 
@@ -97,9 +119,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         at 1 Hz (first-order Butterworth, ``filtfilt``) and pre-pads the
         gestures of a batch with ``-10``. The masked average over time equals
         its average for that padding only; a fully padded gesture gives NaN
-        with ``"aot"``, as there.
-
-    .. versionadded:: 2.1
+        with ``"aot"``, as there. The min-max normalisation of the reference's
+        generator is off in its released configurations.
 
     `License <https://github.com/DSIP-UPatras/ICASSP2019_TCN/blob/cd28909ccf3696b835446cbec2f15eb60610a2af/LICENSE>`_
 
@@ -111,6 +132,9 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         block.
     kernel_size : int, default=3
         Temporal kernel size of every causal convolution.
+    dilation_growth : int, default=2
+        Factor by which the dilation grows at every causal convolution, across
+        blocks too: 1, 2, 4, ... for 2.
     drop_prob : float, default=0.05
         Channel-wise dropout after each activated convolution, as Keras
         ``SpatialDropout1D``.
@@ -122,6 +146,9 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     mask_value : float | None, default=-10.0
         Value of every channel at a padded time step. ``None`` turns masking
         off.
+    eps : float, default=1e-7
+        Epsilon of the attention normalisation (``keras.backend.epsilon()`` in
+        the reference). Not used with ``classification_head="aot"``.
 
     References
     ----------
@@ -146,10 +173,12 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         # Model parameters.
         filters: Sequence[Sequence[int]] = ((32, 32), (32, 32), (64, 64), (128,)),
         kernel_size: int = 3,
+        dilation_growth: int = 2,
         drop_prob: float = 0.05,
         activation: type[nn.Module] = nn.ReLU,
         classification_head: str = "att",
         mask_value: float | None = -10.0,
+        eps: float = 1e-7,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -171,9 +200,12 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         in_channels = self.n_chans
         dilation = 1
         for block_filters in filters:
-            # The dilation doubles at every convolution, across blocks too.
-            dilations = [dilation * 2**i for i in range(len(block_filters))]
-            dilation *= 2 ** len(block_filters)
+            # The dilation grows by dilation_growth at every convolution, across
+            # blocks too.
+            dilations = [
+                dilation * dilation_growth**i for i in range(len(block_filters))
+            ]
+            dilation *= dilation_growth ** len(block_filters)
             blocks.append(
                 _TCCResidualBlock(
                     in_channels,
@@ -188,7 +220,9 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         self.feature_extractor = nn.ModuleList(blocks)
 
         self.attention = (
-            _TCCContextAttention(in_channels) if classification_head == "att" else None
+            _TCCContextAttention(in_channels, eps)
+            if classification_head == "att"
+            else None
         )
         self.final_layer = nn.Linear(in_channels, self.n_outputs)
         self._init_parameters()
@@ -249,18 +283,16 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         return self.final_layer(pooled)
 
 
-# Std of a standard normal truncated at +-2 sigma, which Keras 2.2.4's
-# ``glorot_normal`` divides by so that the truncated draw has the Glorot std.
-_TRUNC_NORMAL_2SIGMA_STD = 0.87962566103423978
-
-
 def _keras_glorot_normal_(weight: torch.Tensor) -> None:
     """Keras 2.2.4 ``glorot_normal``: a normal truncated at 2 sigma, rescaled
-    by 1 / ``_TRUNC_NORMAL_2SIGMA_STD``."""
+    by 1 / the std of a standard normal truncated at +-2 sigma."""
+    # Std of a standard normal truncated at +-2 sigma, which Keras 2.2.4's
+    # ``glorot_normal`` divides by so that the truncated draw has the Glorot std.
+    trunc_normal_2sigma_std = 0.87962566103423978
     receptive_field = weight[0][0].numel()
     fan_in = weight.shape[1] * receptive_field
     fan_out = weight.shape[0] * receptive_field
-    std = math.sqrt(2.0 / (fan_in + fan_out)) / _TRUNC_NORMAL_2SIGMA_STD
+    std = math.sqrt(2.0 / (fan_in + fan_out)) / trunc_normal_2sigma_std
     nn.init.trunc_normal_(weight, std=std, a=-2 * std, b=2 * std)
 
 
@@ -353,8 +385,9 @@ class _TCCContextAttention(nn.Module):
     ``(batch, n_features)``.
     """
 
-    def __init__(self, n_features: int) -> None:
+    def __init__(self, n_features: int, eps: float) -> None:
         super().__init__()
+        self.eps = eps
         self.weight = nn.Parameter(torch.empty(n_features, n_features))
         self.context = nn.Parameter(torch.empty(n_features))
         self.reset_parameters()
@@ -373,13 +406,13 @@ class _TCCContextAttention(nn.Module):
             # padded steps get no weight: (batch, n_times)
             scores = scores.masked_fill(~valid_mask, float("-inf"))
         # exp(s - m) / (sum exp(s - m) + eps * exp(-m)) is the reference's
-        # exp(s) / (sum exp(s) + eps) without its overflow; eps = 1e-7 is
-        # keras.backend.epsilon(). m >= 0 also covers fully padded rows.
+        # exp(s) / (sum exp(s) + eps) without its overflow; eps is
+        # keras.backend.epsilon(), 1e-7. m >= 0 also covers fully padded rows.
         shift = scores.amax(dim=1, keepdim=True).clamp_min(0.0).detach()
         attention = torch.exp(scores - shift)
         # weights that sum to 1 over the valid steps: (batch, n_times)
         attention = attention / (
-            attention.sum(dim=1, keepdim=True) + 1e-7 * torch.exp(-shift)
+            attention.sum(dim=1, keepdim=True) + self.eps * torch.exp(-shift)
         )
         # weighted sum over time: (batch, n_times, n_features) -> (batch, n_features)
         return torch.sum(x * attention.unsqueeze(-1), dim=1)

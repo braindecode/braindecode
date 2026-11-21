@@ -2816,6 +2816,48 @@ def test_corteg_high_gamma_embedding_starts_from_the_low_frequency_one():
     torch.testing.assert_close(hi.bias, lo.bias)
 
 
+def test_corteg_rejects_fewer_temporal_positions_than_patches():
+    """4 patches and the CLS token need 5 positions: 5 build and run, 4 raise."""
+    kwargs = dict(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
+    model = CORTEG(n_temporal_positions=5, **kwargs).eval()
+    assert model(torch.randn(2, 3, 64)).shape == (2, 2)
+    with pytest.raises(ValueError, match="n_temporal_positions"):
+        CORTEG(n_temporal_positions=4, **kwargs)
+
+
+def test_corteg_mlp_ratio_accepts_a_whole_float_and_refuses_a_fraction():
+    """STEEGFormer's config stores ``mlp_ratio`` as 4.0, which builds the model of 4."""
+    kwargs = dict(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
+    shapes = [
+        {k: v.shape for k, v in CORTEG(mlp_ratio=r, **kwargs).state_dict().items()}
+        for r in (4, 4.0)
+    ]
+    assert shapes[0] == shapes[1]
+    with pytest.raises(ValueError, match="mlp_ratio must be a whole number"):
+        CORTEG(mlp_ratio=2.5, **kwargs)
+
+
+def test_corteg_reset_parameters_in_float64():
+    """The kNN prior of the channel adapter follows the dtype of the model."""
+    model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
+    model = model.double()
+    model.reset_parameters()
+    assert model.eval()(torch.randn(2, 3, 64, dtype=torch.float64)).dtype == torch.float64
+
+
+def test_corteg_norm_eps_reaches_the_layer_norms():
+    """A non-default ``norm_eps``, alone, changes the seeded model's output."""
+    x = torch.randn(2, 3, 64)
+    outputs = []
+    for extra in ({}, {"norm_eps": 0.1}):
+        torch.manual_seed(0)
+        model = CORTEG(
+            chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL, **extra
+        )
+        outputs.append(model.eval()(x))
+    assert not torch.equal(*outputs)
+
+
 def test_corteg_channel_codebook_is_frozen():
     model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
     assert model.channel_codebook.shape == (len(model.vocab_positions), 32)

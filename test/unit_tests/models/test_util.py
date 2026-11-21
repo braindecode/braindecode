@@ -463,7 +463,7 @@ def test_fnirs_split_hbo_hbr_follows_chs_info():
         ("FNIRST", dict(depth=1, spatial_kernel_size=2)),
         ("JungMAE", dict(depth=1)),
         ("GeoNIRS", dict(depth=1, num_heads=4, embed_dim=64,
-                         projection_dims=(64, 64), pool="mean_std")),
+                         projection_dims=(), pool="mean_std")),
         ("MtReNIRS", dict(depth=2, num_heads=2, embed_dim=32,
                           pool="channel_temporal_mean")),
     ],
