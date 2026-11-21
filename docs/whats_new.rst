@@ -129,7 +129,9 @@ Enhancements
 - Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al.,
   ICML 2025), with ``ch_mask``, ``temporal_mask`` and the CamCAN weights at
   ``braindecode/bbl-pretrained`` (:gh:`1553` by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint, converted without the session embedding the paper discards for downstream use, is on the Hugging Face Hub at ``braindecode/meggpt-pretrained``; ``return_features=True`` also returns the per-channel ``"tokens"`` ``(batch, n_chans, n_segments * n_last_steps, embed_dim)`` and takes a ``ch_mask`` of padded channels, whose features and tokens are zero (the flattened head is tied to ``n_chans``, so logits refuse ``ch_mask``); optional ``token_mask`` hides clean token embeddings before the causal decoder, and ``encode_tokens`` supplies cached-ID encoding with shifted next-token targets, retained-tail indices and valid/selected loss masks for a separate vocabulary head (:gh:`1555` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a
+  source-space MEG foundation model with a frozen EphysTokenizer and a causal time-attention GPT, with
+  ``ch_mask``, ``token_mask`` and the weights at ``braindecode/meggpt-pretrained`` (:gh:`1555` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a dense-attention
   EEG foundation model; its encoder, converted from ``MannasAI/pratibha-2``, is on the Hugging
   Face Hub at ``braindecode/pratibha2-pretrained`` (:gh:`1654` by `Mahir Jain`_).
@@ -470,13 +472,6 @@ Bug fixes
 - :class:`braindecode.models.EEGPT` raises at construction when a learned ``chan_proj_type`` gets an
   ``n_chans_target`` other than 19: a width of 1 was broadcast over the 19 channel embeddings and
   other widths failed in forward (:gh:`1624` by `Bruno Aristimunha`_).
-- :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
-  averages kept steps that lie after the end of the input. When the last
-  segment held fewer real samples than its first kept step position, those
-  steps were outputs on zero padding and entered the ``"features"`` mean; the
-  mean now covers the real steps only. Windows that are a multiple of the
-  segment length, and ``"crop"``, are unchanged (:gh:`1561` by
-  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.LUNA` checks its temporal encoder geometry at
   construction. Patch sizes must be positive multiples of 4 and embedding
   widths positive multiples of 16. Incompatible settings previously failed
