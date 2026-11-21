@@ -28,7 +28,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         Embedding size for the final layer, by default 256.
     res_channels : list[int], optional
         Number of channels for each residual block, by default [32, 64, 128].
-    activation: nn.Module, default=nn.ELU
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     drop_prob : float, default=0.5

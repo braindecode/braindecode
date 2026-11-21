@@ -4356,21 +4356,8 @@ def test_documented_parameters_exist_in_signature(model_name):
     )
 
 
-@pytest.mark.parametrize(
-    "model_name",
-    [
-        "ATCNet",
-        "AttnSleep",
-        "CTNet",
-        "EEGSimpleConv",
-        "IFNet",
-        "SPARCNet",
-        "SleepStagerBlanco2020",
-        "SleepStagerChambon2018",
-        "TIDNet",
-    ],
-)
-def test_audited_model_parameter_headers_follow_numpydoc(model_name):
+@pytest.mark.parametrize("model_name", sorted(all_models_dict))
+def test_model_parameter_headers_follow_numpydoc(model_name):
     """Changed parameter headers must be parsed as names, not name-and-type."""
     model_class = all_models_dict[model_name]
     doc = inspect.getdoc(model_class) or ""
