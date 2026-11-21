@@ -26,7 +26,6 @@ from typing import cast
 import mne
 import numpy as np
 import torch
-from mne.channels import make_standard_montage
 from mne.io.constants import FIFF
 from scipy.cluster.vq import kmeans2
 from scipy.linalg import solve
@@ -713,7 +712,7 @@ def _reve_position_bank() -> dict[str, np.ndarray]:
     """
 
     def positions(kind):
-        return make_standard_montage(kind).get_positions()["ch_pos"]
+        return mne.channels.make_standard_montage(kind).get_positions()["ch_pos"]
 
     groups = [
         positions(kind)
