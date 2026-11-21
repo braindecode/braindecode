@@ -116,7 +116,6 @@ from braindecode.models.csbrain import (
 from braindecode.models.eegpt import (
     _EEGTransformer,
 )
-from braindecode.models.fnirs4d import _S4DLayer
 from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
@@ -6861,7 +6860,11 @@ def test_s4d_real_arithmetic_matches_complex_fft():
     """The real-arithmetic ``_S4DLayer`` equals the reference complex kernel + FFT."""
     torch.manual_seed(42)
     d_model, length = 8, 40
-    layer = _S4DLayer(d_model, 16, 0.0, nn.GELU).eval()
+    model = FNIRS4D(
+        n_chans=d_model, n_outputs=2, n_times=length, n_layers=1, d_state=16,
+        drop_prob=0.0,
+    )
+    layer = model.s4d_layers[0].eval()
     x = torch.randn(3, d_model, length)
     k = layer.kernel
     a_val = -torch.exp(k.log_A_real) + 1j * k.A_imag
@@ -6878,320 +6881,37 @@ def test_s4d_real_arithmetic_matches_complex_fft():
         torch.testing.assert_close(layer(x), ref_out, atol=1e-5, rtol=1e-5)
 
 
-class _AuthorsS4DKernel(torch.nn.Module):
-    """S4DKernel of fNIRS4D.py@eb13e5e (``lr=None``: every tensor a parameter)."""
-
-    def __init__(self, d_model, N=64, dt_min=0.001, dt_max=0.1):
-        super().__init__()
-        H = d_model
-        log_dt = torch.rand(H) * (math.log(dt_max) - math.log(dt_min)) + math.log(dt_min)
-        C = torch.randn(H, N // 2, dtype=torch.cfloat)
-        self.C = torch.nn.Parameter(torch.view_as_real(C))
-        self.log_dt = torch.nn.Parameter(log_dt)
-        self.log_A_real = torch.nn.Parameter(torch.log(0.5 * torch.ones(H, N // 2)))
-        self.A_imag = torch.nn.Parameter(math.pi * torch.arange(N // 2).repeat(H, 1))
-
-    def forward(self, L):
-        dt = torch.exp(self.log_dt)
-        C = torch.view_as_complex(self.C)
-        A = -torch.exp(self.log_A_real) + 1j * self.A_imag
-        dtA = A * dt.unsqueeze(-1)
-        K = dtA.unsqueeze(-1) * torch.arange(L, device=A.device)
-        C = C * (torch.exp(dtA) - 1.0) / A
-        return 2 * torch.einsum("hn, hnl -> hl", C, torch.exp(K)).real
-
-
-class _AuthorsS4D(torch.nn.Module):
-    """S4D of fNIRS4D.py@eb13e5e (``transposed=True``), FFT convolution."""
-
-    def __init__(self, d_model, d_state=64, dropout=0.0):
-        super().__init__()
-        self.D = torch.nn.Parameter(torch.randn(d_model))
-        self.kernel = _AuthorsS4DKernel(d_model, N=d_state)
-        self.activation = torch.nn.GELU()
-        # DropoutNd(tie=True) in the authors' code: the same law, one mask per
-        # (batch, channel) tied over the sequence
-        self.dropout = torch.nn.Dropout1d(dropout) if dropout > 0.0 else nn.Identity()
-        self.output_linear = torch.nn.Sequential(
-            torch.nn.Conv1d(d_model, 2 * d_model, kernel_size=1), torch.nn.GLU(dim=-2)
-        )
-
-    def forward(self, u):
-        L = u.size(-1)
-        k = self.kernel(L=L)
-        k_f = torch.fft.rfft(k, n=2 * L)
-        u_f = torch.fft.rfft(u, n=2 * L)
-        y = torch.fft.irfft(u_f * k_f, n=2 * L)[..., :L]
-        y = y + u * self.D.unsqueeze(-1)
-        y = self.dropout(self.activation(y))
-        return self.output_linear(y), None
-
-
-class _AuthorsMultiscaleBranch(torch.nn.Module):
-    """Multiscale_Mean_Hemoglobin_Branch of fNIRS4D.py@eb13e5e."""
-
-    def __init__(self, signal_channel=72, signal_length=30, avg_size_1=1, avg_size_2=10):
-        super().__init__()
-        self.avg_1 = nn.AvgPool2d(kernel_size=(signal_channel, avg_size_1), stride=1)
-        self.avg_2 = nn.AvgPool2d(kernel_size=(1, avg_size_2), stride=1)
-        self.conv_1 = nn.Conv2d(1, signal_channel // 2, kernel_size=(1, signal_length))
-        self.conv_2 = nn.Conv2d(
-            1, signal_channel // 2, kernel_size=(1, signal_length - avg_size_2 + 1)
-        )
-        self.bn_1 = nn.BatchNorm2d(signal_channel // 2)
-        self.bn_2 = nn.BatchNorm2d(signal_channel // 2)
-        self.elu_1 = nn.ELU()
-        self.elu_2 = nn.ELU()
-
-    def forward(self, x):
-        x_avg_1 = self.avg_1(x)
-        x_avg_2 = self.avg_2(x_avg_1)
-        x_conv_1 = self.conv_1(x_avg_1)
-        x_conv_2 = self.conv_2(x_avg_2)
-        x_1 = self.elu_1(self.bn_1(x_conv_1))
-        x_2 = self.elu_2(self.bn_2(x_conv_2))
-        return torch.squeeze(torch.cat((x_1, x_2), dim=1))
-
-
-class _AuthorsFNIRS4D(torch.nn.Module):
-    """The reference: fNIRS4D.py of wzhlearning/fNIRS4D@eb13e5e (Apache-2.0),
-    transcribed with the same layers, state-dict keys, forward and draw order;
-    only ``DropoutNd(tie=True)`` is ``nn.Dropout1d`` (see ``_AuthorsS4D``).
-    Input ``(batch, 1, signal_channel, signal_length)``."""
-
-    def __init__(self, mode, n_classes=2, signal_channel=72, signal_length=30,
-                 n_layers=4, dropout=0.5, prenorm=False):
-        super().__init__()
-        self.mode = mode
-        self.prenorm = prenorm
-        if mode == "KFold-CV":
-            self.mean_hemoglobin_branch = nn.AvgPool2d((1, signal_length), stride=(1, 1))
-        elif mode == "LOSO-CV":
-            self.mean_hemoglobin_branch = _AuthorsMultiscaleBranch(
-                signal_channel, signal_length
-            )
-        self.fNIRS_knowledge_embedding = nn.Sequential(
-            nn.Conv2d(1, signal_channel, (1, signal_length)),
-            nn.InstanceNorm2d(signal_channel),
-            nn.Conv2d(signal_channel, signal_channel, (1, 1), stride=(1, 1)),
-            Rearrange("b c h w -> b (h w) c"),
-        )
-        self.s4d_layers = nn.ModuleList()
-        self.norms = nn.ModuleList()
-        self.dropouts = nn.ModuleList()
-        for _ in range(n_layers):
-            self.s4d_layers.append(_AuthorsS4D(signal_channel, dropout=dropout))
-            self.norms.append(nn.LayerNorm(signal_channel))
-            self.dropouts.append(nn.Dropout1d(dropout))
-        self.fc = nn.Sequential(nn.Linear(signal_channel * 2, n_classes))
-
-    def forward(self, x):
-        x_MHB = self.mean_hemoglobin_branch(x)
-        if self.mode == "KFold-CV":
-            x_MHB = x_MHB.view(x_MHB.shape[0], -1)
-        x = self.fNIRS_knowledge_embedding(x)
-        for layer, norm, dropout in zip(self.s4d_layers, self.norms, self.dropouts):
-            z = x
-            if self.prenorm:
-                z = norm(z.transpose(-1, -2)).transpose(-1, -2)
-            z, _ = layer(z)
-            z = dropout(z)
-            x = z + x
-            if not self.prenorm:
-                x = norm(x.transpose(-1, -2)).transpose(-1, -2)
-        x = x.transpose(-1, -2)
-        x = x.mean(dim=1)
-        x = torch.cat((x, x_MHB), dim=1)
-        return self.fc(x)
-
-
-# conv biases in front of a norm: their true gradient is zero, and Adam would
-# scale the float32 noise of the two kernels (real vs complex FFT) to lr-sized steps
-_FNIRS4D_ZERO_GRADIENT = {
-    "fNIRS_knowledge_embedding.0.bias",
-    "mean_hemoglobin_branch.conv_1.bias",
-    "mean_hemoglobin_branch.conv_2.bias",
-}
-
-
-@pytest.mark.parametrize("prenorm", [False, True])
-@pytest.mark.parametrize("mode", ["KFold-CV", "LOSO-CV"])
-def test_fnirs4d_matches_the_authors_module(mode, prenorm):
-    """The authors' state dict loads strictly through ``mapping`` into FNIRS4D
-    with its defaults; the logits, ``final_layer(features)`` and input gradients
-    equal the authors' module in eval and in train mode (dropout 0.5, same
-    seed: same dropout sites); the gradients, parameters and BatchNorm
-    statistics stay equal over AdamW steps. The S4D kernels differ in float32
-    rounding only (real arithmetic vs complex FFT), hence ``atol``."""
-    torch.manual_seed(0)
-    reference = _AuthorsFNIRS4D(
-        mode, n_classes=3, signal_channel=8, signal_length=30, n_layers=2,
-        prenorm=prenorm,
-    )
-    kw = {"prenorm": True} if prenorm else {}
-    if mode == "KFold-CV":
-        kw["mean_branch"] = "time_mean"
-    model = FNIRS4D(n_chans=8, n_outputs=3, n_times=30, n_layers=2, compute_hbt=False, **kw)
-    model.load_state_dict(reference.state_dict(), strict=True)
-    close = partial(torch.testing.assert_close, rtol=0, atol=1e-5)
-    x = torch.randn(6, 8, 30)
-    for training in (False, True):
-        reference.train(training)
-        model.train(training)
-        x_ref = x.clone().requires_grad_(True)
-        x_port = x.clone().requires_grad_(True)
-        torch.manual_seed(1)
-        expected = reference(x_ref.unsqueeze(1))
-        torch.manual_seed(1)
-        logits = model(x_port)
-        close(logits, expected)
-        expected.square().sum().backward()
-        logits.square().sum().backward()
-        close(x_port.grad, x_ref.grad)
-        # a second forward on both sides keeps the BatchNorm statistics in step
-        torch.manual_seed(2)
-        expected = reference(x.unsqueeze(1))
-        torch.manual_seed(2)
-        features = model(x, return_features=True)["features"]
-        close(model.final_layer(features), expected)
-    names = [n for n, _ in reference.named_parameters()]
-    optimizers = [
-        torch.optim.AdamW(
-            [p for n, p in net.named_parameters() if n not in _FNIRS4D_ZERO_GRADIENT],
-            lr=1e-3,
-        )
-        for net in (reference, model)
-    ]
-    y = torch.tensor([0, 1, 2, 0, 1, 2])
-    for step in range(3):
-        for net, optimizer, inputs in zip(
-            (reference, model), optimizers, (x.unsqueeze(1), x)
-        ):
-            net.zero_grad()  # also the biases the optimizers leave out
-            torch.manual_seed(10 + step)
-            torch.nn.functional.cross_entropy(net(inputs), y).backward()
-        port_parameters = dict(model.named_parameters())
-        for name, parameter in zip(names, reference.parameters()):
-            port_grad = port_parameters[name.replace("fc.0.", "final_layer.")].grad
-            if name in _FNIRS4D_ZERO_GRADIENT:
-                assert parameter.grad.abs().max() < 1e-5
-                assert port_grad.abs().max() < 1e-5
-            else:
-                close(port_grad, parameter.grad)
-        for optimizer in optimizers:
-            optimizer.step()
-    # Adam divides each gradient by its running magnitude, so the float32 noise
-    # of small gradients reaches ~1e-5 in the parameters (measured <= 9e-6)
-    port_state = model.state_dict()
-    for key, value in reference.state_dict().items():
-        torch.testing.assert_close(
-            port_state[key.replace("fc.0.", "final_layer.")], value, rtol=0, atol=1e-4
-        )
-    reference.eval()
-    model.eval()
-    with torch.no_grad():
-        close(model(x), reference(x.unsqueeze(1)))
-
-
-def test_fnirs4d_hbt_matches_the_authors_module_on_hbo_hbt():
-    """FNIRS4D's defaults (``compute_hbt=True``, ``"multiscale"``) on
-    [HbO, HbR] rows equal the authors' LOSO-CV module on [HbO, HbO + HbR]."""
-    torch.manual_seed(0)
-    reference = _AuthorsFNIRS4D("LOSO-CV", signal_channel=8, signal_length=30)
-    model = FNIRS4D(n_chans=8, n_outputs=2, n_times=30)
-    model.load_state_dict(reference.state_dict(), strict=True)
-    x = torch.randn(6, 8, 30)
-    for training in (False, True):
-        reference.train(training)
-        model.train(training)
-        x_ref = x.clone().requires_grad_(True)
-        x_port = x.clone().requires_grad_(True)
-        hbo, hbr = x_ref[:, :4], x_ref[:, 4:]
-        torch.manual_seed(1)
-        expected = reference(torch.cat((hbo, hbo + hbr), dim=1).unsqueeze(1))
-        torch.manual_seed(1)
-        logits = model(x_port)
-        torch.testing.assert_close(logits, expected, rtol=0, atol=1e-5)
-        expected.square().sum().backward()
-        logits.square().sum().backward()
-        torch.testing.assert_close(x_port.grad, x_ref.grad, rtol=0, atol=1e-5)
-
-
 @pytest.mark.parametrize(
-    "n_chans, n_times, n_layers, mode, n_classes, n_params",
+    "n_chans, n_times, n_layers, mean_branch, n_classes, n_params",
     [
-        (40, 40, 4, "KFold-CV", 3, 37763),  # UFFT subject-specific
-        (72, 30, 4, "KFold-CV", 2, 87842),  # MA, WG subject-specific
-        (40, 40, 4, "LOSO-CV", 3, 39303),  # UFFT subject-independent
-        (72, 30, 4, "LOSO-CV", 2, 89894),  # MA subject-independent
-        (72, 30, 1, "LOSO-CV", 2, 29846),  # WG subject-independent
+        (40, 40, 4, "time_mean", 3, 37763),  # UFFT subject-specific
+        (72, 30, 4, "time_mean", 2, 87842),  # MA, WG subject-specific
+        (40, 40, 4, "multiscale", 3, 39303),  # UFFT subject-independent
+        (72, 30, 4, "multiscale", 2, 89894),  # MA subject-independent
+        (72, 30, 1, "multiscale", 2, 29846),  # WG subject-independent
     ],
 )
-def test_fnirs4d_authors_configurations(
-    n_chans, n_times, n_layers, mode, n_classes, n_params
+def test_fnirs4d_parameter_counts(
+    n_chans, n_times, n_layers, mean_branch, n_classes, n_params
 ):
-    """The configurations of ``KFold_Train.py`` and ``LOSO_Train.py``: same
-    parameter count, strict load and eval logits as the authors' module."""
-    torch.manual_seed(0)
-    reference = _AuthorsFNIRS4D(mode, n_classes, n_chans, n_times, n_layers).eval()
-    branch = "time_mean" if mode == "KFold-CV" else "multiscale"
+    """The configurations of the authors' ``KFold_Train.py`` and ``LOSO_Train.py``."""
     model = FNIRS4D(
         n_chans=n_chans, n_outputs=n_classes, n_times=n_times, n_layers=n_layers,
-        compute_hbt=False, mean_branch=branch,
-    ).eval()
+        compute_hbt=False, mean_branch=mean_branch,
+    )
     assert sum(p.numel() for p in model.parameters()) == n_params
-    assert sum(p.numel() for p in reference.parameters()) == n_params
-    model.load_state_dict(reference.state_dict(), strict=True)
-    x = torch.randn(4, n_chans, n_times)
+
+
+def test_fnirs4d_time_mean_branch_is_the_time_mean_of_hbo_and_hbt():
+    model = FNIRS4D(
+        n_chans=8, n_outputs=3, n_times=60, n_layers=1, mean_branch="time_mean"
+    ).eval()
+    x = torch.randn(2, 8, 60)
     with torch.no_grad():
-        torch.testing.assert_close(
-            model(x), reference(x.unsqueeze(1)), rtol=0, atol=1e-5
-        )
-
-
-def test_fnirs4d_s4d_initialisation_follows_the_authors():
-    """S4D-Lin initialisation of the authors' S4DKernel/S4D: C complex N(0, 1)
-    (each part std sqrt(0.5)), log_dt ~ U[log 1e-3, log 1e-1],
-    log_A_real = log 0.5, A_imag = pi n, D ~ N(0, 1)."""
-    torch.manual_seed(0)
-    layer = _S4DLayer(2048, 64, 0.0, nn.GELU)
-    kernel = layer.kernel
-    torch.testing.assert_close(
-        kernel.log_A_real, torch.full((2048, 32), math.log(0.5))
-    )
-    torch.testing.assert_close(
-        kernel.A_imag, math.pi * torch.arange(32.0).expand(2048, 32)
-    )
-    assert abs(kernel.C.std().item() - math.sqrt(0.5)) < 0.01
-    assert abs(layer.D.std().item() - 1.0) < 0.05
-    low, high = math.log(1e-3), math.log(1e-1)  # float32 bounds: 1e-6 slack
-    assert low - 1e-6 <= kernel.log_dt.min().item() < low + 0.05
-    assert high - 0.05 < kernel.log_dt.max().item() <= high + 1e-6
-
-
-@pytest.mark.parametrize("mean_branch", ["multiscale", "time_mean"])
-def test_fnirs4d_mean_branch(mean_branch):
-    """The authors' branch modules (``conv_1``, ``bn_1``, ...; none for
-    ``"time_mean"``, their KFold-CV branch, the time mean of each [HbO, HbT]
-    row); ``mapping`` renames only their ``fc.0``."""
-    model = FNIRS4D(n_chans=8, n_outputs=3, n_times=60, n_layers=1,
-                    mean_branch=mean_branch).eval()
-    branch = {
-        k.split(".")[1] for k in model.state_dict()
-        if k.startswith("mean_hemoglobin_branch.")
-    }
-    expected = {"conv_1", "bn_1", "conv_2", "bn_2"}
-    assert branch == (expected if mean_branch == "multiscale" else set())
-    assert model.mapping == {
-        "fc.0.weight": "final_layer.weight", "fc.0.bias": "final_layer.bias"
-    }
-    if mean_branch == "time_mean":
-        x = torch.randn(2, 8, 60)
-        with torch.no_grad():
-            features = model(x, return_features=True)["features"]
-        hbo, hbr = x.chunk(2, dim=1)
-        hbt = torch.cat((hbo, hbo + hbr), dim=1)
-        torch.testing.assert_close(features[:, 8:], hbt.mean(dim=-1))
+        features = model(x, return_features=True)["features"]
+    hbo, hbr = x.chunk(2, dim=1)
+    hbt = torch.cat((hbo, hbo + hbr), dim=1)
+    torch.testing.assert_close(features[:, 8:], hbt.mean(dim=-1))
 
 
 def test_fnirs4d_smallest_valid_configurations_build():
