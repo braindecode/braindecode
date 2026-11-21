@@ -76,8 +76,8 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
     - **Temporal:** the tokenizer GRU encodes the whole window in one pass (the
       reference uses 200-sample windows, with the same tokens up to 200
-      samples); the GPT is causal over segments of ``n_patches[0] *
-      patch_lens[0]`` tokens.
+      samples); the GPT attends causally within independent segments of
+      ``n_patches[0] * patch_lens[0]`` tokens.
     - **Spatial:** each parcel is tokenized and attended alone, with a learned
       channel embedding; only the flattened ``final_layer`` mixes parcels.
     - **Spectral:** implicit in the tokenizer GRU; there is no explicit
@@ -91,8 +91,8 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
       ``on_non_divisible="pad"``, the feature mean skips the kept steps after
       the end of the input.
     - **Channel mask:** with ``return_features=True``, ``ch_mask`` (real channels
-      first) gives each recording the features of its first ``n_i`` parcels run
-      alone, and zeros for padded channels. The flattened head is tied to
+      first) gives each recording the features of its real parcels run alone,
+      and zeros for padded channels. The flattened head is tied to
       ``n_chans``, so without ``return_features`` it raises a ``ValueError``.
     - **Token mask:** ``token_mask`` (True=hide) zeroes selected clean token
       embeddings before the causal decoder, and :meth:`encode_tokens` returns
@@ -101,7 +101,8 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
       sessions; the paper discards it downstream (Section 2.5.4), so the class
       has none and the converted weights drop it.
     - **Weights:** the released Cam-CAN MEG-GPT and EphysTokenizer weights,
-      converted to this class's keys, are at ``braindecode/meggpt-pretrained``
+      converted to this class's keys without the next-token head and the
+      tokenizer's signal decoder, are at ``braindecode/meggpt-pretrained``
       (revision ``5c49e27c``); the head is randomly initialized::
 
           from braindecode.models import MEGGPT
@@ -427,10 +428,11 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
             ``output_indices`` are the positions of the ids that ``tokens``
             output, the last ``n_last_steps`` of each segment, and
             ``input_indices`` all positions. ``next_token_targets`` are the ids
-            at ``output_indices + 1``, ``target_valid`` marks the available
-            ones, and ``prediction_mask`` also requires the target token to be
-            hidden by ``token_mask``, if given. The three are ``(batch, n_chans,
-            n_segments * n_last_steps)``; invalid targets are zero.
+            at ``output_indices + 1``, ``target_valid`` marks those on real
+            channels and before ``lengths``, and ``prediction_mask`` also
+            requires the target token to be hidden by ``token_mask``, if given.
+            The three are ``(batch, n_chans, n_segments * n_last_steps)``;
+            invalid targets are zero.
         """
         if token_ids.dim() != 3 or token_ids.dtype != torch.long:
             raise ValueError("token_ids must be int64 (batch, n_chans, n_times).")
@@ -600,6 +602,8 @@ class _PatchedTimeAttention(nn.Module):
     released weights, which no shared attention module has. Queries are the
     last ``n_out`` steps. A query that sees no patch outputs zeros, as in the
     reference.
+    ``(batch, n_patches * patch_len, n_chans, embed_dim)`` ->
+    ``(batch, n_out, n_chans, embed_dim)``, with ``batch`` counting segments.
     """
 
     def __init__(
