@@ -80,9 +80,10 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
       channels also get the gradiometer embedding, with zero orientation and
       positions normalised apart from the MEG ones; other channel kinds raise
       a ``ValueError``. MEG-XL is pretrained on MEG only.
-    - The RoPE table holds the 625 positions of the 150 s pretraining window
-      (``torch.polar`` values in the converted weights); a longer window
-      rebuilds it from ``cos``/``sin``, one ulp away from ``torch.polar``.
+    - The RoPE table holds ``n_rope_positions`` = 625 positions, those of the
+      150 s pretraining window (``torch.polar`` values in the converted
+      weights); a longer window rebuilds it from ``cos``/``sin``, one ulp away
+      from ``torch.polar``.
     - The released attention keeps its dropout (0.1) active in eval mode; here
       dropout is off in eval mode, so the eval forward is deterministic.
     - :meth:`encode` and :meth:`encode_codes` accept a temporal code-corruption
@@ -120,6 +121,11 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         Attention heads (even: half temporal, half spatial).
     drop_prob : float
         Dropout of the attention and feed-forward layers.
+    n_rope_positions : int
+        Positions cached by the rotary embedding of the temporal attention: 625
+        for the 150 s pretraining window (150 s x 50 Hz / 12 samples per token).
+        It sets the shape of the saved ``rotate`` tables; a longer window
+        rebuilds them.
     fourier_pos_dim : int
         Size of the Fourier features of the sensor position and orientation.
     position_scale : float
@@ -132,12 +138,23 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         Base number of SEANet filters.
     ratios : tuple of int
         SEANet downsampling ratios.
+    kernel_size : int
+        Kernel size of the first SEANet convolution. Frozen with the release:
+        the pretrained tokenizer expects 3.
+    last_kernel_size : int
+        Kernel size of the last SEANet convolution. Frozen with the release: 3.
+    n_residual_layers : int
+        Residual blocks before each SEANet downsampling. Frozen with the
+        release: 2.
     n_q : int
         Number of residual codebooks.
     codebook_size : int
         Entries per codebook.
     codebook_dim : int
         Codebook dimension.
+    min_rms : float
+        Floor of the per-channel RMS that the tokenizer divides by (1e-8), so that
+        a flat channel is not divided by zero.
 
     References
     ----------
@@ -161,15 +178,20 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         num_layers: int = 8,
         num_heads: int = 8,
         drop_prob: float = 0.1,
+        n_rope_positions: int = 625,
         fourier_pos_dim: int = 250,
         position_scale: float = 1.8,
         orientation_scale: float = 1.0,
         tokenizer_dim: int = 128,
         n_filters: int = 32,
         ratios: tuple[int, ...] = (3, 2, 2),
+        kernel_size: int = 3,
+        last_kernel_size: int = 3,
+        n_residual_layers: int = 2,
         n_q: int = 6,
         codebook_size: int = 256,
         codebook_dim: int = 16,
+        min_rms: float = 1e-8,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -180,15 +202,15 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        warn_if_sfreq_differs("MEGXL", self._sfreq, _RELEASE_SFREQ)
+        # The released checkpoint runs at 50 Hz (the authors' preprocessing).
+        warn_if_sfreq_differs("MEGXL", self._sfreq, 50.0)
         if num_heads % 2 or latent_dim % num_heads or (latent_dim // num_heads) % 2:
             raise ValueError(
                 f"num_heads ({num_heads}) must be even and divide latent_dim "
                 f"({latent_dim}) into even head dimensions."
             )
         self.latent_dim = latent_dim
-        # An attribute, as TorchScript reads no module globals.
-        self.min_rms = _MIN_RMS
+        self.min_rms = min_rms  # read by tokenize
         # Derived from chs_info, so not saved: one checkpoint serves any montage.
         pos, sensor_type = geometry_from_chs_info(self.chs_info)
         pos = torch.from_numpy(pos)
@@ -203,9 +225,9 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
             tokenizer_dim,
             n_filters,
             ratios,
-            kernel_size=3,
-            last_kernel_size=3,
-            n_residual_layers=2,
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+            n_residual_layers=n_residual_layers,
             compress=1,
             true_skip=True,
             causal=True,
@@ -230,9 +252,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         self.sensor_type_layer = nn.Embedding(2, latent_dim)
         self.blocks = nn.ModuleList(
             [
-                SpatialTemporalBlock(
-                    latent_dim, num_heads, drop_prob, _N_ROPE_POSITIONS
-                )
+                SpatialTemporalBlock(latent_dim, num_heads, drop_prob, n_rope_positions)
                 for _ in range(num_layers)
             ]
         )
@@ -403,14 +423,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         return self.final_layer(feat)  # (batch, n_outputs)
 
 
-# Constants and helpers, below the model class.
-
-# Sampling rate of the released checkpoint (the authors' preprocessing).
-_RELEASE_SFREQ = 50.0
-# RoPE positions of the 150 s pretraining window: 150 s x 50 Hz / 12 samples per token.
-_N_ROPE_POSITIONS = 625
-# Floor of the per-channel RMS, so that a flat channel is not divided by zero.
-_MIN_RMS = 1e-8
+# Helpers, below the model class.
 
 
 def _fourier_features(x: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:

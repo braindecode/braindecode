@@ -6378,6 +6378,19 @@ def test_megxl_mask_token_hops(n_times):
         model.encode_codes(codes, torch.ones(1, dtype=torch.bool), torch.zeros(32))
 
 
+def test_megxl_min_rms_floors_the_scale_each_channel_is_divided_by():
+    """A floor above every channel's RMS replaces that RMS as the divisor of the
+    window the tokenizer's encoder sees. (The codes cannot show it: in this tiny
+    model the encoder output is almost its bias response, so every token gets the
+    same code.)"""
+    x = torch.randn(2, 3, 64)
+    model = _megxl(n_chans=3, n_times=64, min_rms=1e3)
+    seen = []
+    model.encoder.register_forward_pre_hook(lambda module, args: seen.append(args[0]))
+    model.tokenize(x)
+    torch.testing.assert_close(seen[0], x.reshape(6, 1, 64) / 1e3)
+
+
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_megxl_pretrained_matches_the_release():
@@ -6448,15 +6461,39 @@ def test_bbl_temporal_mask_hides_samples_before_context(hide_all):
 
 @pytest.mark.parametrize("n_times", [1, 39, 125])
 @pytest.mark.parametrize("ratios", [(4, 2, 2), (3, 2)])
-def test_bbl_temporal_features_are_the_sequence_before_pooling(n_times, ratios):
-    """``temporal_features`` has ``ceil(n_times / (2 * prod(ratios)))`` steps, and
+@pytest.mark.parametrize(
+    "sensor_kernel, downsample_kernel, stride", [(3, 3, 2), (5, 3, 4), (3, 5, 4)]
+)
+def test_bbl_temporal_features_are_the_sequence_before_pooling(
+    n_times, ratios, sensor_kernel, downsample_kernel, stride
+):
+    """With odd projector kernels, the projector outputs ``ceil(n_times / stride)``
+    steps and ``temporal_features`` has ``ceil(n_times / (stride * prod(ratios)))``;
     their mean over time is the pooled part of ``features``."""
-    model = _bbl(n_times=n_times, ratios=ratios)
+    model = _bbl(
+        n_times=n_times,
+        ratios=ratios,
+        sensor_kernel_size=sensor_kernel,
+        downsample_kernel_size=downsample_kernel,
+        downsample_stride=stride,
+    )
     with torch.no_grad():
+        n_projected = model.projector(torch.randn(2, 5, n_times)).shape[-1]
         out = model(torch.randn(2, 3, n_times), return_features=True)
-    n_steps = -(-n_times // (2 * math.prod(ratios)))
+    assert n_projected == -(-n_times // stride)
+    state = model.state_dict()  # the kernels reach the two convolutions
+    assert state["projector.0.weight"].shape[-1] == sensor_kernel
+    assert state["projector.2.weight"].shape[-1] == downsample_kernel
+    n_steps = -(-n_times // (stride * math.prod(ratios)))
     assert out["temporal_features"].shape == (2, 8, n_steps)
     assert torch.equal(out["features"][:, :8], out["temporal_features"].mean(-1))
+
+
+@pytest.mark.parametrize("name", ["sensor_kernel_size", "downsample_kernel_size"])
+def test_bbl_projector_kernels_must_be_odd(name):
+    """The padding ``kernel_size // 2`` keeps the length only for an odd kernel."""
+    with pytest.raises(ValueError, match="must be odd"):
+        _bbl(**{name: 4})
 
 
 def _nice():

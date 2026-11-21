@@ -36,8 +36,9 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
     .. rubric:: Macro Components
 
     ``BBL.projector``
-        **Operations.** ``Conv1d(n_sensors, n_datasets * model_dim, 3) -> activation ->
-        Conv1d(stride 2)``; the one-hot ``dataset_index`` keeps one
+        **Operations.** ``Conv1d(n_sensors, n_datasets * model_dim,
+        sensor_kernel_size) -> activation -> Conv1d(downsample_kernel_size,
+        stride downsample_stride)``; the one-hot ``dataset_index`` keeps one
         ``model_dim`` slice. **Role.** Harmonizes sensor layouts across datasets.
 
     ``BBL.encoder``
@@ -100,6 +101,15 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         Subject embedding dimension.
     model_dim : int
         Projector and encoder output dimension.
+    sensor_kernel_size : int
+        Kernel size of the projector's first convolution (3 in the release); odd,
+        so that its padding ``sensor_kernel_size // 2`` keeps the length.
+    downsample_kernel_size : int
+        Kernel size of the projector's strided convolution (3 in the release);
+        odd, padded by ``downsample_kernel_size // 2``.
+    downsample_stride : int
+        Stride of that convolution, so the projector outputs
+        ``ceil(n_times / downsample_stride)`` steps (2 in the release).
     n_filters : int
         Channels after the first SEANet convolution.
     ratios : tuple of int
@@ -137,6 +147,9 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         n_subjects: int = 4096,
         subject_dim: int = 16,
         model_dim: int = 512,
+        sensor_kernel_size: int = 3,
+        downsample_kernel_size: int = 3,
+        downsample_stride: int = 2,
         n_filters: int = 128,
         ratios: tuple[int, ...] = (4, 2, 2),
         kernel_size: int = 7,
@@ -151,21 +164,39 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        warn_if_sfreq_differs("BBL", sfreq, _RELEASE_SFREQ)
+        # The released CamCAN checkpoint runs at 250 Hz (authors' data/preprocess.py).
+        warn_if_sfreq_differs("BBL", sfreq, 250.0)
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if self.n_chans > n_sensors:
             raise ValueError(
                 f"n_chans ({self.n_chans}) is larger than n_sensors ({n_sensors})."
             )
+        if sensor_kernel_size % 2 == 0 or downsample_kernel_size % 2 == 0:
+            raise ValueError(
+                "sensor_kernel_size and downsample_kernel_size must be odd, got "
+                f"{sensor_kernel_size} and {downsample_kernel_size}."
+            )
         self.n_sensors = n_sensors
         self.n_datasets = n_datasets
         self.features_dim = model_dim + subject_dim
 
+        # Paddings are kernel_size // 2 (an odd kernel keeps the length at stride 1):
+        # (batch, n_sensors, n_times) -> (batch, n_datasets * model_dim, n_times)
+        # -> (batch, n_datasets * model_dim, ceil(n_times / downsample_stride)).
         self.projector = nn.Sequential(
-            nn.Conv1d(n_sensors, n_datasets * model_dim, 3, padding=1),
+            nn.Conv1d(
+                n_sensors,
+                n_datasets * model_dim,
+                sensor_kernel_size,
+                padding=sensor_kernel_size // 2,
+            ),
             activation(),
             nn.Conv1d(
-                n_datasets * model_dim, n_datasets * model_dim, 3, stride=2, padding=1
+                n_datasets * model_dim,
+                n_datasets * model_dim,
+                downsample_kernel_size,
+                stride=downsample_stride,
+                padding=downsample_kernel_size // 2,
             ),
         )
         self.split_datasets = Rearrange("b (d c) t -> b d c t", d=n_datasets)
@@ -215,9 +246,9 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         ``(batch, model_dim + subject_dim)``, ``"cls_token"`` (None) and
         ``"temporal_features"``, the encoder output before pooling,
         ``(batch, model_dim, n_steps)`` with
-        ``n_steps = ceil(n_times / (2 * prod(ratios)))``. The steps are not
-        independent receptive fields: the LSTM carries prefix context and the
-        noncausal/reflect convolutions mix neighboring samples.
+        ``n_steps = ceil(n_times / (downsample_stride * prod(ratios)))``. The
+        steps are not independent receptive fields: the LSTM carries prefix
+        context and the noncausal/reflect convolutions mix neighboring samples.
         """
         ch_mask = check_ch_mask(ch_mask, x)
         batch, n_times = x.shape[0], x.shape[-1]
@@ -237,7 +268,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         # input than n_sensors is not cropped, the projector rejects it.
         x = F.pad(x, (0, 0, 0, max(self.n_sensors - x.shape[1], 0)))
         # (batch, n_sensors, n_times) -> (batch, n_datasets * model_dim, n_half),
-        # n_half = ceil(n_times / 2)
+        # n_half = ceil(n_times / downsample_stride)
         x = self.projector(x)
         # -> (batch, n_datasets, model_dim, n_half)
         x = self.split_datasets(x)
@@ -275,7 +306,3 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         """Replace the linear probe for ``n_outputs`` classes."""
         self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.features_dim, n_outputs)
-
-
-# Sampling rate of the released CamCAN checkpoint (authors' data/preprocess.py).
-_RELEASE_SFREQ = 250.0
