@@ -672,6 +672,9 @@ Code health
   stable series stays linked (:gh:`1666` by `Bruno Aristimunha`_).
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
+- Development builds reach PyPI only after the ``tests`` run of their master
+  commit succeeds, and follow commit order, so ``pip install --pre`` finds the
+  newest one (:gh:`1661` by `Bruno Aristimunha`_).
 - Trial-prediction tests import their shared synthetic windows and historical
   reconstruction reference from a helper module instead of from other collected
   test modules (:gh:`1672` by `Bruno Aristimunha`_).

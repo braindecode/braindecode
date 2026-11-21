@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Monthly stable release helper for braindecode.
+"""Release helper for braindecode.
 
-Three subcommands, used by ``.github/workflows/monthly-release.yml``:
+Four subcommands: ``compute``, ``finalize`` and ``next-dev`` serve
+``.github/workflows/monthly-release.yml``, ``dev-build`` serves
+``.github/workflows/release.yml``:
 
 ``compute``
     Print ``current_version``, ``release_version``, ``next_dev_version``,
@@ -20,6 +22,11 @@ Three subcommands, used by ``.github/workflows/monthly-release.yml``:
     Rewrite ``braindecode/version.py`` to the next dev seed (e.g.
     ``1.7.0dev0`` for a minor bump after ``1.6.0``) and insert a fresh
     ``Current X.Y.Z (GitHub)`` section at the top of ``docs/whats_new.rst``.
+
+``dev-build COUNT``
+    Rewrite ``braindecode/version.py`` to ``X.Y.Z.devN``, where N is 2**32 plus
+    COUNT, the number of master commits up to the tested one
+    (``git rev-list --first-parent --count``), so builds sort by commit.
 
 Bumping rules (``--bump``)
     ``minor`` (default): ``1.6.0`` -> next dev ``1.7.0dev0``.
@@ -53,6 +60,11 @@ except ImportError:  # pragma: no cover - exercised on CI bootstrap
 VERSION_RE = re.compile(
     r"(?P<prefix>__version__\s*=\s*)(?P<q>['\"])(?P<ver>[^'\"]+)(?P=q)"
 )
+
+# Development builds used to be numbered by pull request or by a commit hash, so
+# every published ``.devN`` is below 2**32. Counting commits from there sorts the
+# new builds above all of them.
+DEV_BUILD_OFFSET = 2**32
 
 # Matches: ``Current X.Y[.Z] (GitHub)`` exactly. Captures the version string.
 GITHUB_HEADING_RE_TEMPLATE = r"^Current {version} \(GitHub\)[ \t]*$"
@@ -297,6 +309,14 @@ def cmd_next_dev(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dev_build(args: argparse.Namespace) -> int:
+    release = release_from_current(read_version(args.init_file))
+    build = f"{release}.dev{DEV_BUILD_OFFSET + args.count}"
+    write_version(args.init_file, build)
+    print(f"{args.init_file} -> {build}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     paths = argparse.ArgumentParser(add_help=False)
     paths.add_argument(
@@ -347,6 +367,12 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[paths, bump],
         help="Write the next .dev0 version and add a blank changelog section.",
     )
+    dev = sub.add_parser(
+        "dev-build",
+        parents=[paths],
+        help="Write X.Y.Z.devN to version.py, N counting master's commits.",
+    )
+    dev.add_argument("count", type=int, help="Master commits up to the tested one.")
     return ap
 
 
@@ -359,6 +385,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_finalize(args)
     if args.cmd == "next-dev":
         return cmd_next_dev(args)
+    if args.cmd == "dev-build":
+        return cmd_dev_build(args)
     ap.error(f"unknown subcommand: {args.cmd}")  # pragma: no cover
     return 2
 
