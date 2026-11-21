@@ -37,6 +37,8 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
+    .. versionadded:: 2.1
+
     .. figure:: https://braindecode.org/dev/_static/model/mtrenirs.png
        :align: center
        :alt: MtReNIRS preprocessing, montage harmonization, token embedding and pretraining
@@ -47,11 +49,12 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
     MtReNIRS (Montage-aligned transferable Representations for fNIRS) is a
     montage-aware masked autoencoder pretrained on 12 public fNIRS datasets
-    :footcite:`microsoft2026mtrenirs`. A token is one 10-s window of one
-    chromophore channel, tagged with the canonical 10-05 position
-    :footcite:`oostenveld2001five` of its source-detector (S-D) pair and with
-    its chromophore, so any montage is a set of tokens that Transformer blocks
-    mix, with the window index as their only time code.
+    (268 subjects, 567 recording hours) :footcite:`microsoft2026mtrenirs`. A
+    token is one 10-s window of one chromophore channel, tagged with the
+    canonical 10-05 position :footcite:`oostenveld2001five` of its
+    source-detector (S-D) pair and with its chromophore, so any montage is a
+    set of tokens that Transformer blocks mix, with the window index as their
+    only time code.
 
     .. rubric:: Architecture Overview
 
@@ -80,10 +83,14 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         ``nn.Linear(48, 128)``, GELU, ``nn.Linear(128, 128)``, embeds the
         Fourier features :footcite:`tancik2020fourier` of :math:`u_c = [q_c^\top,
         b_c]^\top`, the canonical coordinate :math:`q_c` of the S-D pair and
-        the chromophore :math:`b_c` (0 HbO, 1 HbR): the sine and cosine of
-        :math:`2^k \pi u_{c,j}` for six bands :math:`k` and the four
-        coordinates :math:`j`, 48 features. Then :math:`z_{c,t} = W_x x_{c,t}
-        + b_x + \mathrm{MLP}(\phi(u_c))`.
+        the chromophore :math:`b_c` (0 HbO, 1 HbR):
+
+        .. math::
+
+           \phi(u_c) = \left[\sin(2^k \pi u_{c,j}),\, \cos(2^k \pi u_{c,j})
+           \right]_{j = 1, \dots, 4}^{k = 0, \dots, 5} \in \mathbb{R}^{48},
+           \qquad z_{c,t} = W_x x_{c,t} + b_x + \mathrm{MLP}(\phi(u_c)).
+
       - *Role.* Region-specific activity and the coupled, often opposing
         HbO/HbR dynamics are told apart, with no class token and no
         per-channel table.
@@ -95,19 +102,36 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         :math:`\mu` = ``coordinate_center`` and :math:`\sigma` =
         ``coordinate_scale`` taken from the pretraining corpus.
       - *Role.* The paper aligns each montage to the 10-05 system and assigns
-        every channel the coordinate of its slot (Sec. III-B). That alignment
-        stays outside this class, which reads :math:`q_c` from ``loc[:3]`` of
-        ``chs_info``.
+        every channel the coordinate of its slot. That alignment and slot
+        assignment (the authors' ``mtrenirs.alignment.align``, Sec. III-B,
+        Eq. 1) stay outside this class, which reads :math:`q_c` from
+        ``loc[:3]`` of ``chs_info``.
 
     - **Transformer encoder** (``encoder.blocks``, ``encoder.norm``;
       ``_TransformerBlock``, ``_RotarySelfAttention``).
 
       - **Operations.** Six pre-norm blocks of a 128-dimensional state, four
-        heads, a 512-dimensional MLP and 0.1 dropout. In each head the queries
-        and keys are layer-normalized and rotated by the rotary encoding
-        :footcite:`su2024roformer` of the window index :math:`t`, with base
-        ``rope_base``, so a logit depends on the difference of two window
-        indices. A key of an invalid token gets :math:`-\infty`.
+        heads, a 512-dimensional MLP and 0.1 dropout. With :math:`y` the
+        normalized input, a block computes
+
+        .. math::
+
+           h = z + \mathrm{Drop}\big(\mathrm{Attn}(\mathrm{LN}_1(z))\big),
+           \qquad z' = h + \mathrm{MLP}(\mathrm{LN}_2(h)),
+
+        .. math::
+
+           \mathrm{Attn}_n = \sum_m \mathrm{softmax}_m\!\left(
+           \frac{(\mathcal{R}_{t_n} \mathrm{LN}_q(W_q y_n))^\top
+           \mathcal{R}_{t_m} \mathrm{LN}_k(W_k y_m)}{\sqrt{d_h}} + M_m
+           \right) W_v y_m,
+
+        where :math:`\mathcal{R}_t` is the rotary rotation
+        :footcite:`su2024roformer` of the window index :math:`t` with
+        frequencies :math:`\beta^{-2j/d_h}`, :math:`\beta` = ``rope_base``, and
+        :math:`M_m = 0` for a valid key and :math:`-\infty` otherwise. In each
+        head the queries and keys are layer-normalized and rotated, so a logit
+        depends on the difference of two window indices.
       - *Role.* The window order is kept without mixing time with spatial
         identity: all S-D pairs of a window share its index, and the spatial
         identity enters only through the coordinate embedding.
@@ -118,8 +142,8 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         windows, one ``embed_dim`` vector per channel, concatenated;
         ``"channel_temporal_mean"``: mean over the valid windows and
         channels; ``"flatten"``: all tokens. Then ``nn.Linear``.
-      - *Role.* The linear probe of the paper on frozen features: the
-        temporal average keeps the feature size fixed.
+      - *Role.* The linear probe of the paper on frozen features
+        (Sec. III-D): the temporal average keeps the feature size fixed.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -127,27 +151,44 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
       projection (no convolution); across windows, the rotary encoding of the
       window index only. The weights expect 10 Hz and 10-s windows.
     - **Spatial.** Every row of ``x`` is one chromophore channel, in any order
-      and number; the HbO and HbR rows of one S-D pair share :math:`q_c`. The
-      chromophore comes from MNE's ``coil_type`` or the ``" hbo"`` /
-      ``" hbr"`` name suffix; any other channel (e.g. HbT) raises.
+      and number; the HbO and HbR rows of one S-D pair share :math:`q_c`.
     - **Spectral.** None in the model. The weights expect HbO/HbR band-passed
       to 0.01-0.5 Hz and z-scored per channel.
+    - **Chromophores.** Read from MNE's ``coil_type`` or the ``" hbo"`` /
+      ``" hbr"`` name suffix; any other channel (e.g. HbT) raises.
 
     .. rubric:: Additional Mechanisms
 
     - **Missing data.** A window with a NaN sample, a channel without a
       location (NaN or all-zero ``loc``) and a padded channel (``ch_mask``)
       are left out of the attention and of the pooling.
+    - **Scope.** The masked-autoencoder decoder and the 25 % token masking of
+      pretraining (Fig. 2D, Sec. III-C) are not part of this class.
+      ``final_layer`` and ``pool="channel_temporal_mean"`` are additions (the
+      reference returns features only); the reference's ``remainder="overlap"``
+      is not offered.
 
     .. rubric:: Pretrained Weights
 
     ``mtrenirs_10s.pt`` of `microsoft/MtReNIRS
-    <https://github.com/microsoft/MtReNIRS>`_ (commit 16c3082, MIT) holds the
-    inference encoder of the paper's 10-s model. It is on the Hugging Face Hub
-    at `braindecode/mtrenirs-pretrained
+    <https://github.com/microsoft/MtReNIRS>`_ (commit 16c3082, MIT), the
+    paper's epoch-95 checkpoint of the 10-s model, holds the inference encoder
+    only. It is on the Hugging Face Hub at `braindecode/mtrenirs-pretrained
     <https://huggingface.co/braindecode/mtrenirs-pretrained>`_; the head is
     not pretrained. It expects 10 Hz HbO/HbR in 100-sample windows, with
-    positions on 10-05 slots:
+    positions on 10-05 slots, preprocessed as in Sec. III-B (Fig. 2A): optical
+    density, temporal derivative distribution repair and the modified
+    Beer-Lambert law; a 0.01-0.5 Hz band-pass, resampling to 10 Hz and removal
+    of flat or low-variance chromophore channels; each chromophore channel
+    z-scored over its run and clipped to :math:`[-6, 6]`; downstream windows
+    [onset, onset + 10 s) without a hemodynamic-response shift. For the
+    band-pass, the authors' released ``from_mne_raw`` uses MNE's default FIR,
+    which leaves 43.8 % of the window power above 0.5 Hz; a zero-phase
+    third-order Butterworth, ``raw.filter(0.01, 0.5, method="iir",
+    iir_params=dict(order=3, ftype="butter"))``, leaves 1.1 % and reproduces
+    the paper's numbers (:gh:`1564`). On the released checkpoint, the
+    ``"foundation"`` tokens of :meth:`encode` equal the output of the authors'
+    ``MtReNIRSEncoder`` (MtReNIRS@16c3082) with max-abs difference 0.0:
 
     .. code-block:: python
 
@@ -158,8 +199,6 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
             n_outputs=3,
             n_times=100,
         )
-
-    .. versionadded:: 2.1
 
     `License <https://github.com/microsoft/MtReNIRS/blob/main/LICENSE.txt>`_
 
@@ -172,26 +211,31 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     depth : int, default=6
         Number of Transformer blocks.
     num_heads : int, default=4
-        Attention heads; ``embed_dim // num_heads`` must be even.
+        Attention heads; ``embed_dim // num_heads`` must be even for RoPE.
     mlp_dim : int, default=512
         Hidden width of each block's feed-forward network.
     n_fourier_bands : int, default=6
-        Fourier bands per coordinate of :math:`u_c`.
+        Fourier bands :math:`2^k \pi` per coordinate of :math:`u_c`; six give
+        48 features.
     spatial_hidden_dim : int, default=128
-        Hidden width of the spatio-chromophore MLP.
+        Hidden width of the spatio-chromophore MLP (48 -> 128 -> 128 by
+        default).
     rope_base : float, default=500.0
-        Rotary base of the window index.
+        Rotary base :math:`\beta` of the window index.
     qk_norm : bool, default=True
         Per-head LayerNorm of queries and keys.
     pool : {"temporal_mean", "channel_temporal_mean", "flatten"}, default="temporal_mean"
         Readout of the ``(batch, n_windows, n_chans, embed_dim)`` tokens (see
         Macro Components); ``"channel_temporal_mean"`` takes ``ch_mask``.
     on_non_divisible : {"crop", "pad", "error"}, default="crop"
-        A short last window is dropped, zero-padded or refused.
-    coordinate_center : tuple of float
-        Centre :math:`\mu` (m) subtracted from :math:`q_c`.
-    coordinate_scale : float
-        RMS scale :math:`\sigma` (m) dividing the centred :math:`q_c`.
+        A short last window is dropped (the reference's ``remainder="drop"``),
+        zero-padded or refused.
+    coordinate_center : tuple of float, default=(0.00021245056996122003, -0.022675372660160065, 0.020025914534926414)
+        Centre :math:`\mu` (m) subtracted from :math:`q_c`; the checkpoint's
+        ``data.pos_center``.
+    coordinate_scale : float, default=0.09265176206827164
+        RMS scale :math:`\sigma` (m) dividing the centred :math:`q_c`; the
+        checkpoint's ``data.pos_scale``.
     drop_prob : float, default=0.1
         Dropout of attention weights, attention output and MLP.
     activation : type[nn.Module], default=nn.GELU
