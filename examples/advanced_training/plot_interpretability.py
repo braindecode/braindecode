@@ -512,9 +512,9 @@ example_labels = correctly_classified_labels[:n_examples_to_show]
 
 methods = {
     "Saliency": lambda m, x, y: saliency(m, x, y).cpu().numpy(),
-    "Integrated Gradients": lambda m, x, y: integrated_gradients(m, x, y, steps=32)
-    .cpu()
-    .numpy(),
+    "Integrated Gradients": lambda m, x, y: (
+        integrated_gradients(m, x, y, steps=32).cpu().numpy()
+    ),
     "DeepLIFT": lambda m, x, y: deep_lift(m, x, y).cpu().numpy(),
 }
 
