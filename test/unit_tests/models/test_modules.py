@@ -357,8 +357,9 @@ def test_dense_spatial_filter_forward_collapse_false():
 def test_combined_conv(
     bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat, stride
 ):
-    batch_size = 64
-    timepoints = 1000
+    # 64 x 1000 samples took each case to ~1 GB; no branch of the merge depends on size.
+    batch_size = 4
+    timepoints = 200
 
     data = torch.rand([batch_size, 1, timepoints, in_chans])
     conv = CombinedConv(
@@ -2650,6 +2651,34 @@ def test_transformer_block_modules_match_their_layouts():
     assert list(post.state_dict())[0] == "attention.module.keys.weight"
     assert torch.equal(post(x), post.feed_forward(post.attention(x)))
     assert torch.jit.script(post)(x).shape == x.shape
+
+
+def test_prenorm_transformer_block_takes_eps_drop_path_and_an_attention_mask():
+    from braindecode.modules import (
+        FeedForwardBlock,
+        MultiHeadAttention,
+        PreNormTransformerBlock,
+    )
+
+    def block(**kwargs):
+        attn, ffn = MultiHeadAttention(16, 4, 0.0), FeedForwardBlock(16, 2, 0.0)
+        return PreNormTransformerBlock(16, attn, ffn, 0.0, **kwargs)
+
+    torch.manual_seed(0)
+    x = torch.randn(2, 5, 16)
+    full = block(eps=1e-6, drop_path=0.5).eval()
+    assert list(full.state_dict()) == list(block().state_dict())  # same layout
+    assert full[0].fn[0].eps == full[1].fn[0].eps == 1e-6
+    # A key hidden by the mask is a key dropped: the other tokens do not see it.
+    mask = torch.ones(2, 1, 1, 5, dtype=torch.bool)
+    mask[..., -1] = False
+    torch.testing.assert_close(full.forward_masked(x, mask)[:, :4], full(x[:, :4]))
+    # forward stays the sequential call: a one-argument token mixer still scripts.
+    plain = PreNormTransformerBlock(16, nn.Identity(), FeedForwardBlock(16, 2, 0.0), 0.0)
+    torch.testing.assert_close(torch.jit.script(plain)(x), plain(x))
+    # Stochastic depth drops whole residual branches: with drop_path=1, x is left.
+    dropped = block(drop_path=1.0).train()
+    assert torch.equal(dropped(x), x) and torch.equal(dropped.forward_masked(x, mask), x)
 
 
 def test_squeeze_and_excitation_forward():

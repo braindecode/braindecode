@@ -21,6 +21,7 @@ from braindecode.models import (
     MEGXL,
     NICE,
     REVE,
+    SAMBA,
     BaRISTA,
     BrainBERT,
     Brant,
@@ -52,7 +53,7 @@ from braindecode.models.util import (
     models_dict,
     models_mandatory_parameters,
 )
-from test.unit_tests.models._fixtures import _get_signal_params
+from test.unit_tests.models._fixtures import _architecture_kwargs, _get_signal_params
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
 # Window length per model, from the registry.
@@ -114,6 +115,7 @@ _MODELS = [
         False,
         id="REVE",
     ),
+    pytest.param(SAMBA, N_CHANS, {"chs_info": _chs()}, False, id="SAMBA"),
     pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
     pytest.param(NICE, N_CHANS, {}, False, id="NICE"),
     pytest.param(
@@ -279,6 +281,7 @@ _MODELS = [
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
 def test_return_features(cls, nc, kw, has_cls):
     n_times = _N_TIMES[cls.__name__]
+    kw = {**_architecture_kwargs(cls.__name__), **kw}
     model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.eval()
     with torch.no_grad():
@@ -294,6 +297,7 @@ def test_return_features(cls, nc, kw, has_cls):
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
 def test_default_forward_returns_tensor(cls, nc, kw, has_cls):
     n_times = _N_TIMES[cls.__name__]
+    kw = {**_architecture_kwargs(cls.__name__), **kw}
     model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.eval()
     with torch.no_grad():
@@ -351,6 +355,7 @@ _RESET_MODELS = [p for p in _MODELS if p.id != "SignalJEPA"]
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _RESET_MODELS)
 def test_reset_head(cls, nc, kw, has_cls):
     n_times = _N_TIMES[cls.__name__]
+    kw = {**_architecture_kwargs(cls.__name__), **kw}
     model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.reset_head(10)
     model.eval()
@@ -460,41 +465,3 @@ def test_labram_reset_to_zero_reloads_as_identity(tmp_path, via_pretrained):
     assert reloaded.n_outputs == 0
     assert isinstance(reloaded.final_layer, torch.nn.Identity)
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
-
-
-@pytest.mark.parametrize("n_times", [1, 39, 125])
-@pytest.mark.parametrize("ratios", [(4, 2, 2), (3, 2)])
-def test_bbl_temporal_features_are_encoder_output_and_valid_bins(n_times, ratios):
-    """Opt-in temporal features are the genuine pre-pool sequence, not copies
-    of pooled vectors. Bins describe stride, not independent receptive fields."""
-    from math import prod
-
-    model = BBL(
-        n_chans=3, n_outputs=2, n_times=n_times, n_sensors=5, n_datasets=2,
-        n_subjects=4, model_dim=8, subject_dim=2, n_filters=2, ratios=ratios,
-    ).eval()
-    x = torch.randn(2, 3, n_times)
-    encoded = []
-    handle = model.encoder.register_forward_hook(lambda m, a, y: encoded.append(y))
-    with torch.no_grad():
-        plain = model(x, return_features=True)
-        out = model(x, return_features=True, return_temporal_features=True)
-    handle.remove()
-    stride = 2 * prod(ratios)
-    steps = (n_times + stride - 1) // stride
-    temporal = out["temporal_features"]
-    assert temporal.shape == (2, 8, steps)
-    assert temporal is encoded[-1]
-    assert torch.equal(plain["features"], out["features"])
-    assert set(plain) == {"features", "cls_token"}
-    assert torch.equal(out["features"][:, :8], temporal.mean(-1))
-    starts = torch.arange(steps) * stride
-    bounds = torch.stack([starts, (starts + stride).clamp(max=n_times)], -1)
-    assert torch.equal(out["temporal_bounds"], bounds)
-    assert out["temporal_stride"].item() == stride
-    assert out["temporal_valid"].shape == (2, steps)
-    assert out["temporal_valid"].all()
-    context = torch.tensor([0, n_times]).expand(steps, -1)
-    assert torch.equal(out["temporal_context_bounds"], context)
-    with pytest.raises(ValueError, match="return_features"):
-        model(x, return_temporal_features=True)

@@ -5,15 +5,15 @@
 """PRATIBHA-2 (formerly MANAS-2): a dense-attention EEG foundation model."""
 
 from functools import lru_cache, partial
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 import torch
 from mne.channels import make_standard_montage
 from torch import nn
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.reve import _reve_position_bank
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import (
     FeedForwardBlock,
@@ -21,6 +21,7 @@ from braindecode.modules import (
     TimmAttention,
     resolve_channel_positions,
 )
+from braindecode.modules.channels import _reve_position_bank
 from braindecode.modules.layers import RMSNorm
 from braindecode.util import resolve_montage_name
 
@@ -44,20 +45,23 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Macro Components
 
-    ``Pratibha2.encoder.patch_embed``
+    ``Pratibha2.patch_embed``
         **Operations.** ``Linear(patch_size, embed_dim)`` on each patch.
 
-    ``Pratibha2.encoder.pos_enc``
+    ``Pratibha2.pos_enc``
         **Operations.** Sines and cosines of ``n_freqs ** 4`` frequency
         combinations of the token's 4D position (electrode position in cm,
         patch index), projected to ``embed_dim``, plus a learned gated branch;
         the sum is RMS-normalized and added to the patch embedding.
 
-    ``Pratibha2.encoder.blocks``
+    ``Pratibha2.blocks``
         **Operations.** ``depth`` pre-norm blocks (RMSNorm) of multi-head
         self-attention and a gated feed-forward network
         ``fc2(fc1(x) * (swish(g) + gelu_tanh(g)))``, ``g = fc_gate(x)``.
         **Role.** The pretrained backbone; :meth:`encode` returns its token grid.
+
+    ``Pratibha2.final_norm``
+        **Operations.** RMSNorm of every token, the last step of :meth:`encode`.
 
     ``Pratibha2.final_layer``
         **Operations.** ``Linear -> head_activation -> Dropout -> Linear`` on
@@ -148,6 +152,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def __init__(
         self,
+        # braindecode parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
@@ -155,6 +160,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         input_window_seconds=None,
         sfreq=None,
         *,
+        # model-specific parameters
         patch_size: int = 200,
         patch_stride: int = 180,
         embed_dim: int = 512,
@@ -188,44 +194,66 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})."
             )
         warn_if_sfreq_differs("Pratibha2", self._sfreq, 200.0)
-        try:
-            n_times = self.n_times  # also inferred from input_window_seconds
-        except ValueError:
-            n_times = None
-        if n_times is not None and n_times < patch_size:
+        # A window holds at least one patch; checked when its length is known.
+        n_times_known = self._n_times is not None or (
+            self._input_window_seconds is not None and self._sfreq is not None
+        )
+        if n_times_known and self.n_times < patch_size:
             raise ValueError(
-                f"n_times ({n_times}) must be at least patch_size ({patch_size})."
+                f"n_times ({self.n_times}) must be at least patch_size ({patch_size})."
             )
 
+        self.patch_size = patch_size
+        self.patch_stride = patch_stride
         self.embed_dim = embed_dim
+        self.normalize_input = normalize_input
         self.head_hidden_dim = head_hidden_dim
         self.head_activation = head_activation
         self.drop_prob = drop_prob
-        self.on_missing = on_missing
+        # An attribute, as TorchScript reads no module globals.
+        self.std_floor = _STD_FLOOR
 
-        # positions: (n_kept, 3) in m; kept: indices of the placed input channels.
+        # positions: (n_kept_chans, 3) in m; kept: indices of the placed input channels.
         positions, kept = resolve_channel_positions(
             self.chs_info, _pratibha2_position_bank(), on_missing=on_missing
         )
-        # channel_index: (n_kept,) input channels the encoder reads; None reads all.
+        # channel_index: (n_kept_chans,) input channels the model reads; None reads all.
         dropped = len(kept) < len(self.chs_info)
         self.register_buffer(
             "channel_index", torch.tensor(kept) if dropped else None, persistent=False
         )
-        # positions_cm: (n_kept, 3), in the release's centimetres.
+        # channel_positions: (n_kept_chans, 3), in the release's centimetres. Not
+        # persistent: the pretrained weights must load onto any montage.
         positions_cm = torch.tensor(positions, dtype=torch.float32) * _CM_PER_M
-        self.encoder = _Pratibha2Encoder(
-            channel_positions=positions_cm.to(torch.get_default_dtype()),
-            patch_size=patch_size,
-            patch_stride=patch_stride,
-            embed_dim=embed_dim,
-            depth=depth,
-            num_heads=num_heads,
-            ffn_expansion=ffn_expansion,
-            n_freqs=n_freqs,
-            normalize_input=normalize_input,
-            att_drop_prob=att_drop_prob,
+        self.register_buffer(
+            "channel_positions",
+            positions_cm.to(torch.get_default_dtype()),
+            persistent=False,
         )
+
+        self.patch_embed = nn.Linear(patch_size, embed_dim, bias=False)
+        self.pos_enc = _Pratibha2PositionalEncoding(embed_dim, n_freqs)
+        norm = partial(RMSNorm, eps=_RMS_NORM_EPS)
+        self.blocks = nn.ModuleList(
+            [
+                PreNormBlock(
+                    embed_dim,
+                    attn=TimmAttention(
+                        embed_dim, num_heads, qkv_bias=True, attn_drop=att_drop_prob
+                    ),
+                    mlp=FeedForwardBlock(
+                        embed_dim,
+                        ffn_expansion,
+                        drop_p=0.0,
+                        activation=_SwishGelu,
+                        gated=True,
+                    ),
+                    norm_layer=norm,
+                )
+                for _ in range(depth)
+            ]
+        )
+        self.final_norm = norm(embed_dim)
         self.final_layer = self._build_head(self.n_outputs)
 
     def _build_head(self, n_outputs: int) -> nn.Module:
@@ -265,16 +293,62 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Tokens of shape (batch, n_kept_chans, n_patches, embed_dim), where
             ``n_kept_chans`` excludes channels dropped by ``on_missing="drop"``.
         """
-        if x.dim() != 3 or x.shape[1] != self.n_chans:
-            raise ValueError(
-                f"Expected EEG with {self.n_chans} channels in the configured montage."
-            )
+        # x: (batch, n_chans, n_times), the montage the model was built for
+        check_n_chans(x, self.n_chans, "Pratibha2")
         channel_index = self.channel_index
         if channel_index is not None:
+            # leave out the channels the position table could not place
+            # x: (batch, n_kept_chans, n_times)
             x = x.index_select(1, channel_index)
-        return self.encoder(x)
+        if self.normalize_input:
+            # z-score each channel within its window, in float32 or wider, so
+            # that volts and microvolts give the same tokens:
+            # x: (batch, n_kept_chans, n_times)
+            x32 = x.to(torch.promote_types(x.dtype, torch.float32))
+            mean = x32.mean(dim=-1, keepdim=True)
+            std = x32.std(dim=-1, keepdim=True)
+            x = ((x32 - mean) / std.clamp_min(self.std_floor)).to(x.dtype)
+        # overlapping patches of patch_size samples:
+        # (batch, n_kept_chans, n_patches, patch_size)
+        patches = x.unfold(-1, self.patch_size, self.patch_stride)
+        # one linear embedding shared by every patch:
+        # (batch, n_kept_chans, n_patches, embed_dim)
+        tokens = self.patch_embed(patches)
+        batch, n_kept_chans, n_patches, _ = tokens.shape
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+        # position of each token, the electrode (cm) and the patch index; float32
+        # or wider, as the position encoding takes angles:
+        # (n_kept_chans, n_patches, 4)
+        positions = self.channel_positions
+        positions = positions.to(torch.promote_types(positions.dtype, torch.float32))
+        time = torch.arange(n_patches, device=tokens.device, dtype=positions.dtype)
+        coords = torch.cat(
+            [
+                # (n_kept_chans, n_patches, 3)
+                positions[:, None, :].expand(-1, n_patches, -1),
+                # (n_kept_chans, n_patches, 1)
+                time[None, :, None].expand(n_kept_chans, -1, -1),
+            ],
+            dim=-1,
+        )
+        # add the encoding of each token's position:
+        # (batch, n_kept_chans, n_patches, embed_dim)
+        tokens = tokens + self.pos_enc(coords).unsqueeze(0).to(tokens.dtype)
+
+        # one sequence of n_kept_chans * n_patches tokens per window, attended
+        # densely: (batch, n_kept_chans * n_patches, embed_dim)
+        tokens = tokens.reshape(batch, n_kept_chans * n_patches, self.embed_dim)
+        # depth pre-norm blocks of dense attention, then the final RMSNorm:
+        # (batch, n_kept_chans * n_patches, embed_dim)
+        for block in self.blocks:
+            tokens = block(tokens)
+        tokens = self.final_norm(tokens)
+        # back to the token grid: (batch, n_kept_chans, n_patches, embed_dim)
+        return tokens.reshape(batch, n_kept_chans, n_patches, self.embed_dim)
+
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, dict[str, Optional[torch.Tensor]]]:
         """Classify a batch of EEG windows.
 
         Tokens are averaged over electrodes and patches, then passed to the
@@ -296,19 +370,14 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Logits of shape (batch, n_outputs), or the feature dict when
             ``return_features`` is True.
         """
+        # tokens: (batch, n_kept_chans, n_patches, embed_dim)
         tokens = self.encode(x)
+        # mean over electrodes and patches: (batch, embed_dim)
         features = tokens.mean(dim=(1, 2))
-        logits = self.final_layer(features)
-
         if return_features:
-            if torch.jit.is_scripting():
-                return logits
-            return {
-                "features": features,
-                "tokens": tokens,
-                "cls_token": None,  # nosec B105
-            }
-        return logits
+            return {"features": features, "tokens": tokens, "cls_token": None}
+        # logits: (batch, n_outputs)
+        return self.final_layer(features)
 
 
 class _SwishGelu(nn.Module):
@@ -325,6 +394,11 @@ class _SwishGelu(nn.Module):
 _CM_PER_M = 100.0
 # Fourier frequencies per axis of the position encoding span [1, 10] (release 863edc9).
 _FREQ_RANGE = (1.0, 10.0)
+# Epsilon of every RMSNorm (``model.py`` of release 863edc9).
+_RMS_NORM_EPS = 1e-8
+# Floor of a channel's standard deviation in the z-score. The release's example
+# adds 1e-6 to it instead, so volts and microvolts would give different tokens.
+_STD_FLOOR = 1e-12
 
 # The pretraining electrode table is REVE's bank plus these two entries (m), which
 # sit 1.43 and 0.74 cm from 10-05 AFz and Iz (release 863edc9). They come last, so
@@ -351,89 +425,10 @@ def _pratibha2_position_bank() -> dict[str, np.ndarray]:
     }
 
 
-class _Pratibha2Encoder(nn.Module):
-    """Patch embedding, position encoding and the stack of transformer blocks.
-
-    Maps EEG (B, C, T) to the token grid (B, C, P, D): optional per-channel
-    z-score, 1 s patches (B, C, P, patch_size), ``patch_embed`` (B, C, P, D) plus
-    the encoding of ``channel_positions`` ((C, 3), cm) and the patch index, then
-    ``depth`` blocks and ``final_norm`` over the C * P tokens.
-    """
-
-    def __init__(
-        self,
-        channel_positions: torch.Tensor,
-        patch_size: int,
-        patch_stride: int,
-        embed_dim: int,
-        depth: int,
-        num_heads: int,
-        ffn_expansion: int,
-        n_freqs: int,
-        normalize_input: bool,
-        att_drop_prob: float,
-    ):
-        super().__init__()
-        self.patch_size = patch_size
-        self.patch_stride = patch_stride
-        self.embed_dim = embed_dim
-        self.normalize_input = normalize_input
-        # Not persistent: the pretrained weights must load onto any montage.
-        self.register_buffer("channel_positions", channel_positions, persistent=False)
-
-        self.patch_embed = nn.Linear(patch_size, embed_dim, bias=False)
-        self.pos_enc = _Pratibha2PositionalEncoding(embed_dim, n_freqs)
-        norm = partial(RMSNorm, eps=1e-8)
-        self.blocks = nn.ModuleList(
-            [
-                PreNormBlock(
-                    embed_dim,
-                    attn=TimmAttention(
-                        embed_dim, num_heads, qkv_bias=True, attn_drop=att_drop_prob
-                    ),
-                    mlp=FeedForwardBlock(
-                        embed_dim, ffn_expansion, 0.0, _SwishGelu, gated=True
-                    ),
-                    norm_layer=norm,
-                )
-                for _ in range(depth)
-            ]
-        )
-        self.final_norm = norm(embed_dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.normalize_input:
-            x32 = x.to(torch.promote_types(x.dtype, torch.float32))
-            mean = x32.mean(dim=-1, keepdim=True)
-            std = x32.std(dim=-1, keepdim=True, unbiased=x32.size(-1) > 1)
-            x = ((x32 - mean) / std.clamp_min(1e-12)).to(x.dtype)
-        patches = x.unfold(-1, self.patch_size, self.patch_stride)  # (B, C, P, S)
-        tokens = self.patch_embed(patches)  # (B, C, P, D)
-        batch, n_chans, n_patches, _ = tokens.shape
-
-        positions = self.channel_positions
-        positions = positions.to(torch.promote_types(positions.dtype, torch.float32))
-        time = torch.arange(n_patches, device=tokens.device, dtype=positions.dtype)
-        coords = torch.cat(
-            [
-                positions[:, None, :].expand(-1, n_patches, -1),
-                time[None, :, None].expand(n_chans, -1, -1),
-            ],
-            dim=-1,
-        )  # (C, P, 4)
-        tokens = tokens + self.pos_enc(coords).unsqueeze(0).to(tokens.dtype)
-
-        tokens = tokens.reshape(batch, n_chans * n_patches, self.embed_dim)
-        for block in self.blocks:
-            tokens = block(tokens)
-        tokens = self.final_norm(tokens)
-        return tokens.reshape(batch, n_chans, n_patches, self.embed_dim)
-
-
 class _Pratibha2PositionalEncoding(nn.Module):
     """4D position encoding: Fourier features plus a learned gated branch.
 
-    Kept private: the re-hosted weights use this parameter layout. ``coords``
+    Kept private: no shared block computes this encoding. ``coords``
     (C, P, 4), electrode position in cm and patch index, gives (C, P, embed_dim):
     the sines and cosines of the phases ``coords @ freq_matrix`` through
     ``fourier_linear``, plus ``learned_norm(value * gate_activation(gate))`` from
@@ -449,8 +444,8 @@ class _Pratibha2PositionalEncoding(nn.Module):
         self.fourier_linear = nn.Linear(2 * n_freqs**4, embed_dim, bias=False)
         self.learned_linear = nn.Linear(4, 2 * embed_dim, bias=False)
         self.gate_activation = _SwishGelu()
-        self.learned_norm = RMSNorm(embed_dim, eps=1e-8)
-        self.final_norm = RMSNorm(embed_dim, eps=1e-8)
+        self.learned_norm = RMSNorm(embed_dim, eps=_RMS_NORM_EPS)
+        self.final_norm = RMSNorm(embed_dim, eps=_RMS_NORM_EPS)
 
     def forward(self, coords: torch.Tensor) -> torch.Tensor:
         # bfloat16 cannot represent the angles.
@@ -467,5 +462,7 @@ class _Pratibha2PositionalEncoding(nn.Module):
         )
         # value, gate: (C, P, embed_dim) each
         value, gate = self.learned_linear(coords.to(weight_dtype)).chunk(2, dim=-1)
+        # gated learned branch, RMS-normalized: (C, P, embed_dim)
         learned = self.learned_norm(value * self.gate_activation(gate))
+        # sum of the two branches, RMS-normalized: (C, P, embed_dim)
         return self.final_norm(fourier + learned)

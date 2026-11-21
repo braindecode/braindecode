@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Monthly stable release helper for braindecode.
+"""Release helper for braindecode.
 
-Three subcommands, used by ``.github/workflows/monthly-release.yml``:
+Four subcommands: ``compute``, ``finalize`` and ``next-dev`` serve
+``.github/workflows/monthly-release.yml``, ``dev-build`` serves
+``.github/workflows/release.yml``:
 
 ``compute``
     Print ``current_version``, ``release_version``, ``next_dev_version``,
@@ -13,11 +15,18 @@ Three subcommands, used by ``.github/workflows/monthly-release.yml``:
     ``.devN`` / ``devN`` suffix) and flip the matching
     ``Current X.Y.Z (GitHub)`` heading in ``docs/whats_new.rst`` to
     ``Current X.Y.Z (YYYY-MM-DD)``.
+    With ``--next-dev-version`` it also relabels the documentation version
+    switcher, ``docs/_static/versions.json``.
 
 ``next-dev``
     Rewrite ``braindecode/version.py`` to the next dev seed (e.g.
     ``1.7.0dev0`` for a minor bump after ``1.6.0``) and insert a fresh
     ``Current X.Y.Z (GitHub)`` section at the top of ``docs/whats_new.rst``.
+
+``dev-build COUNT``
+    Rewrite ``braindecode/version.py`` to ``X.Y.Z.devN``, where N is 2**32 plus
+    COUNT, the number of master commits up to the tested one
+    (``git rev-list --first-parent --count``), so builds sort by commit.
 
 Bumping rules (``--bump``)
     ``minor`` (default): ``1.6.0`` -> next dev ``1.7.0dev0``.
@@ -28,6 +37,7 @@ Bumping rules (``--bump``)
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from datetime import datetime, timezone
@@ -50,6 +60,11 @@ except ImportError:  # pragma: no cover - exercised on CI bootstrap
 VERSION_RE = re.compile(
     r"(?P<prefix>__version__\s*=\s*)(?P<q>['\"])(?P<ver>[^'\"]+)(?P=q)"
 )
+
+# Development builds used to be numbered by pull request or by a commit hash, so
+# every published ``.devN`` is below 2**32. Counting commits from there sorts the
+# new builds above all of them.
+DEV_BUILD_OFFSET = 2**32
 
 # Matches: ``Current X.Y[.Z] (GitHub)`` exactly. Captures the version string.
 GITHUB_HEADING_RE_TEMPLATE = r"^Current {version} \(GitHub\)[ \t]*$"
@@ -155,6 +170,33 @@ def compute_versions(current: str, bump: str) -> dict[str, str]:
     }
 
 
+def update_version_switcher(path: Path, release: str, next_dev: str) -> None:
+    """Relabel the documentation version switcher for a stable release.
+
+    ``path`` holds ``[dev, stable, *archives]``. The dev entry is named after the
+    series of ``next_dev`` and the stable entry after that of ``release``. When
+    the series changes, the previous stable series becomes the first archive,
+    served from ``/X.Y/`` instead of ``/stable/``.
+    """
+    dev, stable, *archives = json.loads(path.read_text(encoding="utf-8"))
+    series = ".".join(release.split(".")[:2])
+    previous = stable["version"]
+    if previous != series and all(entry["version"] != previous for entry in archives):
+        archives.insert(
+            0,
+            {
+                "name": previous,
+                "version": previous,
+                "url": stable["url"].removesuffix("stable/") + f"{previous}/",
+            },
+        )
+    dev["name"] = ".".join(next_dev.split(".")[:2]) + " (dev)"
+    stable.update(name=f"{series} (stable)", version=series)
+    path.write_text(
+        json.dumps([dev, stable, *archives], indent=4) + "\n", encoding="utf-8"
+    )
+
+
 def _find_github_heading(text: str, version: str) -> re.Match[str] | None:
     pat = re.compile(
         GITHUB_HEADING_RE_TEMPLATE.format(version=re.escape(version)),
@@ -248,6 +290,12 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         )
     write_version(args.init_file, release_version)
     finalize_changelog(args.changelog, release_version)
+    if args.next_dev_version:
+        update_version_switcher(
+            args.changelog.parent / "_static" / "versions.json",
+            release_version,
+            args.next_dev_version,
+        )
     print(f"{args.init_file} -> {release_version}")
     return 0
 
@@ -258,6 +306,14 @@ def cmd_next_dev(args: argparse.Namespace) -> int:
     write_version(args.init_file, info["next_dev_version"])
     insert_next_dev_section(args.changelog, info["next_dev_base"])
     print(f"{args.init_file} -> {info['next_dev_version']}")
+    return 0
+
+
+def cmd_dev_build(args: argparse.Namespace) -> int:
+    release = release_from_current(read_version(args.init_file))
+    build = f"{release}.dev{DEV_BUILD_OFFSET + args.count}"
+    write_version(args.init_file, build)
+    print(f"{args.init_file} -> {build}")
     return 0
 
 
@@ -297,16 +353,26 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[paths, bump],
         help="Print the planned versions as key=value lines.",
     )
-    sub.add_parser(
+    finalize = sub.add_parser(
         "finalize",
         parents=[paths],
         help="Write the release version to version.py and date the changelog heading.",
+    )
+    finalize.add_argument(
+        "--next-dev-version",
+        help="Also update the documentation version switcher for this development cycle.",
     )
     sub.add_parser(
         "next-dev",
         parents=[paths, bump],
         help="Write the next .dev0 version and add a blank changelog section.",
     )
+    dev = sub.add_parser(
+        "dev-build",
+        parents=[paths],
+        help="Write X.Y.Z.devN to version.py, N counting master's commits.",
+    )
+    dev.add_argument("count", type=int, help="Master commits up to the tested one.")
     return ap
 
 
@@ -319,6 +385,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_finalize(args)
     if args.cmd == "next-dev":
         return cmd_next_dev(args)
+    if args.cmd == "dev-build":
+        return cmd_dev_build(args)
     ap.error(f"unknown subcommand: {args.cmd}")  # pragma: no cover
     return 2
 

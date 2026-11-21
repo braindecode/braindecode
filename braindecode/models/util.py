@@ -530,6 +530,11 @@ def _dance_signal_params() -> dict[str, Any]:
         "input_window_seconds": 1.0,
         "n_outputs": 4,
         "chs_info": _draw_chs_info(19, np.random.default_rng(19)),
+        # 6 of 10 convolution blocks (dilation 97 is the first to skip taps
+        # that only read padding), 1 of 6 Perceiver and 1 of 4 decoder blocks
+        "conv_depth": 6,
+        "perceiver_depth": 1,
+        "decoder_depth": 1,
     }
 
 
@@ -562,8 +567,18 @@ models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[str, Any] | Callable[[], dict[str, Any]] | None]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
-    ("Pratibha2", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
+    # 2 of the 22 released blocks (118.6M -> 10.9M parameters), here and below:
+    # fewer identical blocks, every tensor keeps its released shape.
+    (
+        "AXON",
+        ["chs_info", "n_outputs"],
+        {"sfreq": 200.0, "n_times": 1000, "depth": 2},
+    ),
+    (
+        "Pratibha2",
+        ["chs_info", "n_outputs"],
+        {"sfreq": 200.0, "n_times": 1000, "depth": 2},  # 2 of 22 blocks
+    ),
     (
         "BaRISTA",
         ["chs_info", "n_outputs", "n_times"],
@@ -789,6 +804,7 @@ models_mandatory_parameters: list[
             ],
         },
     ),
+    ("SAMBA", ["chs_info", "n_outputs"], {"n_times": 128, "sfreq": 128.0}),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("MEGGPT", ["n_chans", "n_outputs"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
@@ -799,7 +815,12 @@ models_mandatory_parameters: list[
     ),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     # 1 s of the 128 Hz low-frequency stream
-    ("CORTEG", ["chs_info", "n_outputs", "n_times"], {"n_times": 128, "sfreq": 128.0}),
+    (
+        "CORTEG",
+        ["chs_info", "n_outputs", "n_times"],
+        # 2 of 8 blocks; the high-gamma stream merges at the last one
+        {"n_times": 128, "sfreq": 128.0, "depth": 2, "n_merge_blocks": 1},
+    ),
     (
         "MVPFormer",
         ["n_chans", "n_outputs", "n_times", "sfreq"],
@@ -812,6 +833,7 @@ models_mandatory_parameters: list[
             "sfreq": 200.0,
             "n_chans": 19,
             "n_times": 1_000,
+            "depth": 2,  # 2 of 22 blocks
             "chs_info": [{"ch_name": f"E{i + 1}", "kind": "eeg"} for i in range(19)],
         },
     ),
@@ -864,6 +886,8 @@ models_mandatory_parameters: list[
             "n_chans": 3,
             "n_times": 200,
             "sfreq": 200.0,
+            "encoder_depth": 2,  # 2 of the 12 released encoder blocks
+            "decoder_depth": 2,  # 2 of the 3 released decoder blocks
             "chs_info": [
                 {"ch_name": name, "kind": "eeg"} for name in ("F3", "F4", "Cz")
             ],
@@ -893,8 +917,9 @@ models_mandatory_parameters: list[
         ["n_chans", "n_outputs", "n_times"],
         {
             "n_chans": 19,
-            "n_times": 1024,  # 4 s @ 256 Hz keeps the 38M-parameter model fast in CI
+            "n_times": 1024,  # 4 s @ 256 Hz
             "sfreq": 256.0,
+            "num_layers": 2,  # 2 of 8 Transformer layers
         },
     ),
     ("Guetschel2026", ["chs_info", "n_outputs", "n_times"], {"sfreq": 200.0}),
@@ -1428,3 +1453,71 @@ def fnirs_split_hbo_hbr(
         n_pairs = x.shape[1] // 2
         return x[:, :n_pairs], x[:, n_pairs:]
     raise ValueError("channel_order must be 'stacked' or 'interleaved'.")
+
+
+_SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
+# FIFF coil names by value, so plain-int coil types (serialized chs_info) resolve.
+_COIL_NAMES = {
+    int(value): name for name, value in FIFF.items() if name.startswith("FIFFV_COIL_")
+}
+
+
+def _coil_name(ch) -> str:
+    return _COIL_NAMES.get(int(ch.get("coil_type", 0)), "")
+
+
+def sensor_type_of(chs_info, index: int) -> str:
+    """EEG, MAG or GRAD as released: an MEG coil is MAG iff its name has "MAG".
+
+    So CTF/KIT axial gradiometers are GRAD although MNE types them ``mag``.
+    """
+    ch = chs_info[index]
+    kind = ch.get("kind")
+    if kind is not None and not isinstance(kind, str):
+        if int(kind) == FIFF.FIFFV_EEG_CH:
+            return "eeg"
+        if int(kind) == FIFF.FIFFV_MEG_CH and "coil_type" in ch:
+            return "mag" if "MAG" in _coil_name(ch) else "grad"
+        return mne.channel_type({"chs": chs_info}, index)
+    resolved_type = ch.get("ch_type", kind)
+    if resolved_type is None:
+        resolved_type = mne.channel_type({"chs": chs_info}, index)
+    return str(resolved_type).lower()
+
+
+def geometry_from_chs_info(chs_info):
+    """``(pos (n_chans, 6) float32, sensor_type (n_chans,) int64)``, as released.
+
+    Positions are centred and scaled per modality (EEG, MEG); the orientation
+    is the coil x-axis for planar gradiometers, the coil normal for other MEG
+    coils and zero for EEG.
+    """
+    types = [sensor_type_of(chs_info, index) for index in range(len(chs_info))]
+    xyz = extract_channel_locations_from_chs_info(chs_info)
+    if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():
+        raise ValueError(
+            "chs_info lacks finite sensor positions; call raw.set_montage(...)."
+        )
+    unsupported = set(types) - set(_SENSOR_CODE)
+    if unsupported:
+        raise ValueError(
+            f"Unsupported channel type(s) {sorted(unsupported)}; pass only EEG/MEG."
+        )
+    sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
+
+    ori = np.zeros((len(chs_info), 3))
+    for index in np.flatnonzero(sensor_type > 0):
+        planar = "PLANAR" in _coil_name(chs_info[index])
+        axis = np.asarray(chs_info[index]["loc"], dtype=np.float64)
+        axis = axis[3:6] if sensor_type[index] == 2 and planar else axis[9:12]
+        if axis.shape != (3,) or not np.isfinite(axis).all():
+            raise ValueError("chs_info lacks a finite MEG coil orientation.")
+        ori[index] = axis
+
+    pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
+    for mask in (sensor_type == 0, sensor_type > 0):
+        if mask.any():
+            centred = pos[mask, :3] - pos[mask, :3].mean(axis=0, keepdims=True)
+            scale = np.sqrt(3 * np.mean(np.sum(centred**2, axis=1)))
+            pos[mask, :3] = centred / (scale if scale > 0 else 1.0)
+    return pos, sensor_type

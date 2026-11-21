@@ -10,6 +10,7 @@ import functools
 import inspect
 import json
 import logging
+import sys
 import warnings
 from collections import OrderedDict
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -1031,13 +1032,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         except ValueError:
             n_times = 200
 
-        return summary(
+        statistics = summary(
             self,
             input_size=(1, n_chans, n_times),
             col_names=col_names,
             row_settings=row_settings,
             verbose=0,
         )
+        # torchinfo 1.8 also stores the summary layers in a module-level dict,
+        # keyed by class name, whatever ``cache_forward_pass`` is: it kept the
+        # last printed instance of each class alive. braindecode never reads it.
+        cache = getattr(sys.modules[summary.__module__], "_cached_forward_pass", {})
+        cache.pop(type(self).__name__, None)
+        return statistics
 
     def _pretrained_summary(self):
         """Display data shared by the text and notebook representations."""

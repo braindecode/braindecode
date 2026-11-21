@@ -1,4 +1,33 @@
+import gc
+import os
+
 import pytest
+
+
+def pytest_collection_finish(session):
+    """Freeze what the imports and the collection allocated, so that the
+    collection after each test only walks the objects tests create.
+
+    Only the outermost session freezes: a pytester session runs inside a test,
+    which pytest marks in ``PYTEST_CURRENT_TEST``. ``gc.get_freeze_count() == 0``
+    cannot tell them apart, as CPython 3.12 starts with 375 objects frozen.
+    """
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        gc.collect()
+        gc.freeze()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Free what a test leaves in reference cycles before the next test runs.
+
+    A model in a cycle (e.g. a bound method of itself kept as a hook or as
+    ``forward``) outlives its test until a full collection, which Python runs
+    rarely: 1.2 GB LUNA-Huge copies piled up in test_foundation_models.py.
+    Collected after the protocol, once pytest has dropped the fixture values.
+    """
+    yield
+    gc.collect()
 
 
 @pytest.fixture
@@ -47,12 +76,6 @@ def pytest_collection_modifyitems(config, items):
     run_slow = config.getoption("--run-slow") or "slow" in config.option.markexpr
     deselected = []
     for item in items:
-        callspec = getattr(item, "callspec", None)
-        params = getattr(callspec, "params", {}).values()
-        # 69.5M-parameter REVE and 92.9M-parameter Pratibha2 builds exhaust the parallel job's memory.
-        if any(_is_full_size_model(param) for param in params):
-            item.add_marker(pytest.mark.slow)
-
         # Network tests, even slow ones (the Hub module), follow --run-network alone.
         if "network" in item.keywords:
             if not run_network:
@@ -61,24 +84,3 @@ def pytest_collection_modifyitems(config, items):
             deselected.append(item)
     config.hook.pytest_deselected(items=deselected)
     items[:] = [item for item in items if item not in deselected]
-
-
-_FULL_SIZE_MODELS = {"REVE", "Pratibha2"}
-
-
-def _is_full_size_model(param):
-    """Return whether a parametrized value identifies a model of
-    ``_FULL_SIZE_MODELS``."""
-    if isinstance(param, str):
-        return param in _FULL_SIZE_MODELS
-
-    name = getattr(param, "__name__", None)
-    if name in _FULL_SIZE_MODELS:
-        return True
-
-    return (
-        isinstance(param, (tuple, list))
-        and len(param) > 0
-        and isinstance(param[0], str)
-        and param[0] in _FULL_SIZE_MODELS
-    )
