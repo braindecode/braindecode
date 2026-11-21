@@ -151,7 +151,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        warn_if_sfreq_differs("BBL", sfreq, 250.0)
+        warn_if_sfreq_differs("BBL", sfreq, _RELEASE_SFREQ)
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if self.n_chans > n_sensors:
             raise ValueError(
@@ -236,10 +236,10 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         # (batch, n_chans, n_times) -> (batch, n_sensors, n_times); a wider
         # input than n_sensors is not cropped, the projector rejects it.
         x = F.pad(x, (0, 0, 0, max(self.n_sensors - x.shape[1], 0)))
-        # (batch, n_sensors, n_times) -> (batch, n_datasets * model_dim, n_steps),
-        # n_steps = ceil(n_times / 2)
+        # (batch, n_sensors, n_times) -> (batch, n_datasets * model_dim, n_half),
+        # n_half = ceil(n_times / 2)
         x = self.projector(x)
-        # -> (batch, n_datasets, model_dim, n_steps)
+        # -> (batch, n_datasets, model_dim, n_half)
         x = self.split_datasets(x)
         if dataset_index is None:
             # (batch,)
@@ -248,9 +248,9 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         # on the host.
         slots = torch.arange(self.n_datasets, device=x.device)  # (n_datasets,)
         gate = (dataset_index[:, None] == slots).to(x.dtype)  # (batch, n_datasets)
-        # (batch, n_datasets, model_dim, n_steps) -> (batch, model_dim, n_steps)
+        # (batch, n_datasets, model_dim, n_half) -> (batch, model_dim, n_half)
         x = (x * gate[:, :, None, None]).sum(dim=1)
-        # -> (batch, model_dim, ceil(n_steps / prod(ratios)))
+        # -> (batch, model_dim, n_steps), n_steps = ceil(n_half / prod(ratios))
         x = self.encoder(x)
         temporal_features = x  # (batch, model_dim, n_steps)
         x = x.mean(dim=-1)  # (batch, model_dim)
@@ -275,3 +275,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         """Replace the linear probe for ``n_outputs`` classes."""
         self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.features_dim, n_outputs)
+
+
+# Sampling rate of the released CamCAN checkpoint (authors' data/preprocess.py).
+_RELEASE_SFREQ = 250.0
