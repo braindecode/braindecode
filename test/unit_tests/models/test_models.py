@@ -6793,16 +6793,6 @@ def test_fnirspret_preprocessing_module(kernel_sizes):
         torch.testing.assert_close(pre(x), torch.stack(expected, dim=1), rtol=0, atol=0)
 
 
-def test_fnirspret_even_preprocessing_kernel_raises():
-    """The padding ``k // 2`` of an even kernel adds a sample, which the
-    LayerNorms over ``n_times`` cannot read."""
-    with pytest.raises(ValueError, match="preprocessing_kernel_sizes must be odd"):
-        FNIRSPreT(
-            n_chans=10, n_outputs=2, n_times=60, depth=1,
-            preprocessing_kernel_sizes=(5, 4),
-        )
-
-
 # FNIRST/FNIRSPreT need 5 HbO/HbR pairs for their default spatial kernel
 _FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10, JungMAE: 6}
 
@@ -6854,6 +6844,16 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
     x = torch.randn(2, 10, 60)
     with torch.no_grad():
         assert torch.equal(pret(x), plain(x))
+
+
+def test_fnirspret_even_preprocessing_kernel_raises():
+    """The padding ``k // 2`` of an even kernel adds a sample, which the
+    LayerNorms over ``n_times`` cannot read."""
+    with pytest.raises(ValueError, match="preprocessing_kernel_sizes must be odd"):
+        FNIRSPreT(
+            n_chans=10, n_outputs=2, n_times=60, depth=1,
+            preprocessing_kernel_sizes=(5, 4),
+        )
 
 
 @pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
