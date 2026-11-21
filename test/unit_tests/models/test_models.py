@@ -83,6 +83,7 @@ from braindecode.models import (
     MtReNIRS,
     NeuroRVQ,
     NeuroRVQTokenizer,
+    Pratibha2,
     SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
@@ -1002,6 +1003,18 @@ def test_caresleepnet_gives_one_prediction_per_epoch():
         (dict(n_times=3 * 168), "at least 169 samples"),
         (dict(encoder_strides=(12, 1, 1)), "one entry per stage"),
         (dict(encoder_kernel_sizes=(48, 9, 9, 9)), "must be odd"),
+        (dict(n_heads=7), "must divide encoder_widths"),
+        (dict(transformer_n_heads=7), "must divide every entry"),
+        (
+            dict(
+                encoder_widths=(),
+                encoder_kernel_sizes=(),
+                encoder_strides=(),
+                encoder_pool_kernel_sizes=(),
+                encoder_pool_strides=(),
+            ),
+            "at least one stage",
+        ),
     ],
 )
 def test_caresleepnet_rejects_bad_geometry(kwargs, match):
@@ -1032,6 +1045,51 @@ def test_caresleepnet_runs_a_three_stage_encoder_at_its_shortest_epoch():
     assert model(torch.randn(2, 3, 75)).shape == (2, 5, 3)
     with pytest.raises(ValueError, match="at least 25 samples"):
         CareSleepNet(n_times=3 * 24, **params)
+
+
+@pytest.mark.parametrize(
+    "model_cls, params, extra",
+    [
+        (
+            CareSleepNet,
+            dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1),
+            {"msd_dilations": (1, 3, 9)},
+        ),
+        (
+            CareSleepNet,
+            dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1),
+            {"transformer_mlp_ratio": 2.0},
+        ),
+        (
+            TCCNet,
+            dict(n_chans=3, n_outputs=4, n_times=64, filters=((4, 4), (4,))),
+            {"dilation_growth": 3},
+        ),
+        (
+            Pratibha2,
+            dict(
+                chs_info=[{"ch_name": name} for name in ("Fp1", "Cz", "O2")],
+                n_outputs=2, n_times=400, embed_dim=32, n_freqs=2, depth=1,
+                num_heads=2,
+            ),
+            {"freq_range": (1.0, 20.0)},
+        ),
+    ],
+    ids=[
+        "CareSleepNet-msd_dilations",
+        "CareSleepNet-transformer_mlp_ratio",
+        "TCCNet-dilation_growth",
+        "Pratibha2-freq_range",
+    ],
+)  # fmt: skip
+def test_dilation_and_frequency_parameters_reach_the_model(model_cls, params, extra):
+    """Each of these parameters, alone, changes the seeded model's output."""
+    x = torch.randn(2, 3, params["n_times"])
+    outputs = []
+    for kwargs in ({}, extra):
+        torch.manual_seed(0)
+        outputs.append(model_cls(**params, **kwargs).eval()(x))
+    assert not torch.equal(*outputs)
 
 
 def test_caresleepnet_matches_authors_code():

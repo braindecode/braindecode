@@ -121,15 +121,15 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Frequencies per axis of the Fourier position encoding.
     freq_range : tuple of float
         Lowest and highest of those frequencies, evenly spaced (``[1, 10]`` in
-        the release).
+        release 863edc9).
     head_hidden_dim : int
         Hidden size of the classification head.
     normalize_input : bool
         If True, z-score each channel within each window before patching.
     std_floor : float
-        Floor of a channel's standard deviation in that z-score. The release's
-        example adds 1e-6 to it instead, so volts and microvolts would give
-        different tokens.
+        Floor of a channel's standard deviation in that z-score, ``1e-12`` by
+        default. The release's example adds 1e-6 to it instead, so volts and
+        microvolts would give different tokens.
     head_activation : type[nn.Module]
         Activation of the classification head.
     drop_prob : float
@@ -137,7 +137,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
     att_drop_prob : float
         Attention dropout probability (0 in the pretrained model).
     norm_eps : float
-        Epsilon of every RMSNorm (``1e-8`` in the release).
+        Epsilon of every RMSNorm (``1e-8`` in ``model.py`` of release 863edc9).
     on_missing : str
         Channels the position table cannot place: ``"error"`` raises,
         ``"drop"`` leaves them out of the input, ``"nearest"`` takes the table

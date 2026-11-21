@@ -125,7 +125,7 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         Attention heads of the epoch encoder's transformer layers. The reference
         sets them in a BERT config of their own, apart from the ``n_heads`` of
         the other blocks. They must divide every entry of ``encoder_widths[1:]``.
-    mlp_ratio : float, default=4.0
+    transformer_mlp_ratio : float, default=4.0
         Width of the feed-forward layer of the epoch encoder's transformer
         layers over their width (``intermediate_size`` in the reference). The
         cross-modal and sequence blocks have a feed-forward layer as wide as
@@ -137,7 +137,7 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
     norm_eps : float, default=1e-6
         Epsilon of the layer norms outside the epoch encoder's transformer
         layers: those of the multi-scale blocks, the cross-modal blocks and the
-        sequence encoder.
+        sequence encoder (``eps=1e-6`` in the reference).
     transformer_norm_eps : float, default=1e-12
         Epsilon of the layer norms of the epoch encoder's transformer layers
         (``BertLayerNorm`` in the reference).
@@ -181,7 +181,7 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         encoder_pool_strides: Sequence[int] = (2, 2, 2, 2),
         msd_dilations: Sequence[int] = (1, 2, 4),
         transformer_n_heads: int = 8,
-        mlp_ratio: float = 4.0,
+        transformer_mlp_ratio: float = 4.0,
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.GELU,
         norm_eps: float = 1e-6,
@@ -228,6 +228,18 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"encoder_kernel_sizes must be odd, got {tuple(encoder_kernel_sizes)}: "
                 "an even kernel leaves the dilated branches shorter than the shortcut."
+            )
+        if not encoder_widths:
+            raise ValueError("The epoch encoder needs at least one stage.")
+        if encoder_widths[-1] % n_heads:
+            raise ValueError(
+                f"n_heads ({n_heads}) must divide encoder_widths[-1] "
+                f"({encoder_widths[-1]})."
+            )
+        if any(width % transformer_n_heads for width in encoder_widths[1:]):
+            raise ValueError(
+                f"transformer_n_heads ({transformer_n_heads}) must divide every "
+                f"entry of encoder_widths[1:], got {tuple(encoder_widths[1:])}."
             )
         # Shortest epoch the epoch encoder accepts: walk its stages backwards from
         # one time step. A layer that gives n steps needs, at its input,
@@ -282,7 +294,7 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
             pool_strides=encoder_pool_strides,
             dilations=msd_dilations,
             n_heads=transformer_n_heads,
-            mlp_ratio=mlp_ratio,
+            mlp_ratio=transformer_mlp_ratio,
             norm_eps=norm_eps,
             transformer_norm_eps=transformer_norm_eps,
             drop_prob=drop_prob,
