@@ -3,6 +3,7 @@
 #
 # License: MIT
 # Adapted from https://github.com/eeyhsong/NICE-EEG (MIT).
+from __future__ import annotations
 
 from typing import Dict, Optional, Union
 
@@ -21,40 +22,59 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
 
     .. versionadded:: 2.1
 
+    .. rubric:: Architecture Overview
+
     NICE (Natural Image Contrast EEG) learns an EEG/MEG embedding aligned with
     the image embedding of a frozen CLIP ViT-L/14 by contrastive learning, and
     decodes seen images zero-shot by nearest-neighbour search in that space.
-    This class is the brain branch: the TSConv encoder (``Enc_eeg``) and its
-    projector (``Proj_eeg``).
+    This class is the brain branch, the TSConv encoder (``Enc_eeg``) and its
+    projector (``Proj_eeg``), plus a linear head::
 
-    - **TSConv**: a temporal convolution with ``n_filters`` kernels of size
-      ``(1, filter_time_length)``, average pooling of size
-      ``(1, pool_time_length)`` and stride ``(1, pool_time_stride)``, batch
-      norm + activation, a spatial convolution over all ``n_chans``, batch
-      norm + activation, dropout and a 1x1 convolution. Unlike
-      :class:`EEGConformer`'s patch embedding, the pooling comes before the
-      spatial convolution.
-    - **Projector**: the flattened ``(time, filters)`` map goes through a
-      linear layer to ``embed_dim``, then
-      ``LayerNorm(x + Dropout(Linear(GELU(x))))``. Its output is the aligned
-      embedding, returned as ``"features"`` by ``return_features=True``; the
-      contrastive loss L2-normalises it.
-    - **Head**: ``final_layer`` is a linear classifier on the embedding (not in
-      the original, which only does retrieval).
+        (batch, n_chans, n_times) -> TSConv -> 1x1 convolution -> flatten ->
+        projector -> (batch, embed_dim) -> (batch, n_outputs)
 
-    The paper uses THINGS-EEG2 (63 channels, 250 Hz, 0-1 s, so
-    ``n_chans=63, n_times=250``) and, in its appendix A.6, THINGS-MEG (271
-    channels, 200 Hz, 0-1 s, so ``n_chans=271, n_times=200``), with the same
-    TSConv hyperparameters. The plug-in spatial modules of the paper (NICE-SA,
-    NICE-GA) are not included.
+    .. rubric:: Macro Components
 
-    The authors' checkpoint (`eeyhsong/NICE <https://huggingface.co/eeyhsong/NICE>`_,
-    CC-BY-NC-ND-4.0, 10 subjects of THINGS-EEG2) keeps its original keys,
-    which :attr:`mapping` translates: ``model.load_state_dict({**enc, **proj},
-    strict=False)`` with ``enc`` and ``proj`` the state dicts of
-    ``pretrain_Enc_eeg_cls.pth`` and ``pretrain_Proj_eeg_cls.pth``. At Hub
-    revision ``7f98b08`` the encoder file is truncated and :func:`torch.load`
-    rejects it; the projector file loads.
+    ``NICE.tsconv`` and ``NICE.projection``
+        **Operations.** A temporal convolution with ``n_filters`` kernels of
+        size ``(1, filter_time_length)``, average pooling of size
+        ``(1, pool_time_length)`` and stride ``(1, pool_time_stride)``, batch
+        norm + activation, a spatial convolution over all ``n_chans``, batch
+        norm + activation, dropout and a 1x1 convolution. Unlike
+        :class:`EEGConformer`'s patch embedding, the pooling comes before the
+        spatial convolution. **Role.** Temporal and spatial features,
+        ``(batch, n_filters, 1, n_steps)``.
+
+    ``NICE.projector``
+        **Operations.** The flattened ``(time, filters)`` map goes through a
+        linear layer to ``embed_dim``, then
+        ``LayerNorm(x + Dropout(Linear(GELU(x))))``. **Role.** Its output is
+        the aligned embedding, returned as ``"features"`` by
+        ``return_features=True``; the contrastive loss L2-normalises it.
+
+    ``NICE.final_layer``
+        **Operations.** Linear classifier on the embedding. **Role.** Not in
+        the original, which only does retrieval.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** the convolution and the pooling give ``n_steps`` tokens,
+      each reading ``filter_time_length + pool_time_length - 1`` samples (75
+      with defaults).
+    - **Spatial:** one convolution over all ``n_chans`` mixes the montage, which
+      is fixed at construction.
+    - **Spectral:** no explicit transform; the ``n_filters`` temporal kernels
+      learn the bands.
+
+    .. rubric:: Additional Mechanisms
+
+    - The paper uses THINGS-EEG2 (63 channels, 250 Hz, 0-1 s, so
+      ``n_chans=63, n_times=250``) and, in its appendix A.6, THINGS-MEG (271
+      channels, 200 Hz, 0-1 s, so ``n_chans=271, n_times=200``), with the same
+      TSConv hyperparameters. The plug-in spatial modules of the paper (NICE-SA,
+      NICE-GA) are not included.
+    - ``mask`` hides raw samples before the temporal convolution, and
+      ``return_features`` adds the temporal ``"tokens"`` (see :meth:`forward`).
 
     `License <https://github.com/eeyhsong/NICE-EEG/blob/main/LICENSE>`_
 
@@ -87,12 +107,15 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
 
     def __init__(
         self,
+        # braindecode parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
+        *,
+        # model-specific parameters
         n_filters: int = 40,
         filter_time_length: int = 25,
         pool_time_length: int = 51,
@@ -154,19 +177,6 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         # (batch, embed_dim) -> (batch, n_outputs)
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
-        # Keys of the released pretrain_Enc_eeg_cls.pth / pretrain_Proj_eeg_cls.pth.
-        self.mapping = {
-            **{f"0.shallownet.{k}": f"tsconv.{k}" for k in self.tsconv.state_dict()},
-            "0.projection.0.weight": "projection.weight",
-            "0.projection.0.bias": "projection.bias",
-            "0.weight": "projector.0.weight",
-            "0.bias": "projector.0.bias",
-            "1.fn.1.weight": "projector.1.module.1.weight",
-            "1.fn.1.bias": "projector.1.module.1.bias",
-            "2.weight": "projector.1.layernorm.weight",
-            "2.bias": "projector.1.layernorm.bias",
-        }
-
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head; the encoder is kept."""
         self._set_n_outputs(n_outputs)
@@ -181,13 +191,13 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         """Encode ``x`` of shape (batch, n_chans, n_times).
 
-        Returns logits ``(batch, n_outputs)``. In eager mode,
-        ``return_features=True`` returns ``"features"`` (the aligned embedding,
-        ``(batch, embed_dim)``), ``"cls_token"`` (None), and ``"tokens"``
+        Returns logits ``(batch, n_outputs)``. ``return_features=True`` returns
+        ``"features"`` (the aligned embedding, ``(batch, embed_dim)``),
+        ``"cls_token"`` (None), and ``"tokens"``
         ``(batch, n_steps, n_filters)``: the projected temporal convolution map
         before flattening and the global projector, not per-channel tokens.
         ``n_steps = (n_times - filter_time_length - pool_time_length + 1)
-        // pool_time_stride + 1``. TorchScript always returns logits.
+        // pool_time_stride + 1``.
 
         ``mask`` is an optional boolean ``(batch, n_chans, n_times)`` tensor:
         True replaces the raw sample with zero before the temporal convolution.
@@ -231,12 +241,14 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         x = self.flatten(x)
         # (batch, n_steps * n_filters) -> (batch, embed_dim)
         features = self.projector(x)
-        # (batch, embed_dim) -> (batch, n_outputs)
-        logits = self.final_layer(features)
         if return_features:
-            if torch.jit.is_scripting():
-                return logits
             # (batch, n_filters, 1, n_steps) -> (batch, n_steps, n_filters)
             tokens = temporal_map.squeeze(2).transpose(1, 2)
-            return {"features": features, "cls_token": None, "tokens": tokens}
-        return logits
+            out: Dict[str, Optional[Tensor]] = {
+                "features": features,
+                "cls_token": None,
+                "tokens": tokens,
+            }
+            return out
+        # (batch, embed_dim) -> (batch, n_outputs)
+        return self.final_layer(features)

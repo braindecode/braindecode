@@ -126,7 +126,9 @@ Enhancements
 - :class:`braindecode.models.LUNA` implements ``reset_head``, so
   ``from_pretrained`` can load it with a new ``n_outputs``; a reconstruction
   model (``n_outputs=0``) becomes a classifier (:gh:`1568` by `Hamza Abdelhedi`_).
-- Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al., ICML 2025): a dataset-conditional convolutional projector, a :class:`~braindecode.modules.SEANetEncoder` and a subject embedding, with optional ``subject_index``/``dataset_index`` and the paper's mean-subject-embedding fallback. It accepts ``ch_mask``: padded channels become the zero sensor slots of the reference collator, so each recording of a padded batch gives its output alone; as the projector mixes all sensors, ``return_features`` has no per-channel ``tokens``. Opt-in ``temporal_mask`` hides raw time samples before any convolution/context, while ``return_temporal_features=True`` with ``return_features=True`` exposes the actual pre-pool sequence and stride/valid-time/context metadata for downstream SSL objectives (no pretraining task heads). The released CamCAN checkpoint, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/bbl-pretrained`` and gives the authors' features, logits and gradients bit for bit on CPU in float32 (:gh:`1553` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al.,
+  ICML 2025), with ``ch_mask``, ``temporal_mask`` and the CamCAN weights at
+  ``braindecode/bbl-pretrained`` (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint, converted without the session embedding the paper discards for downstream use, is on the Hugging Face Hub at ``braindecode/meggpt-pretrained``; ``return_features=True`` also returns the per-channel ``"tokens"`` ``(batch, n_chans, n_segments * n_last_steps, embed_dim)`` and takes a ``ch_mask`` of padded channels, whose features and tokens are zero (the flattened head is tied to ``n_chans``, so logits refuse ``ch_mask``); optional ``token_mask`` hides clean token embeddings before the causal decoder, and ``encode_tokens`` supplies cached-ID encoding with shifted next-token targets, retained-tail indices and valid/selected loss masks for a separate vocabulary head (:gh:`1555` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a dense-attention
   EEG foundation model; its encoder, converted from ``MannasAI/pratibha-2``, is on the Hugging
@@ -153,14 +155,9 @@ Enhancements
 - :class:`braindecode.models.CORTEG` loads a bare :class:`~braindecode.models.STEEGFormer`
   checkpoint with its high-gamma embedding warm-started from the loaded low-frequency one
   (:gh:`1625` by `Bruno Aristimunha`_).
-- Adding :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding
-  framework (Song et al., ICLR 2024): TSConv plus the projector into the CLIP image space,
-  configured through ``n_chans``/``n_times`` for THINGS-EEG2 and THINGS-MEG; the authors'
-  checkpoint keys load through ``mapping``. An optional boolean input-time ``mask``
-  (True hides a sample) replaces raw samples before convolution, for downstream SSL
-  losses; ``return_features`` adds the temporal ``"tokens"`` before the global
-  projector. Its spatial convolution is sized to ``n_chans``, so it refuses
-  ``ch_mask`` with a ``ValueError`` (:gh:`1556` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding framework
+  (Song et al., ICLR 2024): TSConv plus a projector into the CLIP image space, with an optional
+  input-time ``mask`` for downstream SSL losses (:gh:`1556` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the
