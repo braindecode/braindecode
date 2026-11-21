@@ -181,7 +181,7 @@ Enhancements
   (Dan et al., Epilepsia 2025). It counts any overlap with a 30 s pre-ictal and 60 s post-ictal
   tolerance as a detection, merges events less than 90 s apart and splits events longer than
   5 min. It returns sensitivity, precision, F1 and false alarms per hour and per day, and
-  matches timescoring 0.0.7 (:gh:`XXXX` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  matches timescoring 0.0.7 (:gh:`1735` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 API and behavior changes
 ========================
