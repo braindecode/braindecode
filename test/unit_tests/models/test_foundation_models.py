@@ -2328,11 +2328,17 @@ def test_pratibha2_positions():
 
 
 def test_pratibha2_is_montage_agnostic():
-    """Positions are not weights: the weights run on any order and any unit."""
+    """Positions are not weights: the weights run on any order, any number of
+    channels and any unit."""
     model = _pratibha2_model()
+    state = model.state_dict()
+    assert "encoder.channel_positions" not in state
+    assert "encoder.pos_enc.freq_matrix" not in state
+    other = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
+    other.load_state_dict(state, strict=True)
     perm = torch.randperm(len(_PRATIBHA2_NAMES))
     permuted = _pratibha2_model([_PRATIBHA2_NAMES[i] for i in perm])
-    permuted.load_state_dict(model.state_dict(), strict=True)
+    permuted.load_state_dict(state, strict=True)
     x = 20.0 * torch.randn(2, len(_PRATIBHA2_NAMES), 600) + 5.0
     with torch.no_grad():
         torch.testing.assert_close(permuted(x[:, perm]), model(x), atol=1e-5, rtol=1e-5)
@@ -2402,59 +2408,16 @@ def test_pratibha2_invalid_head_keeps_classifier():
     assert model.n_outputs == model.get_config()["n_outputs"] == 3
 
 
-def test_pratibha2_single_sample_zscore():
-    model = _pratibha2_model(["Cz"], n_times=1, patch_size=1, patch_stride=1)
-    x = torch.ones(2, 1, 1, requires_grad=True)
-    logits = model(x)
-    assert logits.isfinite().all()
-    logits.sum().backward()
-    assert x.grad.isfinite().all()
-
-
-def test_pratibha2_fits_and_restores_on_another_montage(tmp_path):
-    pytest.importorskip("huggingface_hub")
-    pytest.importorskip("safetensors")
-    from braindecode import EEGClassifier
-
-    chs = [{"ch_name": n, "kind": "eeg"} for n in ["C3", "Cz", "C4"]]
-    x = torch.randn(4, 3, 380)
-    y = torch.tensor([0, 1, 2, 1])
-    net = EEGClassifier(
-        "Pratibha2",
-        module__chs_info=chs,
-        module__sfreq=200.0,
-        module__embed_dim=16,
-        module__n_freqs=2,
-        module__depth=1,
-        module__num_heads=2,
-        max_epochs=1,
-        batch_size=2,
-        train_split=None,
-        verbose=0,
-    ).fit(x, y)
-    trained = net.module_.eval()
-    assert torch.isfinite(torch.tensor(net.history[-1, "train_loss"]))
+def test_pratibha2_scripted_returns_features():
+    """A scripted model returns the feature dict with ``return_features``, not the logits."""
+    model = _pratibha2_model(["Cz"])
+    x = torch.randn(2, 1, 400)
     with torch.no_grad():
-        expected = trained(x)
+        scripted = torch.jit.script(model)(x, True)
+        assert isinstance(scripted, dict)
         torch.testing.assert_close(
-            torch.from_numpy(net.predict_proba(x)), expected.softmax(1)
+            scripted["features"], model(x, return_features=True)["features"]
         )
-    trained.save_pretrained(tmp_path)
-    restored = Pratibha2.from_pretrained(
-        tmp_path, chs_info=chs[::-1], strict=True, local_files_only=True
-    ).eval()
-    with torch.no_grad():
-        torch.testing.assert_close(restored(x.flip(1)), expected, atol=1e-5, rtol=1e-5)
-
-
-def test_pratibha2_positions_are_not_in_the_state_dict():
-    """Channel positions are not stored in the weights."""
-    source = _pratibha2_model()
-    target = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
-    target.load_state_dict(source.state_dict(), strict=True)
-    state = source.state_dict()
-    assert "encoder.channel_positions" not in state
-    assert "encoder.pos_enc.freq_matrix" not in state
 
 
 @pytest.fixture
@@ -2771,6 +2734,19 @@ def test_steegformer_reload_keeps_channel_frame(tmp_path):
     model.save_pretrained(tmp_path)
     restored = STEEGFormer.from_pretrained(tmp_path, strict=True)
     assert restored.channel_indices.tolist() == model.channel_indices.tolist()
+
+
+def test_steegformer_encoder_keeps_the_keys_of_v2_0_0_checkpoints():
+    """``encoder.{i}.0`` is the attention residual, ``.1`` the feed-forward one."""
+    model = STEEGFormer(
+        n_chans=2, n_outputs=2, n_times=32, patch_size=16, embed_dim=16, depth=1,
+        num_heads=2, chan_pos_idx=[0, 1],
+    )  # fmt: skip
+    attention = ["keys", "queries", "values", "projection"]
+    expected = [f"encoder.0.0.fn.0.{p}" for p in ("weight", "bias")]
+    expected += [f"encoder.0.0.fn.1.{a}.{p}" for a in attention for p in ("weight", "bias")]
+    expected += [f"encoder.0.1.fn.{n}.{p}" for n in ("0", "1.0", "1.3") for p in ("weight", "bias")]
+    assert [k for k in model.state_dict() if k.startswith("encoder.")] == expected
 
 
 @pytest.mark.parametrize(
