@@ -158,7 +158,7 @@ jobs:
 
       - name: Deploy to Github Pages if on Master
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
           external_repository: braindecode/braindecode.github.io
