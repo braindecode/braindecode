@@ -1315,21 +1315,19 @@ class SegmentationReconstruction(Transform):
             if X.shape[0] != y.shape[0]:
                 raise ValueError("Number of samples in X and y must be the same.")
 
-        if self.n_segments is None:
-            self.n_segments = int(X.shape[2])
-            n_segments_list = []
-            for i in range(1, int(self.n_segments**0.5) + 1):
-                if self.n_segments % i == 0:
-                    n_segments_list.append(i)
-            self.n_segments = n_segments_list[-1]
-
+        n_segments = self.n_segments
+        if n_segments is None:
+            # Not stored on self: a later batch may have another window length.
+            n_times = int(X.shape[2])
+            n_segments = max(
+                i for i in range(1, int(n_times**0.5) + 1) if n_times % i == 0
+            )
         elif not (
-            isinstance(self.n_segments, (int, float))
-            and 1 <= self.n_segments <= X.shape[2]
+            isinstance(n_segments, (int, float)) and 1 <= n_segments <= X.shape[2]
         ):
             raise ValueError(
                 f"Number of segments must be a positive integer less than "
-                f"(or equal) the window size. Got {self.n_segments}"
+                f"(or equal) the window size. Got {n_segments}"
             )
 
         if y is None:
@@ -1343,14 +1341,12 @@ class SegmentationReconstruction(Transform):
         rand_indices = dict()
         for label, X_class in data_classes:
             n_trials = X_class.shape[0]
-            rand_indices[label] = self.rng.randint(
-                0, n_trials, (n_trials, self.n_segments)
-            )
+            rand_indices[label] = self.rng.randint(0, n_trials, (n_trials, n_segments))
 
         idx_shuffle = self.rng.permutation(X.shape[0])
 
         return {
-            "n_segments": self.n_segments,
+            "n_segments": n_segments,
             "data_classes": data_classes,
             "rand_indices": rand_indices,
             "idx_shuffle": idx_shuffle,
