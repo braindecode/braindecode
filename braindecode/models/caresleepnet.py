@@ -231,12 +231,14 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
             )
         if not encoder_widths:
             raise ValueError("The epoch encoder needs at least one stage.")
-        if encoder_widths[-1] % n_heads:
+        if n_heads < 1 or encoder_widths[-1] % n_heads:
             raise ValueError(
                 f"n_heads ({n_heads}) must divide encoder_widths[-1] "
                 f"({encoder_widths[-1]})."
             )
-        if any(width % transformer_n_heads for width in encoder_widths[1:]):
+        if transformer_n_heads < 1 or any(
+            width % transformer_n_heads for width in encoder_widths[1:]
+        ):
             raise ValueError(
                 f"transformer_n_heads ({transformer_n_heads}) must divide every "
                 f"entry of encoder_widths[1:], got {tuple(encoder_widths[1:])}."

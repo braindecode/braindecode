@@ -1019,7 +1019,9 @@ def test_caresleepnet_gives_one_prediction_per_epoch():
         (dict(encoder_strides=(12, 1, 1)), "one entry per stage"),
         (dict(encoder_kernel_sizes=(48, 9, 9, 9)), "must be odd"),
         (dict(n_heads=7), "must divide encoder_widths"),
+        (dict(n_heads=0), "must divide encoder_widths"),
         (dict(transformer_n_heads=7), "must divide every entry"),
+        (dict(transformer_n_heads=0), "must divide every entry"),
         (
             dict(
                 encoder_widths=(),
