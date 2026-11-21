@@ -36,34 +36,72 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
        logits, without the softmax.
 
     A temporal convolutional network that classifies a whole sEMG gesture.
-    Residual blocks of causal convolutions, whose dilation doubles at every
-    layer and keeps doubling across blocks, map the gesture to a sequence of
-    features. An average over time (``"aot"``) or a context-vector attention
-    (``"att"``) pools that sequence into one vector for a linear classifier.
 
-    The paper compares four models that differ in receptive field (RF) and
-    head (poster Table 1; parameters counted for 10 channels and 53 classes):
+    .. rubric:: Architecture Overview
 
-    ============  ==================================  ======  ==========
-    Model         ``filters``                         Convs   Parameters
-    ============  ==================================  ======  ==========
-    AoT, 300 ms   ``((32, 64), (64, 128))``           4       60,117
-    AoT, 2500 ms  ``((32, 32), (32, 32), (64, 64),    7       72,245
-                  (128,))``
-    Att, 300 ms   ``((32, 64), (64, 128))``           4       76,629
-    Att, 2500 ms  ``((32, 32), (32, 32), (64, 64),    7       88,757
-                  (128,))``
-    ============  ==================================  ======  ==========
+    Residual blocks of causal convolutions map the gesture to a sequence of
+    features, and a pooling over time reduces it to one vector for a linear
+    classifier. Inputs may have any length::
 
-    The defaults build Att, 2500 ms, the best model of the paper (89.76 %
-    top-1). Pass ``classification_head="aot"`` and/or
-    ``filters=((32, 64), (64, 128))`` for the other three. With
-    ``kernel_size=3``, the RF is 31 samples (310 ms at 100 Hz) for the
-    4-convolution models and 255 samples (2550 ms) for the 7-convolution ones.
+        (batch, n_chans, n_times) -> residual blocks
+        -> (batch, filters[-1][-1], n_times) -> pooling over the valid steps
+        -> (batch, filters[-1][-1]) -> final_layer -> (batch, n_outputs)
 
-    Inputs are ``(batch, n_chans, n_times)`` and may have any length. The
-    softmax of the reference is left out, because braindecode models return
-    logits.
+    The defaults build the best model of the paper: the attention head and a
+    receptive field of 255 samples (2550 ms at 100 Hz). Pass
+    ``classification_head="aot"`` and/or ``filters=((32, 64), (64, 128))``
+    (31 samples, 310 ms) for its other three models.
+
+    .. rubric:: Macro Components
+
+    ``TCCNet.feature_extractor``
+        **Operations.** One residual block per inner sequence of ``filters``:
+        its causal convolutions, each followed by the activation and a
+        channel-wise dropout, plus a kernel-size-1 projection of the block
+        input that is added to the last convolution. The dilation doubles at
+        every convolution, across blocks too, so ``n`` convolutions of kernel
+        size ``k`` see :math:`1 + (k - 1)(2^n - 1)` samples. **Role.** One
+        feature vector per time step, computed from the past only.
+
+    ``TCCNet.attention``
+        **Operations.** With ``classification_head="att"``: a score
+        ``tanh(h W) u`` for each time step ``h``, a softmax of the scores over
+        the valid steps, and the sum of the steps weighted by it. It is
+        ``None`` with ``"aot"``, which averages the valid steps instead.
+        **Role.** Pools the sequence into one vector per gesture.
+
+    ``TCCNet.final_layer``
+        **Operations.** One :class:`~torch.nn.Linear` on the pooled vector.
+        **Role.** The logits, without the softmax of the reference.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** causal convolutions with dilations 1, 2, 4, ...: each step
+      sees only the past, and the receptive field grows exponentially.
+    - **Spatial:** every convolution mixes all its input channels; there is no
+      per-channel branch.
+    - **Spectral:** not modelled. The reference rectifies each channel and
+      low-pass filters it, so the network reads an amplitude envelope.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Masking.** A time step where every channel equals ``mask_value`` is
+      padding: every convolution reads it as zero and the pooling leaves it
+      out, as the reference's Keras ``Masking`` layer does. As in its
+      ``CausalConv1D``, a convolution adds its bias only where its output is
+      non-zero.
+
+    .. important::
+
+        The reference code [tccnetcode]_ rectifies each channel, low-passes it
+        at 1 Hz (first-order Butterworth, ``filtfilt``) and pre-pads the
+        gestures of a batch with ``-10``. The masked average over time equals
+        its average for that padding only; a fully padded gesture gives NaN
+        with ``"aot"``, as there.
+
+    .. versionadded:: 2.1
+
+    `License <https://github.com/DSIP-UPatras/ICASSP2019_TCN/blob/cd28909ccf3696b835446cbec2f15eb60610a2af/LICENSE>`_
 
     Parameters
     ----------
@@ -82,39 +120,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         ``"att"``: context-vector attention; ``"aot"``: average over the
         valid time steps.
     mask_value : float | None, default=-10.0
-        A time step where every channel equals this value is padding: it is
-        zeroed before every convolution and left out of the pooling, as the
-        reference's Keras ``Masking`` layer does. ``None`` turns masking off.
-
-    Notes
-    -----
-    Protocol of the reference code [tccnetcode]_, for all four models: one
-    model per subject of NinaPro DB1 (27 subjects, 10 sEMG channels at
-    100 Hz, 53 classes including rest). Each channel is rectified and
-    low-pass filtered by a 1 Hz first-order Butterworth filter applied
-    forward-backward (``filtfilt``). Each whole gesture repetition is one
-    sample: the variable-length gestures of a batch are pre-padded with
-    ``-10`` to the longest one and masked. Repetitions 1, 3, 4, 6, 8, 9
-    and 10 train; 2, 5 and 7 test. Training uses Adam (learning rate 0.01,
-    epsilon 0.001) for 30 epochs, batch size 128, L2 0.0005 on convolution
-    and classifier kernels (use optimizer weight decay in PyTorch), class-
-    balanced sample weights, and 10 augmented copies of each training
-    gesture (time and magnitude warping 0.2, noise at 25 dB SNR). The
-    generator's min-max normalisation is off in the released configurations.
-
-    The masked average over time equals the reference only for pre-padding,
-    the reference pipeline: the reference sums every time step, padded ones
-    included, and divides by the number of valid steps, while this port
-    always leaves padded steps out; on a fully padded input it gives NaN, as
-    the reference does. The bias of each convolution is added only where the
-    convolution output is non-zero, as in the reference ``CausalConv1D``;
-    this only matters for bit-exact agreement with it. The attention
-    subtracts the row maximum before the exponential: the same values as
-    the reference, which overflows to NaN once the context vector grows
-    large. Initialisation follows Keras 2.2.4: truncated Glorot normal
-    kernels, zero biases, Glorot uniform attention weights.
-
-    `License <https://github.com/DSIP-UPatras/ICASSP2019_TCN/blob/cd28909ccf3696b835446cbec2f15eb60610a2af/LICENSE>`_
+        Value of every channel at a padded time step. ``None`` turns masking
+        off.
 
     References
     ----------
@@ -135,6 +142,7 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
+        *,
         # Model parameters.
         filters: Sequence[Sequence[int]] = ((32, 32), (32, 32), (64, 64), (128,)),
         kernel_size: int = 3,
@@ -186,7 +194,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
 
     def _init_parameters(self) -> None:
-        """Keras 2.2.4 initialisation of the reference (see Notes)."""
+        """Keras 2.2.4 initialisation of the reference: truncated Glorot normal
+        kernels and zero biases (the attention has its own, in ``reset_parameters``)."""
         for module in self.modules():
             if isinstance(module, (CausalConv1d, nn.Linear)):
                 _keras_glorot_normal_(module.weight)
@@ -204,19 +213,34 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         nn.init.zeros_(self.final_layer.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Return logits for a batch of sEMG gestures."""
+        """Return logits for a batch of sEMG gestures.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            sEMG of shape ``(batch, n_chans, n_times)``, of any length. Padded
+            steps hold ``mask_value`` in every channel.
+
+        Returns
+        -------
+        torch.Tensor
+            Logits of shape ``(batch, n_outputs)``.
+        """
         valid_mask = None
         if self.mask_value is not None:
-            # (batch, n_chans, n_times) -> (batch, n_times), True = real step
+            # True at the real steps, padding holds mask_value in every channel:
+            # (batch, n_chans, n_times) -> (batch, n_times)
             valid_mask = torch.any(x != self.mask_value, dim=1)
 
         features = x
         for block in self.feature_extractor:
+            # causal convolutions with a residual connection:
             # (batch, n_chans | filters, n_times) -> (batch, filters, n_times)
             features = block(features, valid_mask)
-        # (batch, filters, n_times) -> (batch, n_times, filters)
+        # time steps first, as the pooling reads them: (batch, n_times, filters)
         features = features.transpose(1, 2)
 
+        # one vector per gesture from its valid steps: (batch, filters)
         if self.attention is not None:
             pooled = self.attention(features, valid_mask)
         else:
@@ -225,19 +249,29 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         return self.final_layer(pooled)
 
 
+# Std of a standard normal truncated at +-2 sigma, which Keras 2.2.4's
+# ``glorot_normal`` divides by so that the truncated draw has the Glorot std.
+_TRUNC_NORMAL_2SIGMA_STD = 0.87962566103423978
+
+
 def _keras_glorot_normal_(weight: torch.Tensor) -> None:
     """Keras 2.2.4 ``glorot_normal``: a normal truncated at 2 sigma, rescaled
-    by 1 / 0.8796 (the std of a standard normal truncated at 2)."""
+    by 1 / ``_TRUNC_NORMAL_2SIGMA_STD``."""
     receptive_field = weight[0][0].numel()
     fan_in = weight.shape[1] * receptive_field
     fan_out = weight.shape[0] * receptive_field
-    std = math.sqrt(2.0 / (fan_in + fan_out)) / 0.87962566103423978
+    std = math.sqrt(2.0 / (fan_in + fan_out)) / _TRUNC_NORMAL_2SIGMA_STD
     nn.init.trunc_normal_(weight, std=std, a=-2 * std, b=2 * std)
 
 
 class _MaskedCausalConv1d(nn.Module):
-    """Reference ``CausalConv1D``: zero the padded input steps, then add the
-    bias only where the bias-free causal convolution is non-zero."""
+    """Reference ``CausalConv1D``.
+
+    Steps: zero the padded input steps, apply a bias-free causal convolution,
+    then add the bias only where that output is non-zero. ``x`` is
+    ``(batch, in_channels, n_times)`` and ``valid_mask`` ``(batch, n_times)`` or
+    ``None``; the output is ``(batch, out_channels, n_times)``.
+    """
 
     def __init__(
         self, in_channels: int, out_channels: int, kernel_size: int, dilation: int
@@ -250,15 +284,26 @@ class _MaskedCausalConv1d(nn.Module):
 
     def forward(self, x: torch.Tensor, valid_mask: torch.Tensor | None) -> torch.Tensor:
         if valid_mask is not None:
+            # padded steps count as zeros: (batch, in_channels, n_times)
             x = x.masked_fill(~valid_mask.unsqueeze(1), 0)
         # (batch, in_channels, n_times) -> (batch, out_channels, n_times)
         out = self.conv(x)
+        # the bias only where the convolution is non-zero (the reference's
+        # ``CausalConv1D``): (batch, out_channels, n_times)
         return (out + self.bias.view(1, -1, 1)) * (out != 0)
 
 
 class _TCCResidualBlock(nn.Module):
     """TCN residual block of the reference; private because braindecode.modules
-    has no shared TCN residual block (ATCNet, TCFormer and TCN keep their own)."""
+    has no shared TCN residual block (ATCNet, TCFormer and TCN keep their own).
+
+    Steps: a kernel-size-1 projection of the input to ``filters[-1]`` channels;
+    then, for each entry of ``filters``, a causal convolution with its dilation,
+    the activation and a channel-wise dropout; the projection is added to the
+    last output. ``x`` is ``(batch, in_channels, n_times)`` and ``valid_mask``
+    ``(batch, n_times)`` or ``None``; the output is
+    ``(batch, filters[-1], n_times)``.
+    """
 
     def __init__(
         self,
@@ -284,18 +329,29 @@ class _TCCResidualBlock(nn.Module):
             in_channels = out_channels
 
     def forward(self, x: torch.Tensor, valid_mask: torch.Tensor | None) -> torch.Tensor:
+        # shortcut at the width of the last convolution:
         # (batch, in_channels, n_times) -> (batch, filters[-1], n_times)
         residual = self.projection(x, valid_mask)
         for convolution, activation, dropout in zip(
             self.convolutions, self.activations, self.dropouts
         ):
+            # dilated causal convolution, activation, channel-wise dropout:
+            # (batch, channels, n_times) -> (batch, out_channels, n_times)
             x = dropout(activation(convolution(x, valid_mask)))
+        # add the shortcut: (batch, filters[-1], n_times)
         return x + residual
 
 
 class _TCCContextAttention(nn.Module):
     """``AttentionWithContext(bias=False)`` of the reference; private because
-    braindecode.modules has no context-vector attention pooling."""
+    braindecode.modules has no context-vector attention pooling.
+
+    Steps: a score ``tanh(x W) u`` per time step, a softmax of the scores over
+    the valid steps (with the epsilon of Keras, see ``forward``), and the sum of
+    the steps weighted by it. ``x`` is ``(batch, n_times, n_features)`` and
+    ``valid_mask`` ``(batch, n_times)`` or ``None``; the output is
+    ``(batch, n_features)``.
+    """
 
     def __init__(self, n_features: int) -> None:
         super().__init__()
@@ -311,17 +367,19 @@ class _TCCContextAttention(nn.Module):
         nn.init.uniform_(self.context, -bound, bound)
 
     def forward(self, x: torch.Tensor, valid_mask: torch.Tensor | None) -> torch.Tensor:
-        # (batch, n_times, n_features) -> (batch, n_times)
+        # one score per time step: (batch, n_times, n_features) -> (batch, n_times)
         scores = torch.tanh(x @ self.weight) @ self.context
         if valid_mask is not None:
+            # padded steps get no weight: (batch, n_times)
             scores = scores.masked_fill(~valid_mask, float("-inf"))
         # exp(s - m) / (sum exp(s - m) + eps * exp(-m)) is the reference's
         # exp(s) / (sum exp(s) + eps) without its overflow; eps = 1e-7 is
         # keras.backend.epsilon(). m >= 0 also covers fully padded rows.
         shift = scores.amax(dim=1, keepdim=True).clamp_min(0.0).detach()
         attention = torch.exp(scores - shift)
+        # weights that sum to 1 over the valid steps: (batch, n_times)
         attention = attention / (
             attention.sum(dim=1, keepdim=True) + 1e-7 * torch.exp(-shift)
         )
-        # (batch, n_times, n_features) -> (batch, n_features)
+        # weighted sum over time: (batch, n_times, n_features) -> (batch, n_features)
         return torch.sum(x * attention.unsqueeze(-1), dim=1)

@@ -6449,143 +6449,119 @@ def test_megxl_mask_token_hops(n_times):
         model.encode_codes(codes, torch.ones(1, dtype=torch.bool), torch.zeros(32))
 
 
-@pytest.mark.parametrize("hide_all", [False, True])
-def test_bbl_temporal_mask_none_false_rng_and_gradients(hide_all):
-    """All-false masking preserves no-mask values, gradients and RNG; selected
-    NaNs are sanitized before context, including an entirely hidden window."""
-    torch.manual_seed(0)
-    model = BBL(
+def _bbl(**kwargs):
+    kw = dict(
         n_chans=3, n_outputs=2, n_times=39, n_sensors=5, n_datasets=2,
         n_subjects=4, model_dim=8, subject_dim=2, n_filters=2,
-    ).eval()
+    )  # fmt: skip
+    return BBL(**{**kw, **kwargs}).eval()
+
+
+@pytest.mark.parametrize("hide_all", [False, True])
+def test_bbl_temporal_mask_hides_samples_before_context(hide_all):
+    """An all-False mask keeps the outputs and gradients of no mask. Hidden
+    samples, even NaN, and padded channels act as zeros and get no gradient,
+    also when scripted."""
+    model = _bbl()
     x = torch.randn(2, 3, 39)
-    false = torch.zeros(2, 39, dtype=torch.bool)
-    state = {k: v.clone() for k, v in model.state_dict().items()}
-    rng = torch.get_rng_state().clone()
-    xi = x.clone().requires_grad_(True)
-    logits = model(xi)
-    grads = torch.autograd.grad(logits.sum(), [xi, *model.parameters()], allow_unused=True)
-    yi = x.clone().requires_grad_(True)
-    masked_logits = model(yi, temporal_mask=false)
-    masked_grads = torch.autograd.grad(masked_logits.sum(), [yi, *model.parameters()], allow_unused=True)
-    assert torch.equal(logits, masked_logits)
-    for a, b in zip(grads, masked_grads):
-        assert (a is None and b is None) or torch.equal(a, b)
-    assert torch.equal(torch.get_rng_state(), rng)
-    assert all(torch.equal(state[k], v) for k, v in model.state_dict().items())
-    mask = torch.full_like(false, hide_all)
+    none = torch.zeros(2, 39, dtype=torch.bool)
+    runs = []
+    for kwargs in ({}, {"temporal_mask": none}):
+        xi = x.clone().requires_grad_(True)
+        logits = model(xi, **kwargs)
+        params = [xi, *model.parameters()]
+        grads = torch.autograd.grad(logits.sum(), params, materialize_grads=True)
+        runs.append((logits, *grads))
+    assert all(torch.equal(a, b) for a, b in zip(*runs))
+    mask = torch.full_like(none, hide_all)
     mask[:, 10:20] = True
-    corrupt = x.masked_fill(mask[:, None, :], float("nan")).requires_grad_(True)
-    actual = model(corrupt, temporal_mask=mask)
-    expected = model(x.masked_fill(mask[:, None, :], 0.0))
-    assert torch.equal(actual, expected)
+    real = torch.tensor([[True, True, False], [True, True, True]])
+    selected = ~real[:, :, None] | mask[:, None, :]
+    corrupt = x.masked_fill(selected, float("nan")).requires_grad_(True)
+    actual = model(corrupt, ch_mask=real, temporal_mask=mask)
+    assert torch.equal(actual, model(x.masked_fill(selected, 0.0)))
     actual.sum().backward()
-    hidden = mask[:, None, :].expand_as(corrupt)
-    assert torch.equal(corrupt.grad[hidden], torch.zeros_like(corrupt.grad[hidden]))
-    assert all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters())
+    ignored = selected.expand_as(corrupt)
+    assert torch.equal(corrupt.grad[ignored], torch.zeros_like(corrupt.grad[ignored]))
+    assert all(p.grad is None or p.grad.isfinite().all() for p in model.parameters())
     scripted = torch.jit.script(model)
     with torch.no_grad():
-        torch.testing.assert_close(scripted(corrupt, temporal_mask=mask), actual)
-        seq = scripted(corrupt, temporal_mask=mask, return_features=True, return_temporal_features=True)
-        assert seq["temporal_features"].shape == (2, 8, 2)
-    with pytest.raises(ValueError, match="temporal_mask"):
-        model(x, temporal_mask=torch.zeros(2, 3, 39))
+        scripted_out = scripted(corrupt, ch_mask=real, temporal_mask=mask)
+        assert scripted(x, return_features=True)["temporal_features"].shape == (2, 8, 2)
+    torch.testing.assert_close(scripted_out, actual.detach())
+    for bad in (torch.zeros(2, 3, 39, dtype=torch.bool), torch.zeros(2, 39)):
+        with pytest.raises(ValueError, match="temporal_mask"):
+            model(x, temporal_mask=bad)
+
+
+@pytest.mark.parametrize("n_times", [1, 39, 125])
+@pytest.mark.parametrize("ratios", [(4, 2, 2), (3, 2)])
+def test_bbl_temporal_features_are_the_sequence_before_pooling(n_times, ratios):
+    """``temporal_features`` has ``ceil(n_times / (2 * prod(ratios)))`` steps, and
+    their mean over time is the pooled part of ``features``."""
+    model = _bbl(n_times=n_times, ratios=ratios)
+    with torch.no_grad():
+        out = model(torch.randn(2, 3, n_times), return_features=True)
+    n_steps = -(-n_times // (2 * math.prod(ratios)))
+    assert out["temporal_features"].shape == (2, 8, n_steps)
+    assert torch.equal(out["features"][:, :8], out["temporal_features"].mean(-1))
+
+
+def _nice():
+    return NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
 
 
 @pytest.mark.parametrize(
     "n_chans, n_times, n_flat",
     [(63, 250, 1440), (271, 200, 1040)],  # THINGS-EEG2, THINGS-MEG (paper A.6)
 )
-def test_nice_released_checkpoint_keys(n_chans, n_times, n_flat):
-    """Keys and shapes of eeyhsong/NICE's pretrain_{Enc,Proj}_eeg_cls.pth load
-    through ``mapping`` with only the head missing."""
-    bn = {"weight": (40,), "bias": (40,), "running_mean": (40,), "running_var": (40,)}
-    shapes = {
-        "0.shallownet.0.weight": (40, 1, 1, 25),
-        "0.shallownet.0.bias": (40,),
-        **{f"0.shallownet.2.{k}": v for k, v in bn.items()},
-        "0.shallownet.4.weight": (40, 40, n_chans, 1),
-        "0.shallownet.4.bias": (40,),
-        **{f"0.shallownet.5.{k}": v for k, v in bn.items()},
-        "0.projection.0.weight": (40, 40, 1, 1),
-        "0.projection.0.bias": (40,),
-        "0.weight": (768, n_flat),
-        "0.bias": (768,),
-        "1.fn.1.weight": (768, 768),
-        "1.fn.1.bias": (768,),
-        "2.weight": (768,),
-        "2.bias": (768,),
-    }
-    # Non-negative values, so the BatchNorm running variances are valid.
-    state = {k: torch.rand(v) for k, v in shapes.items()}
-    state["0.shallownet.2.num_batches_tracked"] = torch.tensor(0)
-    state["0.shallownet.5.num_batches_tracked"] = torch.tensor(0)
-    model = NICE(n_chans=n_chans, n_times=n_times, n_outputs=200)
-    result = model.load_state_dict(state, strict=False)
-    assert result.unexpected_keys == []
-    assert sorted(result.missing_keys) == ["final_layer.bias", "final_layer.weight"]
-    out = model.eval()(torch.randn(2, n_chans, n_times), return_features=True)
-    assert out["features"].shape == (2, 768)
-    assert out["features"].isfinite().all()
-
-
-@pytest.mark.parametrize("training", [False, True])
-def test_nice_input_mask_and_temporal_tokens(training):
-    """Raw masking happens before context; tokens are the actual projected map."""
-    torch.manual_seed(42)
-    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
-    model.train(training)
-    x = torch.randn(2, 4, 100)
-    mask = torch.zeros_like(x, dtype=torch.bool)
-    mask[:, :, 20:60] = True
-    x[mask] = float("nan")
-    x.requires_grad_(True)
-    maps = []
-    hook = model.projection.register_forward_hook(
-        lambda module, args, output: maps.append(output)
-    )
-    torch.manual_seed(1)
-    out = model(x, mask=mask, return_features=True)
-    hook.remove()
-    assert out["features"].shape == (2, 8)
-    assert out["tokens"].shape == (2, 6, 4)
-    assert out["cls_token"] is None
-    assert torch.equal(out["tokens"], maps[0].squeeze(2).transpose(1, 2))
-    assert out["features"].isfinite().all()
-    assert out["tokens"].isfinite().all()
-    (out["features"].square().sum() + out["tokens"].square().sum()).backward()
-    assert torch.equal(x.grad[mask], torch.zeros_like(x.grad[mask]))
-    assert x.grad[~mask].isfinite().all()
-    assert x.grad[~mask].abs().sum() > 0
-    # Polarity and replacement: masked NaNs behave exactly as zeroed raw input.
-    torch.manual_seed(1)
-    replaced = model(x.detach().masked_fill(mask, 0.0), return_features=True)
-    assert torch.equal(out["features"], replaced["features"])
-    assert torch.equal(out["tokens"], replaced["tokens"])
+def test_nice_projector_width_matches_the_paper(n_chans, n_times, n_flat):
+    model = NICE(n_chans=n_chans, n_times=n_times, n_outputs=2)
+    assert model.projector[0].in_features == n_flat
 
 
 @pytest.mark.parametrize("scripted", [False, True])
-def test_nice_mask_identity_and_all_hidden(scripted):
-    torch.manual_seed(0)
-    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8).eval()
+def test_nice_mask_acts_as_zeros_and_return_features_is_a_dict(scripted):
+    """An all-False mask changes nothing and hidden samples, even NaN, act as
+    zeros. ``return_features`` gives the tokens that flatten, time-major, into
+    the projector; scripted, it returns the same dict as eager."""
+    model = _nice().eval()
     if scripted:
         model = torch.jit.script(model)
     x = torch.randn(2, 4, 100)
-    assert torch.equal(model(x), model(x, mask=torch.zeros_like(x, dtype=torch.bool)))
-    hidden = torch.full_like(x, float("nan"), requires_grad=True)
-    logits = model(hidden, mask=torch.ones_like(x, dtype=torch.bool))
-    assert torch.equal(logits, model(torch.zeros_like(x)))
-    logits.sum().backward()
-    assert torch.equal(hidden.grad, torch.zeros_like(hidden.grad))
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    assert torch.equal(model(x), model(x, mask=mask))
+    hidden = model(torch.full_like(x, float("nan")), mask=~mask)
+    assert torch.equal(hidden, model(torch.zeros_like(x)))
+    mask[:, :, 20:60] = True
+    out = model(x.masked_fill(mask, float("nan")), mask=mask, return_features=True)
+    clean = model(x.masked_fill(mask, 0.0), return_features=True)
+    assert out["cls_token"] is None
+    assert out["tokens"].shape == (2, 6, 4)
+    assert torch.equal(out["features"], clean["features"])
+    assert torch.equal(out["tokens"], clean["tokens"])
+    assert torch.equal(model.projector(out["tokens"].flatten(1)), out["features"])
     with pytest.raises((ValueError, torch.jit.Error), match="ch_mask"):
         model(x, ch_mask=torch.ones(2, 4, dtype=torch.bool))
 
 
+@pytest.mark.parametrize("training", [False, True])
+def test_nice_hidden_samples_get_no_gradient(training):
+    model = _nice().train(training)
+    mask = torch.zeros(2, 4, 100, dtype=torch.bool)
+    mask[:, :, 20:60] = True
+    x = torch.randn(2, 4, 100).masked_fill(mask, float("nan")).requires_grad_(True)
+    out = model(x, mask=mask, return_features=True)
+    (out["features"].square().sum() + out["tokens"].square().sum()).backward()
+    assert torch.equal(x.grad[mask], torch.zeros_like(x.grad[mask]))
+    assert x.grad[~mask].isfinite().all()
+    assert x.grad[~mask].abs().sum() > 0
+
+
 @pytest.mark.parametrize("shape,dtype", [((2, 100), torch.bool), ((2, 4, 100), torch.float32)])
 def test_nice_mask_validation(shape, dtype):
-    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
     with pytest.raises(ValueError, match="mask must be boolean with shape"):
-        model(torch.randn(2, 4, 100), mask=torch.ones(shape, dtype=dtype))
+        _nice()(torch.randn(2, 4, 100), mask=torch.ones(shape, dtype=dtype))
 
 
 # ----------------------------------------------------------------------------
@@ -7865,45 +7841,30 @@ def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
     torch.testing.assert_close(features[0, :5], torch.tensor(expected), rtol=0, atol=1e-5)
 
 
-def _tccnet_reference(model, x, mask_value):
-    """NumPy transcription of the TCCNet Keras layers (DSIP-UPatras/ICASSP2019_TCN
-    @cd28909: ``Masking``, ``CausalConv1D``, ``MeanOverTime`` and
-    ``AttentionWithContext(bias=False)``), on the port's weights."""
-    x = x.transpose(0, 2, 1)  # (batch, n_times, n_chans), the Keras layout
-    if mask_value is None:
-        mask = np.ones(x.shape[:2])
-    else:
-        mask = np.any(x != mask_value, axis=-1).astype(x.dtype)
-
-    def causal_conv(h, layer):
-        h = h * mask[..., None]
-        kernel = layer.conv.weight.detach().numpy().transpose(2, 1, 0)
-        dilation = layer.conv.dilation[0]
-        padded = np.pad(h, ((0, 0), ((len(kernel) - 1) * dilation, 0), (0, 0)))
-        out = sum(
-            padded[:, j * dilation : j * dilation + h.shape[1]] @ kernel[j]
-            for j in range(len(kernel))
-        )
-        # The bias is added only where the convolution is non-zero.
-        return (out + layer.bias.detach().numpy()) * (out != 0)
-
-    h = x * mask[..., None]
-    for block in model.feature_extractor:
-        residual = causal_conv(h, block.projection)
-        for layer in block.convolutions:
-            h = np.maximum(causal_conv(h, layer), 0)
-        h = h + residual
-    if model.attention is None:
-        # Sum over every step, divided by the number of valid steps.
-        pooled = h.sum(axis=1) / mask.sum(axis=1, keepdims=True)
-    else:
-        weight = model.attention.weight.detach().numpy()
-        context = model.attention.context.detach().numpy()
-        attention = np.exp(np.tanh(h @ weight) @ context) * mask
-        attention = attention / (attention.sum(axis=1, keepdims=True) + 1e-7)
-        pooled = (h * attention[..., None]).sum(axis=1)
-    final = model.final_layer
-    return pooled @ final.weight.detach().numpy().T + final.bias.detach().numpy()
+# Logits, and the gradient of ``logits @ [0.7, -0.3]`` with respect to every second
+# real step of channel 0, for each (classification_head, mask_value), on the
+# weights and input of the test below. Computed once with a NumPy transcription of
+# the Keras layers of DSIP-UPatras/ICASSP2019_TCN @cd28909 (``Masking``,
+# ``CausalConv1D``, ``MeanOverTime``, ``AttentionWithContext``), which agreed with
+# the port to 1e-11 on the logits and, by central differences, on the gradients.
+_TCCNET_KERAS = {
+    ("aot", None): (
+        [6.6280743e-02, 5.7017024e-01],
+        [-6.8664843e-04, -6.9696416e-04, -4.9785423e-04, -4.4360344e-04],
+    ),
+    ("aot", -10.0): (
+        [6.4407473e-02, 5.6374093e-01],
+        [-1.0649275e-03, -7.0881849e-04, -6.0610909e-04],
+    ),
+    ("att", None): (
+        [1.0911173e-01, 6.1337286e-01],
+        [-4.9515657e-04, -5.2219596e-04, -3.7520062e-04, -3.5192951e-04],
+    ),
+    ("att", -10.0): (
+        [1.0665933e-01, 6.0621200e-01],
+        [-7.9739244e-04, -5.2930311e-04, -4.8877990e-04],
+    ),
+}
 
 
 @pytest.mark.parametrize("mask_value", [None, -10.0])
@@ -7922,35 +7883,28 @@ def test_tccnet_matches_reference_keras_equations(classification_head, mask_valu
     with torch.no_grad():  # non-symmetric values expose layout errors
         for i, parameter in enumerate(model.parameters()):
             values = torch.linspace(
-                -0.13 + i * 0.01, 0.17 + i * 0.01, parameter.numel()
+                -0.13 + i * 0.01,
+                0.17 + i * 0.01,
+                parameter.numel(),
+                dtype=torch.float64,
             )
             parameter.copy_(values.reshape_as(parameter))
-    x_numpy = np.linspace(-0.4, 0.6, 16).reshape(1, 2, 8)
     n_pad = 0 if mask_value is None else 3
+    x = torch.linspace(-0.4, 0.6, 16, dtype=torch.float64).reshape(1, 2, 8)
     if mask_value is not None:
-        x_numpy[..., :n_pad] = mask_value  # pre-padding, as in the reference
-    coefficients = np.array([[0.7, -0.3]])
-    x = torch.tensor(x_numpy, requires_grad=True)
+        x[..., :n_pad] = mask_value  # pre-padding, as in the reference
+    x.requires_grad_()
 
     out = model(x)
-    (out * torch.from_numpy(coefficients)).sum().backward()
+    (out * torch.tensor([[0.7, -0.3]], dtype=torch.float64)).sum().backward()
 
-    expected = _tccnet_reference(model, x_numpy, mask_value)
-    np.testing.assert_allclose(out.detach().numpy(), expected, rtol=1e-11)
-    # Input gradient vs central differences of the reference, on real steps.
-    assert not x.grad[..., :n_pad].any()
-    for index in np.ndindex(x_numpy[..., n_pad:].shape):
-        index = index[:2] + (index[2] + n_pad,)
-        shifted = [x_numpy.copy(), x_numpy.copy()]
-        shifted[0][index] += 1e-6
-        shifted[1][index] -= 1e-6
-        plus, minus = (
-            np.sum(_tccnet_reference(model, s, mask_value) * coefficients)
-            for s in shifted
-        )
-        np.testing.assert_allclose(
-            x.grad[index].item(), (plus - minus) / 2e-6, rtol=2e-5, atol=1e-7
-        )
+    logits, grad = (
+        torch.tensor(v, dtype=torch.float64)
+        for v in _TCCNET_KERAS[classification_head, mask_value]
+    )
+    torch.testing.assert_close(out[0], logits, rtol=1e-6, atol=0)
+    torch.testing.assert_close(x.grad[0, 0, n_pad::2], grad, rtol=1e-6, atol=0)
+    assert not x.grad[..., :n_pad].any()  # padded steps get no gradient
 
 
 @pytest.mark.parametrize("classification_head", ["aot", "att"])

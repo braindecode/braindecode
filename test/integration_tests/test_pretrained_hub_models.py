@@ -338,6 +338,7 @@ class TestSTEEGFormerPretrained:
         ("MEGGPT", "braindecode/meggpt-pretrained", 52),
         ("CORTEG", "braindecode/corteg-small-pretrained", 8),
         ("CORTEG", "braindecode/corteg-stanford-pooled", 8),
+        ("BBL", "braindecode/bbl-pretrained", 306),
     ],
 )
 def test_all_pretrained_models_load(
