@@ -24,6 +24,8 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
+    .. versionadded:: 2.1
+
     .. rubric:: Architecture Overview
 
     A sequence-to-sequence sleep stager: it reads ``n_epochs`` consecutive sleep
@@ -57,9 +59,9 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         **Operations.** A learned positional encoding over the epochs and one
         pre-norm transformer layer. **Role.** Context across the epochs.
 
-    ``CareSleepNet.final_layer``
+    ``CareSleepNet.sequence_norm`` and ``CareSleepNet.final_layer``
         **Operations.** A layer norm and a linear classifier, applied to each
-        epoch.
+        epoch. **Role.** One row of stage logits per epoch.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -86,8 +88,6 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         100 Hz (ISRUC also band-passed at 0.3-40 Hz), cut into sequences of 20
         epochs of 30 s, with 5 classes (W, N1, N2, N3, REM) and, on ISRUC, 6
         EEG and 2 EOG channels. No trained weights were released.
-
-    .. versionadded:: 2.1
 
     `License <https://github.com/wjq-learning/CareSleepNet/blob/386e149f7eac8d93207972268f8bc82ea37361c1/LICENSE>`_
 
@@ -131,7 +131,8 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         cross-modal and sequence blocks have a feed-forward layer as wide as
         themselves, ``encoder_widths[-1]``.
     drop_prob : float, default=0.1
-        Dropout rate of every dropout layer.
+        Dropout rate of every dropout layer; every dropout rate of the
+        reference is 0.1.
     activation : type[nn.Module], default=nn.GELU
         Activation of every convolution branch and transformer MLP.
     norm_eps : float, default=1e-6
