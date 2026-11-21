@@ -607,9 +607,9 @@ Code health
 - The test suite peaks lower: smaller inputs where no assertion depends on size,
   shared read-only data, freed TorchScript, compile and reference-cycle memory
   (:gh:`1713` by `Bruno Aristimunha`_).
-- :class:`braindecode.models.LUNA`, :class:`~braindecode.models.CORTEG` and
-  :class:`~braindecode.models.GCNsNet` are freed as soon as they are deleted: their
-  state-dict hooks no longer hold a reference to the model (:gh:`1713` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.LUNA` and :class:`~braindecode.models.CORTEG` are freed as
+  soon as they are deleted: their state-dict hooks no longer hold a reference to the model
+  (:gh:`1713` by `Bruno Aristimunha`_).
 - Printing a model no longer keeps it alive: torchinfo's module-level summary
   cache held the last printed instance of each class (:gh:`1713` by `Bruno Aristimunha`_).
 - Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`

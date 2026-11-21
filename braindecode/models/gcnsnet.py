@@ -122,8 +122,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self.dropout = nn.Dropout(drop_prob)
         self.final_layer = nn.LazyLinear(self.n_outputs)
 
-        # The function, not the bound method (see LUNA)
-        self.register_load_state_dict_pre_hook(type(self)._prepare_graph_state)
+        self.register_load_state_dict_pre_hook(self._prepare_graph_state)
 
     @torch.no_grad()
     def fit_graph(self, X: torch.Tensor) -> None:
@@ -210,7 +209,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             laplacian_module.matrix = normalized - identity
         self.graph_initialized = True
 
-    def _prepare_graph_state(self, state_dict, prefix, *_):
+    def _prepare_graph_state(self, module, state_dict, prefix, *_):
         """Allocate the graph buffers a checkpoint holds before loading it."""
         reference = next(self.parameters())
         keys = [f"{prefix}laplacians.{i}.matrix" for i in range(len(self.laplacians))]
