@@ -1396,6 +1396,13 @@ class _ConvFeatureEncoder(nn.Sequential):
         is_group_norm=False,
         conv_bias=False,
     ):
+        """Convolution, dropout, optional normalisation and activation.
+
+        ``(batch * channels, in_channels, time)`` becomes
+        ``(batch * channels, out_channels, time_out)``. ``is_group_norm`` gives every
+        output channel its own group, so each is normalised over time;
+        ``is_layer_norm`` normalises over the channels at each time step.
+        """
         assert not (is_layer_norm and is_group_norm), (
             "layer norm and group norm are exclusive"
         )
@@ -1423,7 +1430,7 @@ class _ConvFeatureEncoder(nn.Sequential):
             return nn.Sequential(
                 conv,
                 nn.Dropout(p=drop_prob),
-                _GroupNorm(output_channels, output_channels, affine=True),
+                nn.GroupNorm(output_channels, output_channels, affine=True),
                 activation(),
             )
         else:
@@ -1433,28 +1440,8 @@ class _ConvFeatureEncoder(nn.Sequential):
         return _n_times_out(self.conv_layers_spec, n_times)
 
 
-class _GroupNorm(nn.GroupNorm):
-    """``nn.GroupNorm``; on HPU written out with mean and variance.
-
-    In HPU eager mode the backward of torch's group norm compiles new graphs at
-    every call (about 0.2 s per call on the feature encoder's first block);
-    the same normalisation from mean/var ops runs from cached kernels.
-    Elsewhere (CPU, CUDA) this is ``F.group_norm``.
-    """
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not torch.jit.is_scripting() and x.device.type == "hpu":
-            xg = x.reshape(x.shape[0], self.num_groups, -1)
-            mean = xg.mean(-1, keepdim=True)
-            var = xg.var(-1, unbiased=False, keepdim=True)
-            x = ((xg - mean) * torch.rsqrt(var + self.eps)).reshape(x.shape)
-            if self.affine:
-                shape = (1, -1) + (1,) * (x.dim() - 2)
-                x = x * self.weight.reshape(shape) + self.bias.reshape(shape)
-            return x
-        return nn.functional.group_norm(
-            x, self.num_groups, self.weight, self.bias, self.eps
-        )
+# Full-model pickles use the former class name in this module.
+_GroupNorm = nn.GroupNorm
 
 
 class _ChannelEmbedding(nn.Embedding):

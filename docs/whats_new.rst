@@ -616,6 +616,9 @@ Code health
 - :class:`~braindecode.models.GCNsNet` fits its graph with the public ``fit_graph``,
   called once per fit by the estimators; it and :class:`~braindecode.models.DGCNN`
   share :class:`~braindecode.modules.ChebyshevGraphConv` (:gh:`1700` by `Bruno Aristimunha`_).
+- :class:`~braindecode.models.SignalJEPA`, :class:`~braindecode.models.LUNA`, the NeuroRVQ
+  models and :class:`~braindecode.models.TFMTokenizer` use :class:`torch.nn.GroupNorm`
+  instead of two private copies (:gh:`1642` by `Bruno Aristimunha`_).
 - The :class:`braindecode.datasets.TUHEvents` test builds its corpus under ``tmp_path`` and
   reads it with the public class; the private ``_TUHEventsMock`` and its table of synthetic
   paths leave the package (:gh:`1704` by `Bruno Aristimunha`_).
