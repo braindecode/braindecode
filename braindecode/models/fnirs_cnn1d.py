@@ -23,10 +23,15 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
     .. versionadded:: 2.1
 
     Two temporal convolutions, an average over time and a linear layer: the
-    1D-CNN baseline of the GeoNIRS benchmark :footcite:`li2026geonirs`, after
-    the fNIRS networks of Trakoolwilaiwan et al.
-    :footcite:`trakoolwilaiwan2018cnn`. Its GroupNorm and GELU stages are the
-    GeoNIRS authors' own.
+    1D-CNN baseline of the GeoNIRS benchmark :footcite:`li2026geonirs`
+    (Section 3.1; the "1D-CNN" rows of Tables 1, 14 and 15, and 88.4 K
+    parameters in Table 10), after the fNIRS networks of Trakoolwilaiwan et al.
+    :footcite:`trakoolwilaiwan2018cnn` for rest, right- and left-hand motor
+    execution. This class ports the ``DirectEventCNN1DClassifier`` of the
+    GeoNIRS repository (commit ``81f8995``) as its benchmark builds it, one
+    classifier per event window. Its GroupNorm and GELU stages are the GeoNIRS
+    authors' own; the networks of Trakoolwilaiwan et al. use one or three
+    convolutions of kernel 3 with max pooling and dropout.
 
     .. rubric:: Architecture Overview
 
@@ -41,14 +46,16 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
 
     .. rubric:: Macro Components
 
-    - ``temporal_conv1`` **First temporal convolution.** A
+    - ``FNIRSCNN1D.temporal_conv1`` **First temporal convolution.** A
       :class:`~torch.nn.Conv1d` whose filters read all the rows (7 samples,
       1.4 s at the 5 Hz of the GeoNIRS inputs), :class:`~torch.nn.GroupNorm`,
       GELU and a :class:`~torch.nn.MaxPool1d` that halves the time axis.
-    - ``temporal_conv2`` **Second temporal convolution.** A
+    - ``FNIRSCNN1D.temporal_conv2`` **Second temporal convolution.** A
       :class:`~torch.nn.Conv1d` (5 samples, 2 s of the input at half rate),
       :class:`~torch.nn.GroupNorm` and GELU.
-    - ``final_layer`` **Classification head.** An average over time
+    - ``FNIRSCNN1D.time_pool``, ``FNIRSCNN1D.flatten_layer``,
+      ``FNIRSCNN1D.head_dropout``, ``FNIRSCNN1D.final_layer``
+      **Classification head.** An average over time
       (:class:`~torch.nn.AdaptiveAvgPool1d`), which lets the model take a
       window of any length, then :class:`~torch.nn.Dropout` and one
       :class:`~torch.nn.Linear`.
@@ -57,31 +64,56 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
 
     - **Temporal.** Two short kernels and one halving of the rate. The final
       average discards the position of a response, so the window is read as a
-      bag of short patterns. A NaN or inf marks a missing sample and is read
-      as zero.
+      bag of short patterns.
     - **Spatial.** None: the first convolution mixes every row and
-      ``chs_info`` is not read. HbO and HbR are ordinary rows, in the order
-      used in training: the GeoNIRS benchmark stacks all HbO rows before the
-      HbR rows.
+      ``chs_info`` is not read.
     - **Spectral.** None.
+    - **Chromophores.** HbO and HbR are ordinary rows, in the order used in
+      training: the GeoNIRS benchmark stacks all HbO rows before the HbR rows,
+      ``HbO_1, ..., HbO_C, HbR_1, ..., HbR_C``.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Missing samples.** A NaN or inf marks a missing sample and is read as
+      zero, as the reference does with its validity mask; that mask covers
+      both chromophores of a pair, so a sample missing in one of them should
+      be NaN in both. There is no ``ch_mask``: the first convolution spans
+      every row.
+    - **Reference.** With the same seed this class and the authors' module
+      draw the same weights, and the same weights give the same logits
+      (max-abs 0.0), in eval mode and in train mode. Through the authors'
+      training loop it gives 55.85 and 50.22 macro-F1 on DS42 and DS19,
+      against 55.53 and 50.05 in the paper, and AUROC within 1.1 points
+      (:gh:`1592`). The reference's ``event_pair_mode`` (events of a pair
+      aggregated before the head) is off in the benchmark and absent here.
+    - **Inputs.** The benchmark feeds HbO and HbR in µmol/L, resampled to 5 Hz
+      and z-scored per recording (GeoNIRS Appendix B.1.1; its baselines get
+      the same inputs, Appendix B.5.3).
+    - **Pretrained weights.** None: the baseline is trained from scratch on
+      each task.
 
     Parameters
     ----------
     n_filters_conv1 : int, default=64
-        Filters of the first temporal convolution.
+        Filters of the first temporal convolution (``conv_dim`` in the
+        reference).
     n_filters_conv2 : int, default=128
-        Filters of the second temporal convolution, and the feature size.
+        Filters of the second temporal convolution, and the feature size
+        (``embedding_dim`` in the reference).
     kernel_size_conv1 : int, default=7
-        Kernel length of the first temporal convolution, in samples.
+        Kernel length of the first temporal convolution, in samples; an odd
+        length keeps the reference's symmetric padding.
     kernel_size_conv2 : int, default=5
-        Kernel length of the second temporal convolution, in samples.
+        Kernel length of the second temporal convolution, in samples; an odd
+        length keeps the reference's symmetric padding.
     pool_size : int, default=2
         Length and stride of the max pooling after the first convolution.
     n_norm_groups : int, default=8
         Groups of both :class:`~torch.nn.GroupNorm` layers. It must divide
         both filter counts.
     drop_prob : float, default=0.5
-        Dropout probability before ``final_layer``.
+        Dropout probability before ``final_layer`` (``dropout`` in the
+        reference).
     activation : type[nn.Module], default=nn.GELU
         Activation after each :class:`~torch.nn.GroupNorm`.
 
