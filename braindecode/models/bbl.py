@@ -171,6 +171,11 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"n_chans ({self.n_chans}) is larger than n_sensors ({n_sensors})."
             )
+        if sensor_kernel_size % 2 == 0 or downsample_kernel_size % 2 == 0:
+            raise ValueError(
+                "sensor_kernel_size and downsample_kernel_size must be odd, got "
+                f"{sensor_kernel_size} and {downsample_kernel_size}."
+            )
         self.n_sensors = n_sensors
         self.n_datasets = n_datasets
         self.features_dim = model_dim + subject_dim

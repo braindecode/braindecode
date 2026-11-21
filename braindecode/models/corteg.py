@@ -143,8 +143,8 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     hi_patch_size : int
         Patch size of the high-gamma stream.
     n_temporal_positions : int
-        Positions of the fixed temporal encoding, CLS token included, as in
-        STEEGFormer; a window has at most ``n_temporal_positions - 1`` patches.
+        Positions of the fixed temporal encoding, CLS token included (2048, as in
+        STEEGFormer); a window has at most ``n_temporal_positions - 1`` patches.
     embed_dim : int
         Token embedding dimension (512 for the small backbone).
     depth : int
@@ -154,8 +154,8 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     mlp_ratio : int
         Hidden-to-embedding ratio of the MLP blocks.
     norm_eps : float
-        Epsilon of the LayerNorms of the blocks and of the final norm, as in
-        STEEGFormer.
+        Epsilon of the LayerNorms of the blocks and of the final norm (1e-6, as in
+        STEEGFormer).
     drop_prob : float
         Dropout rate.
     drop_path : float
@@ -172,10 +172,10 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     knn_k : int
         Number of nearest scalp slots of the soft branch's initial kernel.
     min_bandwidth : float
-        Smallest bandwidth of that kernel, in metres.
+        Smallest bandwidth of that kernel, in metres (1e-6).
     weight_eps : float
         Floor that keeps the normalization and the logarithm of the kernel
-        weights finite.
+        weights finite (1e-8).
     adapter_hidden : int
         Hidden width of the spatial adapter's MLPs.
     n_fourier_freqs : int
@@ -185,7 +185,7 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     gate_bottleneck : int
         Hidden width of the layer-wise gate.
     init_std : float
-        Standard deviation of the normal initialization of the CLS token.
+        Standard deviation of the normal initialization of the CLS token (0.02).
     on_non_divisible : {"pad", "crop", "error"}
         How a stream whose length is not a multiple of its patch size is
         handled (right zero-pad, crop, or raise); the reference crops.
@@ -279,6 +279,13 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
             projection="linear",
             output_order="patch_channel",
         )
+        # One temporal position per patch, plus position 0 for the CLS token.
+        n_patches = self.patch_embed.n_patches(self.n_times)
+        if n_temporal_positions < n_patches + 1:
+            raise ValueError(
+                f"n_temporal_positions ({n_temporal_positions}) must be at least "
+                f"n_patches + 1 = {n_patches + 1} for n_times={self.n_times}."
+            )
         # Fixed sinusoidal encoding of the patch positions: (n_temporal_positions, D),
         # position 0 for the CLS token and 1.. for the time patches.
         self.register_buffer(

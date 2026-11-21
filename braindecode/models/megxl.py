@@ -153,8 +153,8 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
     codebook_dim : int
         Codebook dimension.
     min_rms : float
-        Floor of the per-channel RMS that the tokenizer divides by, so that a
-        flat channel is not divided by zero.
+        Floor of the per-channel RMS that the tokenizer divides by (1e-8), so that
+        a flat channel is not divided by zero.
 
     References
     ----------
