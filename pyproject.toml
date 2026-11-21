@@ -106,7 +106,6 @@ docs = [
     'pytest<9.1',  # Offline agent documentation contract tests; match the test extra.
     'sphinx-markdown-builder==0.6.11',
     'sphinx_gallery>=0.17',
-    'sphinx_rtd_theme',
     'sphinx-autodoc-typehints',
     'sphinx-autobuild',
     'sphinxcontrib-bibtex',
@@ -114,23 +113,23 @@ docs = [
     'sphinxext-opengraph',
     'pydata_sphinx_theme',
     'numpydoc',
-    'memory_profiler',
     'pillow',
     'ipython',
     'sphinx_design',
+]
+
+docs-gallery = [
     'lightning',
-    'seaborn',
-    'pre-commit',
     'openneuro-py>=2026.4.0',  # 2026.4.0 fixes DatasetFile.key->id after the OpenNeuro 5.0.0 schema change; older versions break against the live GraphQL server
-    'plotly',
+    'seaborn',
     'shap',
-    'transformers',
 ]
 
 all = [
     "braindecode[moabb]",
     "braindecode[tests]",
     "braindecode[docs]",
+    "braindecode[docs-gallery]",
     "braindecode[hub]",
     "braindecode[eegprep]",
     "braindecode[typing]",
