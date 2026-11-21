@@ -119,16 +119,25 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Width multiplier of the gated feed-forward network.
     n_freqs : int
         Frequencies per axis of the Fourier position encoding.
+    freq_range : tuple of float
+        Lowest and highest of those frequencies, evenly spaced (``[1, 10]`` in
+        release 863edc9).
     head_hidden_dim : int
         Hidden size of the classification head.
     normalize_input : bool
         If True, z-score each channel within each window before patching.
+    std_floor : float
+        Floor of a channel's standard deviation in that z-score, ``1e-12`` by
+        default. The release's example adds 1e-6 to it instead, so volts and
+        microvolts would give different tokens.
     head_activation : type[nn.Module]
         Activation of the classification head.
     drop_prob : float
         Dropout probability in the classification head.
     att_drop_prob : float
         Attention dropout probability (0 in the pretrained model).
+    norm_eps : float
+        Epsilon of every RMSNorm (``1e-8`` in ``model.py`` of release 863edc9).
     on_missing : str
         Channels the position table cannot place: ``"error"`` raises,
         ``"drop"`` leaves them out of the input, ``"nearest"`` takes the table
@@ -168,11 +177,14 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         num_heads: int = 8,
         ffn_expansion: int = 4,
         n_freqs: int = 4,
+        freq_range: tuple[float, float] = (1.0, 10.0),
         head_hidden_dim: int = 128,
         normalize_input: bool = True,
+        std_floor: float = 1e-12,
         head_activation: type[nn.Module] = nn.ELU,
         drop_prob: float = 0.3,
         att_drop_prob: float = 0.0,
+        norm_eps: float = 1e-8,
         on_missing: str = "error",
         channel_strategy: str = "native",
         channel_strategy_kwargs: Optional[dict] = None,
@@ -210,8 +222,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.head_hidden_dim = head_hidden_dim
         self.head_activation = head_activation
         self.drop_prob = drop_prob
-        # An attribute, as TorchScript reads no module globals.
-        self.std_floor = _STD_FLOOR
+        self.std_floor = std_floor
 
         # positions: (n_kept_chans, 3) in m; kept: indices of the placed input channels.
         positions, kept = resolve_channel_positions(
@@ -224,7 +235,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         # channel_positions: (n_kept_chans, 3), in the release's centimetres. Not
         # persistent: the pretrained weights must load onto any montage.
-        positions_cm = torch.tensor(positions, dtype=torch.float32) * _CM_PER_M
+        positions_cm = torch.tensor(positions, dtype=torch.float32) * 100.0  # m to cm
         self.register_buffer(
             "channel_positions",
             positions_cm.to(torch.get_default_dtype()),
@@ -232,8 +243,10 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
 
         self.patch_embed = nn.Linear(patch_size, embed_dim, bias=False)
-        self.pos_enc = _Pratibha2PositionalEncoding(embed_dim, n_freqs)
-        norm = partial(RMSNorm, eps=_RMS_NORM_EPS)
+        self.pos_enc = _Pratibha2PositionalEncoding(
+            embed_dim, n_freqs, freq_range, norm_eps
+        )
+        norm = partial(RMSNorm, eps=norm_eps)
         self.blocks = nn.ModuleList(
             [
                 PreNormBlock(
@@ -390,16 +403,6 @@ class _SwishGelu(nn.Module):
         return x * torch.sigmoid(x) + nn.functional.gelu(x, approximate="tanh")
 
 
-# The release encodes electrode positions in centimetres.
-_CM_PER_M = 100.0
-# Fourier frequencies per axis of the position encoding span [1, 10] (release 863edc9).
-_FREQ_RANGE = (1.0, 10.0)
-# Epsilon of every RMSNorm (``model.py`` of release 863edc9).
-_RMS_NORM_EPS = 1e-8
-# Floor of a channel's standard deviation in the z-score. The release's example
-# adds 1e-6 to it instead, so volts and microvolts would give different tokens.
-_STD_FLOOR = 1e-12
-
 # The pretraining electrode table is REVE's bank plus these two entries (m), which
 # sit 1.43 and 0.74 cm from 10-05 AFz and Iz (release 863edc9). They come last, so
 # a name that matches only ignoring case (``afz``) takes them, as in the release.
@@ -435,17 +438,23 @@ class _Pratibha2PositionalEncoding(nn.Module):
     ``learned_linear``, then ``final_norm``.
     """
 
-    def __init__(self, embed_dim: int, n_freqs: int):
+    def __init__(
+        self,
+        embed_dim: int,
+        n_freqs: int,
+        freq_range: tuple[float, float],
+        norm_eps: float,
+    ):
         super().__init__()
         # freq_matrix: (4, n_freqs ** 4), every combination of the per-axis frequencies.
-        freqs = torch.linspace(*_FREQ_RANGE, n_freqs)
+        freqs = torch.linspace(*freq_range, n_freqs)
         grid = torch.cartesian_prod(freqs, freqs, freqs, freqs).reshape(-1, 4)
         self.register_buffer("freq_matrix", grid.T.contiguous(), persistent=False)
         self.fourier_linear = nn.Linear(2 * n_freqs**4, embed_dim, bias=False)
         self.learned_linear = nn.Linear(4, 2 * embed_dim, bias=False)
         self.gate_activation = _SwishGelu()
-        self.learned_norm = RMSNorm(embed_dim, eps=_RMS_NORM_EPS)
-        self.final_norm = RMSNorm(embed_dim, eps=_RMS_NORM_EPS)
+        self.learned_norm = RMSNorm(embed_dim, eps=norm_eps)
+        self.final_norm = RMSNorm(embed_dim, eps=norm_eps)
 
     def forward(self, coords: torch.Tensor) -> torch.Tensor:
         # bfloat16 cannot represent the angles.

@@ -37,6 +37,6 @@ def test_documented_model_extras_are_published():
 
 
 def test_bad_channel_guide():
-    guide = REPO_ROOT / "docs/user_guide/channel_strategies.rst"
+    guide = REPO_ROOT / "docs/models/channel_strategies.rst"
     result = doctest.testfile(str(guide), module_relative=False, raise_on_error=True)
     assert result.attempted > 0

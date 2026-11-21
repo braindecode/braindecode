@@ -317,12 +317,11 @@ repo_id = "braindecode/plot_bcic_iv_2a_moabb_cropped"
 try:
     from huggingface_hub import hf_hub_download
 
+    # Download before initialize(), which would discard the trained model
+    f_params = hf_hub_download(repo_id, "params.safetensors")
+    f_history = hf_hub_download(repo_id, "history.json")
     clf.initialize()
-    clf.load_params(
-        f_params=hf_hub_download(repo_id, "params.safetensors"),
-        f_history=hf_hub_download(repo_id, "history.json"),
-        use_safetensors=True,
-    )
+    clf.load_params(f_params=f_params, f_history=f_history, use_safetensors=True)
 except Exception as exc:
     warnings.warn(
         f"Could not load pretrained checkpoint from {repo_id} ({exc}); "
@@ -407,6 +406,182 @@ class_ids = [v for _, v in sorted_items]
 ConfusionMatrixDisplay.from_predictions(
     y_true, y_pred, labels=class_ids, display_labels=labels
 )
+
+######################################################################
+# .. _cropped-inference:
+#
+# Predict whole trials
+# --------------------
+#
+# The confusion matrix above counts windows. Each trial is cut into
+# overlapping windows, and the network gives one prediction per crop of
+# each window. To look at a whole trial, we put its windows back together
+# in time. Where two windows overlap, we keep the predictions of the
+# earlier window.
+#
+# Three functions of :mod:`braindecode.training` do this. Each one takes
+# the trained network, ``clf.module_``, and windows in recording order.
+#
+# - :func:`~braindecode.training.predict_trials` returns all trials at
+#   once.
+# - :func:`~braindecode.training.iter_trial_predictions` yields one trial
+#   at a time, so memory holds one trial instead of all of them.
+# - :func:`~braindecode.training.iter_trial_prediction_chunks` yields each
+#   trial in chunks of at most ``windows_per_chunk`` windows. Its memory
+#   does not grow with the trial length, which matters when one trial is a
+#   whole recording.
+#
+# We take the first four trials of the evaluation session, so this part
+# only runs inference on a few windows.
+
+import numpy as np
+from torch.utils.data import Subset
+
+metadata = valid_set.get_metadata()
+# A trial starts at each window whose index within the trial is 0
+trial_starts = np.flatnonzero(metadata["i_window_in_trial"].to_numpy() == 0)
+n_trials = 4
+few_trials = Subset(valid_set, range(trial_starts[n_trials]))
+print(f"{n_trials} trials, {len(few_trials)} windows")
+
+######################################################################
+# ``predict_trials`` stacks the trials into an array of shape
+# ``(n_trials, n_classes, n_predictions)`` and returns one target per
+# trial. ``clf.predict_trials(few_trials)`` gives the same result.
+
+from braindecode.training import predict_trials
+
+trial_preds, trial_targets = predict_trials(
+    clf.module_, few_trials, batch_size=batch_size
+)
+print(trial_preds.shape, trial_targets)
+
+######################################################################
+# ``iter_trial_predictions`` is a generator. It puts the network in eval
+# mode when it starts, and restores the training flag of every layer once
+# it is exhausted or closed. We only need the first trial. A ``break`` or
+# a single ``next`` would leave the generator suspended, with the network
+# still in eval mode, so we wrap it in :func:`contextlib.closing`. The
+# generator is closed at the end of the ``with`` block.
+
+from contextlib import closing
+
+from braindecode.training import iter_trial_predictions
+
+with closing(
+    iter_trial_predictions(clf.module_, few_trials, batch_size=batch_size)
+) as trials:
+    trial_pred, trial_target = next(trials)
+
+######################################################################
+# Each prediction comes from one crop, and we place it at the time of the
+# crop's last sample. The network outputs logits, so we apply a softmax
+# over the classes to plot probabilities.
+
+crop_size = n_times - n_preds_per_input + 1  # receptive field, in samples
+# Time of the last sample of each crop, in seconds after the cue
+pred_times = (
+    trial_start_offset_seconds
+    + (crop_size - 1 + np.arange(trial_pred.shape[1])) / sfreq
+)
+true_class = int(trial_target)
+class_names = [label.replace("_", " ") for label in labels]
+colors = ["#0072B2", "#E69F00", "#009E73", "#CC79A7"]  # Okabe-Ito
+
+
+def plot_class_probabilities(ax, times, logits):
+    """Plot the probability of each class over time, named at the line's end."""
+    probas = torch.from_numpy(logits).softmax(dim=0).numpy()
+    # Keep the end labels at least 0.09 apart so that close lines stay readable
+    label_y = probas[:, -1].copy()
+    order = np.argsort(label_y)
+    for below, above in zip(order[:-1], order[1:]):
+        label_y[above] = max(label_y[above], label_y[below] + 0.09)
+    for class_id, name in enumerate(class_names):
+        is_true = class_id == true_class
+        ax.plot(
+            times, probas[class_id], color=colors[class_id], lw=2.5 if is_true else 1.2
+        )
+        ax.text(
+            times[-1] + 0.03,
+            label_y[class_id],
+            f"{name} (true class)" if is_true else name,
+            color=colors[class_id],
+            va="center",
+        )
+    # Reference lines: the target of the true class and the chance level
+    ax.axhline(1, color=colors[true_class], lw=1, ls="--")
+    ax.text(times[0] + 0.03, 1.01, "target of the true class", color=colors[true_class])
+    ax.axhline(1 / n_classes, color="0.5", lw=1, ls=":")
+    ax.text(times[0] + 0.03, 1 / n_classes + 0.02, "chance", color="0.4")
+    ax.set(xlim=(times[0], times[-1]), ylim=(0, 1.1), ylabel="Probability")
+    ax.set_xlabel("Time of the crop's last sample after the cue (s)")
+    ax.spines[["top", "right"]].set_visible(False)
+
+
+fig, ax = plt.subplots(figsize=(7, 3), layout="constrained")
+plot_class_probabilities(ax, pred_times, trial_pred)
+ax.set_title("Class probabilities across the first test trial")
+
+######################################################################
+# ``iter_trial_prediction_chunks`` cuts each trial into chunks of at most
+# ``windows_per_chunk`` windows. Each chunk records its trial and its
+# ``prediction_start``, the offset of its first prediction within the
+# trial's predictions. This offset counts predictions. It is not a sample
+# index of the recording. With ``windows_per_chunk=1``, each window of the
+# trial gives one chunk.
+
+from braindecode.training import iter_trial_prediction_chunks
+
+with closing(
+    iter_trial_prediction_chunks(
+        clf.module_, few_trials, windows_per_chunk=1, batch_size=batch_size
+    )
+) as chunks:
+    first_trial = []
+    for chunk in chunks:
+        if chunk.trial_index > 0:
+            break
+        first_trial.append(chunk)
+
+for chunk in first_trial:
+    print(
+        f"trial {chunk.trial_index}, prediction_start {chunk.prediction_start}, "
+        f"prediction shape {chunk.prediction.shape}"
+    )
+assembled = np.concatenate([chunk.prediction for chunk in first_trial], axis=1)
+max_abs_diff = np.abs(assembled - trial_pred).max()
+print(f"Max abs difference to iter_trial_predictions: {max_abs_diff}")
+
+######################################################################
+# We plot the same trial from its chunks and shade each chunk. Put back
+# together, the chunks give the trial of the first figure. The largest
+# absolute difference, printed above, is 0.0 on CPU.
+
+fig, ax = plt.subplots(figsize=(7, 3), layout="constrained")
+for i_chunk, chunk in enumerate(first_trial):
+    first = chunk.prediction_start
+    last = first + chunk.prediction.shape[1] - 1
+    # Span from half a sample before the first prediction to half after the last
+    start, stop = pred_times[first] - 0.5 / sfreq, pred_times[last] + 0.5 / sfreq
+    ax.axvspan(start, stop, color=["0.9", "0.96"][i_chunk % 2], lw=0)
+    # Chunk name above the axes: x in seconds, y in axes coordinates
+    ax.text(
+        (start + stop) / 2,
+        1.0,
+        f"chunk {i_chunk}",
+        ha="center",
+        va="bottom",
+        transform=ax.get_xaxis_transform(),
+    )
+plot_class_probabilities(ax, pred_times, assembled)
+ax.set_title(
+    f"The same trial from its chunks (max abs difference {max_abs_diff:.2g})", pad=16
+)
+
+######################################################################
+# The API reference of each function gives the details, such as the
+# accepted ``loader_kwargs`` and the shape of the returned targets.
 
 ##########################################################################
 #

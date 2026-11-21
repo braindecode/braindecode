@@ -422,7 +422,8 @@ def predict_trials(
     Notes
     -----
     Collects :func:`iter_trial_predictions` and, unlike it, leaves the module in
-    eval mode.
+    eval mode. It keeps every trial in memory; for long trials, use
+    :func:`iter_trial_prediction_chunks`.
     """
     module.eval()
     trials = iter_trial_predictions(
@@ -528,10 +529,14 @@ def iter_trial_predictions(
     Parameters
     ----------
     module : torch.nn.Module
-        Model implementing forward. It runs in eval mode without gradients; the
-        mode of every submodule is restored on exhaustion, error or ``close()``.
+        Model implementing forward, for example the ``module_`` of a fitted
+        :class:`~braindecode.EEGClassifier` or :class:`~braindecode.EEGRegressor`.
+        It runs in eval mode without gradients; the mode of every submodule is
+        restored on exhaustion, error or ``close()``.
     dataset : torch.utils.data.Dataset
-        Chronological cropped windows with targets and window indices.
+        Chronological cropped windows with targets and window indices. Items
+        with channel positions raise a ``ValueError``; call
+        ``set_return_ch_pos(False)`` on the dataset first.
     return_targets : bool
         If True, yield ``(prediction, target)`` pairs.
     batch_size : int
@@ -541,21 +546,38 @@ def iter_trial_predictions(
     loader_kwargs : dict | None
         DataLoader overrides. Only ``batch_size``, ``num_workers``,
         ``pin_memory``, ``persistent_workers``, ``prefetch_factor``,
-        ``worker_init_fn`` and ``generator`` are accepted.
+        ``worker_init_fn`` and ``generator`` are accepted, and they replace the
+        arguments of the same name. Other keys, such as ``shuffle``,
+        ``sampler``, ``drop_last`` or ``collate_fn``, and ``batch_size=None``
+        raise a ``ValueError``, because the reconstruction needs batches of
+        windows in recording order.
 
     Yields
     ------
     prediction : np.ndarray or tuple of np.ndarray
         Float32 prediction of one trial, ``(n_outputs, n_predictions)``, or a
         pair with its float32 target: the first window's target for scalar and
-        vector targets, the overlap-reconstructed target for time targets.
+        vector targets, the overlap-reconstructed target for time targets
+        (two or more dimensions per window).
 
     Notes
     -----
+    The iterator is lazy. On the first ``next()``, it records the training flag
+    of every submodule and puts the module in eval mode. Exhaustion, an error
+    or ``close()`` shuts down the loader workers and restores the flags. Only
+    the forward runs under ``torch.no_grad``; the code that reads the items
+    keeps its own gradient mode. Do not train the module while the iterator is
+    suspended.
+
     Memory holds one trial, the loader batches and one window of lookahead, not
-    the completed trials; use :func:`iter_trial_prediction_chunks` to bound a
-    long trial. Close the iterator when stopping early. See
-    :ref:`cropped-inference`.
+    the completed trials. It still grows with the trial length; use
+    :func:`iter_trial_prediction_chunks` to bound a long trial. The bound holds
+    only if each item is dropped after use, and ``list()`` keeps them all.
+
+    A ``break`` does not close the iterator. Wrap an early exit in
+    :func:`contextlib.closing`, as in the example of
+    :func:`iter_trial_prediction_chunks`. The tutorial section
+    :ref:`cropped-inference` runs the three trial functions on a trained model.
     """
     return _iter_trial_outputs(
         module, dataset, None, return_targets, batch_size, num_workers, loader_kwargs
@@ -570,13 +592,14 @@ class TrialPredictionChunk(NamedTuple):
     trial_index : int
         Zero-based trial index.
     prediction_start : int
-        Offset of the chunk in the trial's reconstructed predictions, not an
-        EEG sample index.
+        Zero-based offset of the chunk in the trial's reconstructed predictions,
+        not an EEG sample index.
     prediction : np.ndarray
         Float32 array of shape ``(n_outputs, n_predictions_in_chunk)``.
     target : np.ndarray | None
-        The trial's scalar or vector target, this chunk of its time target, or
-        None when targets are not requested.
+        The trial's scalar or vector target (its first window's, repeated in
+        every chunk), this chunk of its time target, or None when targets are
+        not requested.
     """
 
     trial_index: int
@@ -600,8 +623,9 @@ def iter_trial_prediction_chunks(
     Takes the arguments of :func:`iter_trial_predictions` and has the same
     lifecycle. A chunk never spans two trials and overlap removal carries
     across chunks, so concatenating a trial's chunks along axis 1 gives its
-    :func:`iter_trial_predictions` output exactly. Memory depends on the chunk
-    size, not on the trial length.
+    :func:`iter_trial_predictions` output exactly, for the predictions and for
+    time targets. Memory holds one chunk, the loader batches and one window of
+    lookahead, so it does not depend on the trial length.
 
     Parameters
     ----------
@@ -613,6 +637,39 @@ def iter_trial_prediction_chunks(
     Yields
     ------
     chunk : TrialPredictionChunk
+
+    Examples
+    --------
+    Read the first chunk of a two-window trial and stop.
+    :func:`contextlib.closing` closes the iterator at the end of the block,
+    which gives the model back its training mode.
+
+    >>> import torch
+    >>> from contextlib import closing
+    >>> from braindecode.training import iter_trial_prediction_chunks
+    >>> model = torch.nn.Conv1d(1, 1, kernel_size=1, bias=False)
+    >>> _ = model.train()
+    >>> windows = [(torch.ones(1, 4), 7, (i, 4 * i, 4 * (i + 1))) for i in range(2)]
+    >>> with closing(
+    ...     iter_trial_prediction_chunks(
+    ...         model,
+    ...         windows,
+    ...         windows_per_chunk=1,
+    ...         return_targets=False,
+    ...     )
+    ... ) as chunks:
+    ...     chunk = next(chunks)
+    ...     print(
+    ...         chunk.trial_index,
+    ...         chunk.prediction_start,
+    ...         chunk.prediction.shape,
+    ...         chunk.target,
+    ...         model.training,
+    ...     )
+    ...
+    0 0 (1, 4) None False
+    >>> model.training
+    True
     """
     if windows_per_chunk is None:
         raise ValueError("windows_per_chunk must be a positive integer")

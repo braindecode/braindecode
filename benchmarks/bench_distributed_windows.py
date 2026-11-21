@@ -11,7 +11,9 @@ so every window is forwarded exactly once and ranks may be empty. Predictions,
 targets and crop indices are gathered together with the global window index;
 the gather fails unless every index arrives exactly once. Only then are the
 chronologically ordered windows reconstructed into trials, and the metric is
-computed on all trials, never averaged across ranks.
+computed on all trials, never averaged across ranks. The trial iterators of
+``braindecode.training`` need the same order, so never give them a shuffled
+sampler.
 
 Scope: trusted local CPU processes, preloaded fixed-width windows, scalar
 classification targets and batch-independent eval models. Every rank holds the

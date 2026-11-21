@@ -119,6 +119,10 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         Codebook size of the tokenizer.
     rnn_hidden_size : int, default=128
         Hidden size of the tokenizer GRU.
+    temperature : float, default=0.1
+        Divisor of the tokenizer's normalised logits before the argmax (the
+        released EphysTokenizer value). It leaves the argmax unchanged except for
+        float near-ties, so keep it to reproduce the released tokens.
     embed_dim : int, default=256
         Embedding and model dimension.
     num_heads : int, default=4
@@ -140,6 +144,9 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         Activation of the feed-forward blocks.
     drop_prob : float, default=0.2
         Dropout after the embeddings, the attention and the feed-forward blocks.
+    embedding_init_bound : float, default=0.05
+        Bound ``b`` of the uniform initialisation ``U(-b, b)`` of the token
+        embedding, as in the reference initializer.
     on_non_divisible : {"pad", "crop", "error"}, default="pad"
         How a window that is not a multiple of the segment length is handled:
         right zero-padded, cropped, or rejected.
@@ -183,6 +190,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         n_tokens: int = 66,
         n_codes: int = 128,
         rnn_hidden_size: int = 128,
+        temperature: float = 0.1,
         embed_dim: int = 256,
         num_heads: int = 4,
         feedforward_dim: int = 1024,
@@ -192,6 +200,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         patch_band: Sequence[Optional[int]] = (8, None, None, None, None),
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.2,
+        embedding_init_bound: float = 0.05,
         on_non_divisible: str = "pad",
         return_features: bool = False,
     ):
@@ -209,8 +218,12 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.on_non_divisible = on_non_divisible
         self.return_features = return_features
         self.n_last_steps = n_last_steps
+        # Read again by reset_parameters, through _init_parameters.
+        self.embedding_init_bound = embedding_init_bound
 
-        self.tokenizer = _EphysTokenizer(n_codes, n_tokens, rnn_hidden_size)
+        self.tokenizer = _EphysTokenizer(
+            n_codes, n_tokens, rnn_hidden_size, temperature
+        )
         self.to_segments = Rearrange("b c (s t) -> (b s) t c", t=self.segment_len)
         self.from_segments = Rearrange("b s t c d -> b (s t) c d")
         self.to_tokens = Rearrange("b t c d -> b c t d")
@@ -244,7 +257,8 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def _init_parameters(self) -> None:
         # Reference initialisation (meg_gpt/optim/initializer.py): Xavier linear
         # layers with zero bias, small uniform embeddings.
-        uniform = partial(nn.init.uniform_, a=-_EMBEDDING_INIT, b=_EMBEDDING_INIT)
+        bound = self.embedding_init_bound
+        uniform = partial(nn.init.uniform_, a=-bound, b=bound)
         rules = {nn.Linear: nn.init.xavier_uniform_, nn.Embedding: uniform}
         self.apply(partial(init_weights_, weights=rules))
         nn.init.xavier_uniform_(self.time_embedding)
@@ -510,27 +524,26 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer[1] = nn.Linear(self.final_layer[1].in_features, n_outputs)
 
 
-# Bound of the uniform embedding initialisation (meg_gpt/optim/initializer.py).
-_EMBEDDING_INIT = 0.05
-
-
 class _EphysTokenizer(nn.Module):
     """EphysTokenizer encoder: ``(batch, chans, time)`` floats to token ids.
 
     A GRU runs over each channel separately; the argmax of the normalised
-    logits is mapped through ``vocab`` (codebook entry to token id, frequency
-    ranked; unused entries map to 0 in the released vocabulary).
+    logits, divided by ``temperature`` beforehand, is mapped through ``vocab``
+    (codebook entry to token id, frequency ranked; unused entries map to 0 in
+    the released vocabulary).
     """
 
-    def __init__(self, n_codes: int, n_tokens: int, rnn_hidden_size: int):
+    def __init__(
+        self, n_codes: int, n_tokens: int, rnn_hidden_size: int, temperature: float
+    ):
         super().__init__()
         self.rnn = nn.GRU(1, rnn_hidden_size, batch_first=True)
         self.proj = nn.Linear(rnn_hidden_size, n_codes)
         self.norm = nn.LayerNorm(n_codes)
         self.to_series = Rearrange("b c t -> (b c) t 1")
-        # Released scaling of the logits (EphysTokenizer), kept so that float
-        # near-ties break as in the reference.
-        self.temperature = 0.1
+        # Released scaling of the logits (EphysTokenizer): float near-ties break
+        # as in the reference.
+        self.temperature = temperature
         # Placeholder until the released vocabulary is loaded.
         self.register_buffer("vocab", torch.arange(n_codes) % n_tokens)
         self.requires_grad_(False)

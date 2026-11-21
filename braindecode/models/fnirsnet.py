@@ -22,6 +22,8 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-success:`Convolution`
 
+    .. versionadded:: 2.1
+
     .. figure:: https://braindecode.org/dev/_static/model/fnirsnet.png
        :align: center
        :alt: fNIRSNet architecture
@@ -37,9 +39,10 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Architecture Overview
 
-    With :math:`C` = ``n_chans`` rows, :math:`S` = ``n_times`` samples,
-    :math:`F_1` and :math:`F_2` filters, and :math:`S' = S - k + 1` (1 for the
-    paper's kernel width :math:`k = S`)::
+    It has a delayed hemodynamic response module (DHR Module) and a global
+    module (Section II-B, Table I). With :math:`C` = ``n_chans`` rows,
+    :math:`S` = ``n_times`` samples, :math:`F_1` and :math:`F_2` filters, and
+    :math:`S' = S - k + 1` (1 for the paper's kernel width :math:`k = S`)::
 
         x                                       (batch, C, S)
         - to_fnirs_tensor                       (batch, 1, C, S)
@@ -55,16 +58,26 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
       :math:`F_1` filters of :math:`1 \times k`: one filter reads the whole
       slow response of one row (Guideline 1), and it is not depthwise
       separable, which performs poorly in low dimension (Guideline 2). Batch
-      normalization and a saturating activation follow (Guideline 3).
+      normalization and a saturating activation follow (Guideline 3: sigmoid,
+      tanh and ELU beat ReLU and leaky ReLU in Table VI; the paper uses the
+      sigmoid).
     - ``conv2``, ``bn2``, ``act2`` **Global Module.** A depthwise separable
       convolution: ``depth_conv`` has one :math:`C \times 1` filter per DHR
       map, a global receptive field over the rows without stacking layers, and
       ``point_conv`` projects the :math:`F_1` maps onto :math:`F_2`. It costs
       :math:`F_1 (C + F_2)` multiply-adds per output position instead of the
-      :math:`F_1 C F_2` of a standard convolution. Batch normalization and the
-      activation follow.
+      :math:`F_1 C F_2` of a standard convolution (Eqs. (2) and (3)), so a
+      longer input only adds to the cost of DHRConv. Batch normalization and
+      the activation follow. Table I lists :math:`F_2` filters for DWConv, but
+      the authors' ``DWSConv`` has :math:`F_1` depthwise filters and an
+      :math:`F_1 \to F_2` PWConv; this module follows the code, which gives
+      Table III's parameter counts (498 and 419 subject-specific, 2,370 and
+      2,051 subject-independent).
     - ``final_layer`` **Classifier.** One linear layer on the flattened maps.
       The paper's softmax is left to the loss, so the model returns logits.
+      The modules keep the authors' names (``conv1``, ``bn1``,
+      ``conv2.depth_conv``, ``conv2.point_conv``, ``bn2``) except ``fc``, now
+      ``final_layer``.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -72,30 +85,46 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
       10 Hz, 40 at 13.3 Hz). DHRConv covers all of it, and the kernel counts
       samples, so the model takes no sampling rate.
     - **Spatial.** No montage or optode geometry: DWConv has one weight per
-      row, so the rows keep the order of training, all HbO rows first and then
-      all HbR rows. ``chs_info`` is not read.
+      row, so the rows keep the order of training. ``chs_info`` is not read.
     - **Spectral.** None in the model; the paper band-passes the concentration
-      changes to 0.01-0.1 Hz beforehand.
+      changes to 0.01-0.1 Hz beforehand (third-order Butterworth, zero-phase),
+      corrects the baseline and z-scores each 3 s window, cut with a 1 s step
+      (Section III-B).
+    - **Chromophores.** :math:`C` is twice the number of fNIRS channels (HbO
+      and HbR, Section II-B); as in Fig. 2(a) and the authors' loaders, all
+      HbO rows come first, then all HbR rows.
 
-    .. versionadded:: 2.1
+    .. rubric:: Additional Mechanisms
+
+    - **Reference.** In the authors' training loops on UFFT (seeds 0-2) the
+      port and the authors' ``fNIRSNet`` agree within 0.01 point of accuracy
+      and macro-F1 (:gh:`1579`); the subject-independent runs use the
+      :math:`F_1 = 8`, :math:`F_2 = 16` of the authors' ``LOSO_Train.py``, not
+      the paper's 16 and 32.
+    - **Pretrained weights.** None: the authors release code, not weights, and
+      the paper trains one model per subject or per left-out subject. There is
+      no ``ch_mask``.
 
     `License <https://github.com/wzhlearning/fNIRSNet/blob/11d9dad96308c65c039a0978b7eaf8a845065421/LICENSE>`_
 
     Parameters
     ----------
     n_dhr_filters : int, default=4
-        :math:`F_1`, the DHRConv filters: 4 for subject-specific and 16 for
-        subject-independent training in the paper.
+        :math:`F_1`, the DHRConv filters (``num_DHRConv`` in the reference): 4
+        for subject-specific and 16 for subject-independent training in the
+        paper (Section III-D).
     n_pw_filters : int, default=8
-        :math:`F_2`, the PWConv filters: 8 and 32 in the paper, which
-        recommends at least :math:`2 F_1`.
+        :math:`F_2`, the PWConv filters (``num_DWConv`` in the reference): 8
+        and 32 in the paper, which recommends at least :math:`2 F_1` (Section
+        IV-F).
     dhr_kernel_length : int or None, default=None
-        DHRConv width :math:`k`, ``1 <= k <= n_times``; ``None`` uses
-        :math:`S`. A shorter kernel is an addition to the paper's linear layer,
-        which fits only :math:`k = S` (Table IV tries 10, 20 and 30 on UFFT):
-        the layer then reads :math:`F_2 (S - k + 1)` values.
+        DHRConv width :math:`k` (``DHRConv_width`` in the reference),
+        ``1 <= k <= n_times``; ``None`` uses :math:`S` (Guideline 1). A shorter
+        kernel is an addition to the paper's linear layer, which fits only
+        :math:`k = S` (Table IV tries 10, 20 and 30 on UFFT): the layer then
+        reads :math:`F_2 (S - k + 1)` values.
     activation : type[nn.Module], default=nn.Sigmoid
-        Activation after each batch normalization.
+        Activation after each batch normalization (``act`` in the reference).
 
     References
     ----------

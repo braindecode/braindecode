@@ -261,7 +261,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         Sampling frequency of the EEG recordings.
     channel_strategy : str, default="native"
         How any montage reaches the backbone (pretrained models only; see
-        :doc:`/user_guide/channel_strategies`). ``"native"`` keeps the model as
+        :ref:`channel-strategies`). ``"native"`` keeps the model as
         it is. ``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
         ``"field"``, ``"source"``, ``"region"``, ``"wiener"`` (call
         ``model.channel_layer.fit`` first) or ``"latent"`` map the montage of ``chs_info`` (or of the
