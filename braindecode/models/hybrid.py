@@ -39,8 +39,8 @@ class HybridNet(nn.Module):
     ):
         super().__init__()
         self.mapping = {
-            "final_conv.weight": "final_layer.weight",
-            "final_conv.bias": "final_layer.bias",
+            "final_conv.weight": "final_layer.0.weight",
+            "final_conv.bias": "final_layer.0.bias",
         }
 
         deep_model = Deep4Net(

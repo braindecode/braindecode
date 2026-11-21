@@ -350,8 +350,10 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.tcn_n_filters = int(self.conv_block_depth_mult * self.conv_block_n_filters)
         map = dict()
         for w in range(self.n_windows):
-            map[f"max_norm_linears.[{w}].weight"] = f"final_layer.[{w}].weight"
-            map[f"max_norm_linears.[{w}].bias"] = f"final_layer.[{w}].bias"
+            map[f"max_norm_linears.[{w}].weight"] = (
+                f"final_layer.{w}.parametrizations.weight.original"
+            )
+            map[f"max_norm_linears.[{w}].bias"] = f"final_layer.{w}.bias"
         self.mapping = map
 
         # Check later if we want to keep the Ensure4d. Not sure if we can
