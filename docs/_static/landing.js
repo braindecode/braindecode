@@ -1,13 +1,14 @@
 const copyTimers = new WeakMap();
 let lastCopyMessage = "";
 
-async function writeClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (err) {
-    return Boolean(err && false);
+function writeClipboard(text) {
+  if (!navigator.clipboard) {
+    return Promise.resolve(false);
   }
+  return navigator.clipboard.writeText(text).then(
+    () => true,
+    () => false
+  );
 }
 
 function announceCopy(status, ok) {
@@ -32,21 +33,29 @@ function clearCopyFeedback(btn, status) {
   }
 }
 
-async function handleCopyClick(event) {
+function findStatusNode(btn) {
+  const parent = btn.parentElement;
+  if (!parent) {
+    return null;
+  }
+  return parent.querySelector(".bd-copy-status");
+}
+
+function handleCopyClick(event) {
   const btn = event.target.closest("[data-copy]");
   if (!btn) {
     return;
   }
-  const parent = btn.parentElement;
-  const status = parent ? parent.querySelector(".bd-copy-status") : null;
+  const status = findStatusNode(btn);
   clearTimeout(copyTimers.get(btn));
-  const ok = await writeClipboard(btn.dataset.copy);
-  btn.toggleAttribute("data-copied", ok);
-  announceCopy(status, ok);
-  const timer = setTimeout(() => {
-    clearCopyFeedback(btn, status);
-  }, 1800);
-  copyTimers.set(btn, timer);
+  writeClipboard(btn.dataset.copy).then((ok) => {
+    btn.toggleAttribute("data-copied", ok);
+    announceCopy(status, ok);
+    const timer = setTimeout(() => {
+      clearCopyFeedback(btn, status);
+    }, 1800);
+    copyTimers.set(btn, timer);
+  });
 }
 
 function readCheckedValue(zoo, name) {
@@ -74,14 +83,25 @@ function cardMatchesFilters(card, mod, cat) {
   return matchesToken(card.dataset.cats, cat);
 }
 
+function hasActiveFilter(query, mod, cat) {
+  if (query) {
+    return true;
+  }
+  return mod !== "all" || cat !== "all";
+}
+
+function isMoreChecked(moreBox) {
+  if (!moreBox) {
+    return false;
+  }
+  return Boolean(moreBox.checked);
+}
+
 function isZooExpanded(query, mod, cat, moreBox) {
-  if (query || mod !== "all") {
+  if (hasActiveFilter(query, mod, cat)) {
     return true;
   }
-  if (cat !== "all") {
-    return true;
-  }
-  return Boolean(moreBox && moreBox.checked);
+  return isMoreChecked(moreBox);
 }
 
 function updateZooCount(countOut, expanded, matched, total) {
@@ -93,6 +113,32 @@ function updateZooCount(countOut, expanded, matched, total) {
     return;
   }
   countOut.textContent = "Showing 12 featured of " + total + " architectures";
+}
+
+function readSearchQuery(searchInput) {
+  if (!searchInput) {
+    return "";
+  }
+  return searchInput.value.trim().toLowerCase();
+}
+
+function applyCardSearch(card, query) {
+  if (!query) {
+    card.hidden = false;
+    return;
+  }
+  card.hidden = !card.dataset.search.includes(query);
+}
+
+function countVisibleCards(cards, query, mod, cat) {
+  let matched = 0;
+  for (const card of cards) {
+    applyCardSearch(card, query);
+    if (cardMatchesFilters(card, mod, cat)) {
+      matched += 1;
+    }
+  }
+  return matched;
 }
 
 function isEditableTarget(target) {
@@ -134,18 +180,11 @@ function initZoo(root) {
   const moreBox = zoo.querySelector("#bd-zoo-more");
   const countOut = zoo.querySelector(".zoo-foot-count");
   const syncZoo = () => {
-    const raw = searchInput ? searchInput.value : "";
-    const query = raw.trim().toLowerCase();
+    const query = readSearchQuery(searchInput);
     const mod = readCheckedValue(zoo, "bd-zoo-mod");
     const cat = readCheckedValue(zoo, "bd-zoo-cat");
+    const matched = countVisibleCards(cards, query, mod, cat);
     zoo.toggleAttribute("data-searching", Boolean(query));
-    let matched = 0;
-    for (const card of cards) {
-      card.hidden = Boolean(query) && !card.dataset.search.includes(query);
-      if (cardMatchesFilters(card, mod, cat)) {
-        matched += 1;
-      }
-    }
     zoo.toggleAttribute("data-empty", matched === 0);
     updateZooCount(countOut, isZooExpanded(query, mod, cat, moreBox), matched, cards.length);
   };
@@ -174,7 +213,7 @@ function fetchDownloads(dlEl) {
     .then((payload) => {
       applyDownloadBadge(dlEl, payload);
     })
-    .catch((err) => Boolean(err && false));
+    .catch(() => null);
 }
 
 function initDownloads(root) {
