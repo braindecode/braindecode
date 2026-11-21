@@ -1,0 +1,42 @@
+# Braindecode origin-root robots.txt (RFC 9309)
+User-agent: *
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
+Allow: /stable/
+Disallow: /0.6/
+Disallow: /0.7/
+Disallow: /0.8/
+Disallow: /1.0/
+Disallow: /1.1/
+Disallow: /1.2/
+Disallow: /1.3/
+Disallow: /1.4/
+Disallow: /1.5/
+Disallow: /*/search.html
+Disallow: /dev/search.html
+Disallow: /stable/search.html
+
+User-agent: OAI-SearchBot
+Allow: /stable/
+Disallow: /*/search.html
+
+User-agent: GPTBot
+Allow: /stable/
+Disallow: /*/search.html
+
+User-agent: ChatGPT-User
+Allow: /stable/
+Disallow: /*/search.html
+
+User-agent: ClaudeBot
+Allow: /stable/
+Disallow: /*/search.html
+
+User-agent: PerplexityBot
+Allow: /stable/
+Disallow: /*/search.html
+
+User-agent: Bingbot
+Allow: /stable/
+Disallow: /*/search.html
+
+Sitemap: https://braindecode.org/sitemap.xml

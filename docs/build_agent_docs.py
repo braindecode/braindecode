@@ -22,6 +22,7 @@ CRITICAL_PAGES = {
     "auto_examples/model_building/plot_bcic_iv_2a_moabb_trial": "Motor imagery tutorial",
     "cite": "Citing Braindecode",
 }
+PAGE_SPECS = CRITICAL_PAGES
 
 
 def publish(markdown_root, html_root, *, site_url, version, revision):
@@ -67,7 +68,9 @@ def publish(markdown_root, html_root, *, site_url, version, revision):
     )
     index = (
         "# Braindecode\n\n"
-        "> PyTorch-based deep learning for EEG, ECoG and MEG.\n\n"
+        "> Open-source PyTorch library for decoding raw EEG, MEG, iEEG/ECoG, fNIRS, "
+        "and sEMG biosignals with 100+ deep learning architectures and pretrained "
+        "foundation models.\n\n"
         + attribution
         + "This index describes only this documentation build. "
         + (

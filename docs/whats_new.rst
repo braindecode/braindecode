@@ -703,6 +703,13 @@ Code health
 - The numpydoc header test now covers every registered model, not nine. The
   parameter headers of 13 models read ``name: type`` and are now ``name : type``,
   so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Every documentation build emits ``https://braindecode.org/stable/`` canonical and
+  sitemap URLs (with ``noindex, follow`` on non-stable builds), raster PNG OpenGraph
+  cards, and ``model_seo`` descriptions, ``.md`` alternate links, and ``BreadcrumbList``,
+  ``SoftwareSourceCode``, and ``TechArticle`` JSON-LD; ``v*`` tag builds deploy
+  ``/stable/``, ``/X.Y/``, and origin-root ``robots.txt``, ``sitemap.xml``, ``index.html``,
+  and ``llms.txt`` to ``braindecode.github.io`` and submit changed URLs to IndexNow
+  (by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)

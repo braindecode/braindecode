@@ -166,3 +166,121 @@ jobs:
           publish_branch: master
           publish_dir: ./docs/_build/html
           cname: braindecode.org
+
+      - name: Deploy /stable/, /X.Y/, and root discovery files on release tag
+        id: tag_deploy
+        if: ${{ github.repository == 'braindecode/braindecode' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          DEPLOY_KEY: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v([0-9]+\.[0-9]+)(\.[0-9]+)?$ ]]; then
+            echo "Skipping stable docs deploy for non-final release tag: $GITHUB_REF_NAME"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          XY="${BASH_REMATCH[1]}"
+          if [[ -z "$DEPLOY_KEY" ]]; then
+            echo "::error::ACTIONS_DEPLOY_KEY secret is required to deploy release docs"
+            exit 1
+          fi
+
+          install -d -m 700 ~/.ssh
+          KEY_FILE="$(mktemp ~/.ssh/deploy_key.XXXXXX)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+          export GIT_SSH_COMMAND="ssh -i ${KEY_FILE} -o IdentitiesOnly=yes"
+          rm -rf /tmp/gh-pages
+          git clone --depth 1 --branch master \
+            git@github.com:braindecode/braindecode.github.io.git /tmp/gh-pages
+
+          rm -rf /tmp/gh-pages/stable "/tmp/gh-pages/${XY}"
+          cp -a ./docs/_build/html /tmp/gh-pages/stable
+          cp -a ./docs/_build/html "/tmp/gh-pages/${XY}"
+
+          cp ./docs/_root/robots.txt /tmp/gh-pages/robots.txt
+          cp ./docs/_root/sitemap.xml /tmp/gh-pages/sitemap.xml
+          cp ./docs/_root/index.html /tmp/gh-pages/index.html
+          cp ./docs/_build/html/llms.txt /tmp/gh-pages/llms.txt
+          printf 'braindecode.org\n' > /tmp/gh-pages/CNAME
+          touch /tmp/gh-pages/.nojekyll
+
+          CLEAN_KEY="${INDEXNOW_KEY//[[:space:]]/}"
+          if [[ -n "$CLEAN_KEY" ]]; then
+            if [[ ! "$CLEAN_KEY" =~ ^[A-Za-z0-9-]{8,128}$ ]]; then
+              echo "::error::INDEXNOW_KEY contains invalid characters"
+              exit 1
+            fi
+            printf '%s' "$CLEAN_KEY" > "/tmp/gh-pages/${CLEAN_KEY}.txt"
+          fi
+
+          cd /tmp/gh-pages
+          git add -A
+          {
+            git diff --cached --name-only -- stable/ \
+              | grep -E '^stable/.*\.(html|md)$|^stable/(llms\.txt|sitemap\.xml)$' \
+              | sed 's|^|https://braindecode.org/|' || true
+            echo "https://braindecode.org/"
+            echo "https://braindecode.org/sitemap.xml"
+            echo "https://braindecode.org/llms.txt"
+            echo "https://braindecode.org/stable/index.html"
+            echo "https://braindecode.org/stable/sitemap.xml"
+          } | sort -u > /tmp/indexnow_urls.txt
+
+          if git diff --cached --quiet; then
+            echo "No documentation changes to publish for $GITHUB_REF_NAME"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "deploy(stable): ${GITHUB_REF_NAME} (${GITHUB_SHA::7})"
+            git pull --rebase origin master
+            git push origin master
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify IndexNow (Bing, ChatGPT Search, Copilot, Yandex, Naver, Seznam)
+        if: ${{ steps.tag_deploy.outputs.pushed == 'true' && env.INDEXNOW_PRESENT == 'true' }}
+        env:
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+          INDEXNOW_PRESENT: ${{ secrets.INDEXNOW_KEY != '' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          key = "".join(os.environ["INDEXNOW_KEY"].split())
+          with open("/tmp/indexnow_urls.txt", encoding="utf-8") as fh:
+              urls = [line.strip() for line in fh if line.strip()][:10000]
+          if not urls:
+              raise SystemExit(0)
+
+          payload = {
+              "host": "braindecode.org",
+              "key": key,
+              "keyLocation": f"https://braindecode.org/{key}.txt",
+              "urlList": urls,
+          }
+          req = urllib.request.Request(
+              "https://api.indexnow.org/indexnow",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json; charset=utf-8"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  print(f"IndexNow submitted {len(urls)} URLs -> HTTP {resp.status}")
+                  if resp.status not in (200, 202):
+                      raise RuntimeError(f"Unexpected IndexNow HTTP {resp.status}")
+          except urllib.error.HTTPError as exc:
+              body = exc.read().decode("utf-8", errors="replace")
+              raise RuntimeError(
+                  f"IndexNow POST failed with HTTP {exc.code}: {body}"
+              ) from exc
+          PY
