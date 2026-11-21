@@ -31,53 +31,53 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
     Parameters
     ----------
-    final_conv_length: int | str
+    final_conv_length : int | str
         Length of the final convolution layer.
         If set to "auto", n_times must not be None. Default: "auto".
-    n_filters_time: int
+    n_filters_time : int
         Number of temporal filters.
-    n_filters_spat: int
+    n_filters_spat : int
         Number of spatial filters.
-    filter_time_length: int
+    filter_time_length : int
         Length of the temporal filter in layer 1.
-    pool_time_length: int
+    pool_time_length : int
         Length of temporal pooling filter.
-    pool_time_stride: int
+    pool_time_stride : int
         Length of stride between temporal pooling filters.
-    n_filters_2: int
+    n_filters_2 : int
         Number of temporal filters in layer 2.
-    filter_length_2: int
+    filter_length_2 : int
         Length of the temporal filter in layer 2.
-    n_filters_3: int
+    n_filters_3 : int
         Number of temporal filters in layer 3.
-    filter_length_3: int
+    filter_length_3 : int
         Length of the temporal filter in layer 3.
-    n_filters_4: int
+    n_filters_4 : int
         Number of temporal filters in layer 4.
-    filter_length_4: int
+    filter_length_4 : int
         Length of the temporal filter in layer 4.
-    activation_first_conv_nonlin: nn.Module, default is nn.ELU
+    activation_first_conv_nonlin : nn.Module, default is nn.ELU
         Non-linear activation function to be used after convolution in layer 1.
-    first_pool_mode: str
+    first_pool_mode : str
         Pooling mode in layer 1. "max" or "mean".
-    first_pool_nonlin: callable
+    first_pool_nonlin : callable
         Non-linear activation function to be used after pooling in layer 1.
-    activation_later_conv_nonlin: nn.Module, default is nn.ELU
+    activation_later_conv_nonlin : nn.Module, default is nn.ELU
         Non-linear activation function to be used after convolution in later layers.
-    later_pool_mode: str
+    later_pool_mode : str
         Pooling mode in later layers. "max" or "mean".
-    later_pool_nonlin: callable
+    later_pool_nonlin : callable
         Non-linear activation function to be used after pooling in later layers.
-    drop_prob: float
+    drop_prob : float
         Dropout probability.
-    split_first_layer: bool
+    split_first_layer : bool
         Split first layer into temporal and spatial layers (True) or just use temporal (False).
         There would be no non-linearity between the split layers.
-    batch_norm: bool
+    batch_norm : bool
         Whether to use batch normalisation.
-    batch_norm_alpha: float
+    batch_norm_alpha : float
         Momentum for BatchNorm2d.
-    stride_before_pool: bool
+    stride_before_pool : bool
         Stride before pooling.
 
 

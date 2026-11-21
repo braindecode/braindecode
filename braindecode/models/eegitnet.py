@@ -35,9 +35,9 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
 
     Parameters
     ----------
-    drop_prob: float
+    drop_prob : float
         Dropout probability.
-    activation: nn.Module, default=nn.ELU
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     kernel_length : int, optional

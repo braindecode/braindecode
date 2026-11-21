@@ -144,7 +144,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         Number of filters in the first convolutional layer. Default is 8.
     filter_2 : int, optional
         Number of filters in the second convolutional layer. Default is 32.
-    drop_prob: float, optional
+    drop_prob : float, optional
         Dropout rate. Default is 0.5.
     kernel_block_4 : tuple[int, int], optional
         Kernel size for block 4. Default is (1, 16).
