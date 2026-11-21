@@ -249,6 +249,10 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.GCNsNet` gives the fake nodes that the graph coarsening
+  adds a Laplacian diagonal of 0, as in EEG-DL, instead of -1. Outputs change for
+  every montage that the coarsening pads, such as 22 channels; graphs without fake
+  nodes are unchanged (:gh:`1729` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.Pratibha2` returns the feature dict, not the logits, when it
   is compiled with ``torch.jit.script`` and called with ``return_features=True``
   (:gh:`1710` by `Bruno Aristimunha`_).

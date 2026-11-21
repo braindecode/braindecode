@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from math import log2
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
@@ -196,9 +197,12 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             else None
         )
         for laplacian_module, level in zip(self.laplacians, levels):
-            normalized = laplacian(
-                adjacencies[level].detach().cpu().numpy(), normed=True
-            )
+            level_adjacency = adjacencies[level].detach().cpu().numpy()
+            normalized = laplacian(level_adjacency, normed=True)
+            # scipy gives an isolated node (a fake coarsening node) a diagonal of 0;
+            # it must be 1 so that the rescaling below gives 0, as in EEG-DL.
+            isolated = np.flatnonzero(level_adjacency.sum(axis=0) == 0)
+            normalized[isolated, isolated] = 1
             normalized = torch.as_tensor(
                 normalized, dtype=adjacency.dtype, device=adjacency.device
             )
