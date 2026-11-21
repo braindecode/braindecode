@@ -643,11 +643,12 @@ class _PatchedTimeAttention(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         # x: (batch, n_patches * patch_len, n_chans, embed_dim), batch counting
         # segments; head_dim = embed_dim // num_heads.
-        # to_patches: -> (batch, n_patches, n_chans, head_dim, num_heads * patch_len)
+        # (batch, n_patches, n_chans, head_dim, num_heads * patch_len)
+        patches = self.to_patches(x)
         # patch_k/v: -> (batch, n_patches, n_chans, head_dim, num_heads)
         # from_patches, k/v_proj: -> (batch, n_patches, n_chans, embed_dim)
-        k = self.k_proj(self.from_patches(self.patch_k(self.to_patches(x))))
-        v = self.v_proj(self.from_patches(self.patch_v(self.to_patches(x))))
+        k = self.k_proj(self.from_patches(self.patch_k(patches)))
+        v = self.v_proj(self.from_patches(self.patch_v(patches)))
         q = self.q_proj(x[:, -self.n_out :])  # (batch, n_out, n_chans, embed_dim)
         q = self.split_heads(q)  # (batch, num_heads, n_chans, n_out, head_dim)
         k = self.split_heads_t(k)  # (batch, num_heads, n_chans, head_dim, n_patches)
