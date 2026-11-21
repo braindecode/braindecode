@@ -86,17 +86,6 @@ Enhancements
 - Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
   state-space (S4D) fNIRS model, with ``fnirs_*`` helpers for HbO/HbR ``chs_info`` in ``braindecode.models.util`` (:gh:`1582` by
   `Bruno Aristimunha`_).
-- The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
-  :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
-  each model from the papers: the architecture as named steps with module names and
-  tensor shapes, what is inside each block with the paper's equations (and the S4D
-  equations of Gu et al. for FNIRS4D), how time, channels and chromophores are encoded,
-  and the differences from the authors' code. Every step of their forward passes is
-  commented in the paper's terms with its shape; outputs and checkpoints are unchanged.
-  ``FNIRST.pre`` is now an :class:`~torch.nn.Identity` instead of ``None``, so code
-  that set it to ``None`` must set it to ``nn.Identity()``, and the transformer stacks
-  are a module class instead of plain :class:`~torch.nn.Sequential`, which shows in
-  their repr (:gh:`1586` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
   kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
   and 21 compiled graphs for two training steps before, on every device). Checkpoints and

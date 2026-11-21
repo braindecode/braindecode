@@ -32,7 +32,6 @@ from braindecode.models import (
     SleepFM,
 )
 from braindecode.models.diver1 import channel_metadata_from_chs_info
-from braindecode.models.util import _fnirs_chs_info
 from test.unit_tests.models.test_meggpt import _small_meggpt
 
 N_REAL = [1, 3, 2]  # real channels of the three recordings, padded to 3
@@ -255,11 +254,13 @@ def _mne_fnirs_chs(n_pairs):
     return info["chs"]
 
 
+@pytest.mark.parametrize("padding", [float("nan"), 0.0], ids=["nan", "zero"])
 @pytest.mark.parametrize("name", ["GeoNIRS", "MtReNIRS"])
-def test_fnirs_chs_info_ch_mask_matches_each_recording_alone(name):
+def test_fnirs_chs_info_ch_mask_matches_each_recording_alone(name, padding):
     # pair layout, positions and chromophores from MNE chs_info only:
-    # recordings of 1, 3 and 2 HbO/HbR pairs padded to 3 pairs; a recording
-    # alone takes the geometry of its own pairs
+    # recordings of 1, 3 and 2 HbO/HbR pairs padded to 3 pairs (with NaN, or
+    # with the zeros of pad_channels_collate); a recording alone takes the
+    # geometry of its own pairs
     torch.manual_seed(0)
     if name == "GeoNIRS":
         model = GeoNIRS(chs_info=_mne_fnirs_chs(3), n_outputs=3, n_times=40,
@@ -277,31 +278,10 @@ def test_fnirs_chs_info_ch_mask_matches_each_recording_alone(name):
     model.eval()
     xs = [torch.randn(2 * n_real, model.n_times) for n_real in N_REAL]
     mask = torch.arange(6) < 2 * torch.tensor(N_REAL)[:, None]
-    x = torch.full((len(N_REAL), 6, model.n_times), float("nan"))
+    x = torch.full((len(N_REAL), 6, model.n_times), padding)
     for i, xi in enumerate(xs):
         x[i, : len(xi)] = xi
     _assert_matches_alone(model, x, mask, xs, {}, alone)
-
-
-def test_mtrenirs_ch_mask_matches_each_recording_alone_with_zero_padding():
-    # pad_channels_collate pads with zeros by default: then ch_mask alone keeps
-    # the padded channels out (NaN padding is masked by the NaN rule as well)
-    torch.manual_seed(0)
-    model = MtReNIRS(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=200,
-                     depth=1, pool="channel_temporal_mean").eval()
-    n_real = [2, 6, 4]
-    xs = [torch.randn(n, 200) for n in n_real]
-    x = torch.zeros(3, 6, 200)
-    for i, xi in enumerate(xs):
-        x[i, : len(xi)] = xi
-    mask = torch.arange(6) < torch.tensor(n_real)[:, None]
-    coordinates = model.default_coordinates
-    with torch.no_grad():
-        out = model(x, ch_mask=mask)
-        alone = torch.cat(
-            [model(xi[None], coordinates=coordinates[: len(xi)]) for xi in xs]
-        )
-    torch.testing.assert_close(out, alone, rtol=0, atol=1e-5)
 
 
 @pytest.mark.parametrize("name", ["REVE", "Labram"])

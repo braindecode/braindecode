@@ -24,7 +24,6 @@ from braindecode.functional import (
     rotary_frequencies,
     scaled_dot_product_attention,
 )
-from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -38,6 +37,8 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
+    .. versionadded:: 2.1
+
     .. figure:: https://braindecode.org/dev/_static/model/mtrenirs.png
        :align: center
        :alt: MtReNIRS preprocessing, montage harmonization, token embedding and pretraining
@@ -46,19 +47,16 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
        <https://creativecommons.org/licenses/by/4.0/>`_). This class is the
        encoder of panels (C)-(D) with a linear head.
 
-    MtReNIRS (Montage-aligned transferable Representations for fNIRS) is the
-    fNIRS foundation model of Chae et al. :footcite:`microsoft2026mtrenirs`:
-    "a montage-aware masked autoencoder, pretrained on 12 public fNIRS
-    datasets spanning 268 subjects and 567 recording hours". It "jointly
-    encodes the slow hemodynamic nature of fNIRS, chromophore identity and
-    cortical location by mapping heterogeneous montages onto a shared
-    anatomical reference". A token is one 10-s window of one chromophore
-    channel, tagged with the canonical 10-05 position
-    :footcite:`oostenveld2001five` of its source-detector (S-D) pair and with
-    its chromophore; six Transformer blocks mix all tokens, with the window
-    index as their only time code.
+    MtReNIRS (Montage-aligned transferable Representations for fNIRS) is a
+    montage-aware masked autoencoder pretrained on 12 public fNIRS datasets
+    (268 subjects, 567 recording hours) :footcite:`microsoft2026mtrenirs`. A
+    token is one 10-s window of one chromophore channel, tagged with the
+    canonical 10-05 position :footcite:`oostenveld2001five` of its
+    source-detector (S-D) pair and with its chromophore, so any montage is a
+    set of tokens that Transformer blocks mix, with the window index as their
+    only time code.
 
-    .. rubric:: Architectural Overview
+    .. rubric:: Architecture Overview
 
     With ``W = n_times // window_samples`` windows, ``C = n_chans`` HbO/HbR
     rows and ``D = embed_dim``:
@@ -80,15 +78,12 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
     - **Token embedding** (``embed``, ``_TokenEmbedding``).
 
-      - **Operations.** Signal embedding ``embed.signal.proj``,
-        ``nn.Linear(100, 128)``: "Each 10-s signal segment :math:`x_{c,t} \in
-        \mathbb{R}^{100}` was projected by a linear layer to a 128-dimensional
-        signal embedding". Spatio-chromophore embedding ``embed.spatial.mlp``,
-        ``nn.Linear(48, 128)``, GELU, ``nn.Linear(128, 128)``, on six bands of
-        Fourier features :footcite:`tancik2020fourier` of :math:`u_c =
-        [q_c^\top, b_c]^\top \in \mathbb{R}^4`, the canonical coordinate
-        :math:`q_c` of the S-D pair and the chromophore :math:`b_c` (0 HbO,
-        1 HbR):
+      - **Operations.** ``embed.signal.proj``, ``nn.Linear(100, 128)``,
+        projects each window :math:`x_{c,t}`. ``embed.spatial.mlp``,
+        ``nn.Linear(48, 128)``, GELU, ``nn.Linear(128, 128)``, embeds the
+        Fourier features :footcite:`tancik2020fourier` of :math:`u_c = [q_c^\top,
+        b_c]^\top`, the canonical coordinate :math:`q_c` of the S-D pair and
+        the chromophore :math:`b_c` (0 HbO, 1 HbR):
 
         .. math::
 
@@ -96,32 +91,28 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
            \right]_{j = 1, \dots, 4}^{k = 0, \dots, 5} \in \mathbb{R}^{48},
            \qquad z_{c,t} = W_x x_{c,t} + b_x + \mathrm{MLP}(\phi(u_c)).
 
-      - *Role.* "This embedding lets the encoder distinguish region-specific
-        activity while modeling coupled, often opposing HbO/HbR dynamics."
-        There is no CLS token and no per-channel table.
+      - *Role.* Region-specific activity and the coupled, often opposing
+        HbO/HbR dynamics are told apart, with no class token and no
+        per-channel table.
 
     - **Canonical coordinates** (``default_coordinates``, or the
       ``coordinates`` argument of :meth:`forward`).
 
-      - **Operations.** :math:`\hat{q}_c = (q_c - \mu) / \sigma` with
+      - **Operations.** :math:`\hat{q}_c = (q_c - \mu) / \sigma`, with
         :math:`\mu` = ``coordinate_center`` and :math:`\sigma` =
-        ``coordinate_scale``: "We normalized all available canonical
-        coordinates with one center and RMS scale computed from the
-        pretraining corpus."
-      - *Role.* Before the model, the paper maps every montage to the 10-05
-        system (Sec. III-B, Eq. 1) and uses "the fixed coordinate
-        :math:`q_{s_i}` of assigned slot :math:`s_i`". That alignment and slot
-        assignment (the authors' ``mtrenirs.alignment.align``) stay outside
-        this class, which reads :math:`q_c` from ``loc[:3]`` of ``chs_info``.
+        ``coordinate_scale`` taken from the pretraining corpus.
+      - *Role.* The paper aligns each montage to the 10-05 system and assigns
+        every channel the coordinate of its slot. That alignment and slot
+        assignment (the authors' ``mtrenirs.alignment.align``, Sec. III-B,
+        Eq. 1) stay outside this class, which reads :math:`q_c` from
+        ``loc[:3]`` of ``chs_info``.
 
     - **Transformer encoder** (``encoder.blocks``, ``encoder.norm``;
       ``_TransformerBlock``, ``_RotarySelfAttention``).
 
-      - **Operations.** "The encoder contained six pre-layer-normalized
-        Transformer blocks with a 128-dimensional state, four attention heads,
-        a 512-dimensional MLP, and 0.1 dropout. Per-head layer normalization
-        stabilized queries and keys." With :math:`y` the normalized input, a
-        block computes
+      - **Operations.** Six pre-norm blocks of a 128-dimensional state, four
+        heads, a 512-dimensional MLP and 0.1 dropout. With :math:`y` the
+        normalized input, a block computes
 
         .. math::
 
@@ -137,13 +128,13 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
         where :math:`\mathcal{R}_t` is the rotary rotation
         :footcite:`su2024roformer` of the window index :math:`t` with
-        frequencies :math:`\beta^{-2j/d_h}`, :math:`\beta` = ``rope_base``,
-        and :math:`M_m = 0` for a valid key and :math:`-\infty` otherwise.
-      - *Role.* "To preserve cross-window order without conflating time with
-        spatial identity, rotary position encoding (RoPE) with base 500
-        encoded the temporal-window index. All S-D pairs from the same window
-        shared that index; spatial identity entered only through the canonical
-        coordinate embedding."
+        frequencies :math:`\beta^{-2j/d_h}`, :math:`\beta` = ``rope_base``, and
+        :math:`M_m = 0` for a valid key and :math:`-\infty` otherwise. In each
+        head the queries and keys are layer-normalized and rotated, so a logit
+        depends on the difference of two window indices.
+      - *Role.* The window order is kept without mixing time with spatial
+        identity: all S-D pairs of a window share its index, and the spatial
+        identity enters only through the coordinate embedding.
 
     - **Readout and head** (``pool``, ``final_layer``).
 
@@ -151,29 +142,31 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         windows, one ``embed_dim`` vector per channel, concatenated;
         ``"channel_temporal_mean"``: mean over the valid windows and
         channels; ``"flatten"``: all tokens. Then ``nn.Linear``.
-      - *Role.* The paper's linear probe on frozen features (Sec. III-D): "we
-        temporally averaged encoder outputs before classification so that the
-        feature dimensionality remained fixed."
+      - *Role.* The linear probe of the paper on frozen features
+        (Sec. III-D): the temporal average keeps the feature size fixed.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - *Temporal:* within a window, the 100 input weights of the signal
-      projection (no convolution); across windows, RoPE of the window index
-      only. The weights expect 10 Hz and 10-s windows.
-    - *Spatial:* every row of ``x`` is one chromophore channel, in any order
+    - **Temporal.** Within a window, the 100 input weights of the signal
+      projection (no convolution); across windows, the rotary encoding of the
+      window index only. The weights expect 10 Hz and 10-s windows.
+    - **Spatial.** Every row of ``x`` is one chromophore channel, in any order
       and number; the HbO and HbR rows of one S-D pair share :math:`q_c`.
-      Rows without a location (NaN or all-zero ``loc``) are left out of the
-      attention and the pooling.
-    - *Chromophore:* read from MNE's ``coil_type`` or the ``" hbo"`` /
+    - **Spectral.** None in the model. The weights expect HbO/HbR band-passed
+      to 0.01-0.5 Hz and z-scored per channel.
+    - **Chromophores.** Read from MNE's ``coil_type`` or the ``" hbo"`` /
       ``" hbr"`` name suffix; any other channel (e.g. HbT) raises.
 
     .. rubric:: Additional Mechanisms
 
-    - **Masked pretraining** (Fig. 2D, Sec. III-C; not part of this class):
-      "we randomly masked 25% of valid tokens and passed only visible tokens
-      to the encoder. A two-block lightweight Transformer decoder
-      reconstructed each masked 10-s waveform", with a mean squared error
-      over the masked tokens (Eq. 3).
+    - **Missing data.** A window with a NaN sample, a channel without a
+      location (NaN or all-zero ``loc``) and a padded channel (``ch_mask``)
+      are left out of the attention and of the pooling.
+    - **Scope.** The masked-autoencoder decoder and the 25 % token masking of
+      pretraining (Fig. 2D, Sec. III-C) are not part of this class.
+      ``final_layer`` and ``pool="channel_temporal_mean"`` are additions (the
+      reference returns features only); the reference's ``remainder="overlap"``
+      is not offered.
 
     .. rubric:: Pretrained Weights
 
@@ -181,9 +174,21 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     <https://github.com/microsoft/MtReNIRS>`_ (commit 16c3082, MIT), the
     paper's epoch-95 checkpoint of the 10-s model, holds the inference encoder
     only. It is on the Hugging Face Hub at `braindecode/mtrenirs-pretrained
-    <https://huggingface.co/braindecode/mtrenirs-pretrained>`_; the head is not
-    pretrained. It expects 10 Hz HbO/HbR, preprocessed as in Notes, in
-    100-sample windows, with positions on 10-05 slots:
+    <https://huggingface.co/braindecode/mtrenirs-pretrained>`_; the head is
+    not pretrained. It expects 10 Hz HbO/HbR in 100-sample windows, with
+    positions on 10-05 slots, preprocessed as in Sec. III-B (Fig. 2A): optical
+    density, temporal derivative distribution repair and the modified
+    Beer-Lambert law; a 0.01-0.5 Hz band-pass, resampling to 10 Hz and removal
+    of flat or low-variance chromophore channels; each chromophore channel
+    z-scored over its run and clipped to :math:`[-6, 6]`; downstream windows
+    [onset, onset + 10 s) without a hemodynamic-response shift. For the
+    band-pass, the authors' released ``from_mne_raw`` uses MNE's default FIR,
+    which leaves 43.8 % of the window power above 0.5 Hz; a zero-phase
+    third-order Butterworth, ``raw.filter(0.01, 0.5, method="iir",
+    iir_params=dict(order=3, ftype="butter"))``, leaves 1.1 % and reproduces
+    the paper's numbers (:gh:`1564`). On the released checkpoint, the
+    ``"foundation"`` tokens of :meth:`encode` equal the output of the authors'
+    ``MtReNIRSEncoder`` (MtReNIRS@16c3082) with max-abs difference 0.0:
 
     .. code-block:: python
 
@@ -195,17 +200,14 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
             n_times=100,
         )
 
-    .. versionadded:: 2.1
-
     `License <https://github.com/microsoft/MtReNIRS/blob/main/LICENSE.txt>`_
 
     Parameters
     ----------
     window_samples : int, default=100
-        Samples per token window :math:`x_{c,t}`; the paper's "10-s
-        (100-sample) windows" at 10 Hz.
+        Samples per token window :math:`x_{c,t}`: 10 s at 10 Hz.
     embed_dim : int, default=128
-        Token and Transformer width, the paper's "128-dimensional state".
+        Token and Transformer width.
     depth : int, default=6
         Number of Transformer blocks.
     num_heads : int, default=4
@@ -213,72 +215,31 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     mlp_dim : int, default=512
         Hidden width of each block's feed-forward network.
     n_fourier_bands : int, default=6
-        Fourier bands :math:`2^k \pi` per coordinate of :math:`u_c` ("six
-        bands of Fourier features", 48 features).
+        Fourier bands :math:`2^k \pi` per coordinate of :math:`u_c`; six give
+        48 features.
     spatial_hidden_dim : int, default=128
-        Hidden width of the spatio-chromophore MLP (48 -> 128 -> 128).
+        Hidden width of the spatio-chromophore MLP (48 -> 128 -> 128 by
+        default).
     rope_base : float, default=500.0
-        RoPE base :math:`\beta` of the window index.
+        Rotary base :math:`\beta` of the window index.
     qk_norm : bool, default=True
         Per-head LayerNorm of queries and keys.
     pool : {"temporal_mean", "channel_temporal_mean", "flatten"}, default="temporal_mean"
-        Readout of the ``(batch, n_windows, n_chans, embed_dim)`` tokens:
-        mean over the valid windows (the paper's temporal averaging); mean
-        over the valid windows and channels (takes ``ch_mask``); or all
-        tokens flattened.
+        Readout of the ``(batch, n_windows, n_chans, embed_dim)`` tokens (see
+        Macro Components); ``"channel_temporal_mean"`` takes ``ch_mask``.
     on_non_divisible : {"crop", "pad", "error"}, default="crop"
         A short last window is dropped (the reference's ``remainder="drop"``),
         zero-padded or refused.
-    coordinate_center : tuple of float
+    coordinate_center : tuple of float, default=(0.00021245056996122003, -0.022675372660160065, 0.020025914534926414)
         Centre :math:`\mu` (m) subtracted from :math:`q_c`; the checkpoint's
         ``data.pos_center``.
-    coordinate_scale : float
+    coordinate_scale : float, default=0.09265176206827164
         RMS scale :math:`\sigma` (m) dividing the centred :math:`q_c`; the
         checkpoint's ``data.pos_scale``.
     drop_prob : float, default=0.1
         Dropout of attention weights, attention output and MLP.
     activation : type[nn.Module], default=nn.GELU
         Activation of the spatio-chromophore MLP and the feed-forward blocks.
-
-    Notes
-    -----
-    Preprocessing (Sec. III-B, Fig. 2A): optical density, temporal derivative
-    distribution repair, modified Beer-Lambert law; "We then band-pass
-    filtered each run from 0.01 to 0.5 Hz, resampled to 10 Hz, and removed
-    flat or abnormally low-variance chromophore channels"; z-score of each
-    chromophore channel over its run, clipped to :math:`[-6, 6]`; downstream
-    windows "[onset, onset + 10 s) without a hemodynamic-response shift".
-
-    Band-pass: the paper gives the band, 0.01 to 0.5 Hz. The released
-    ``from_mne_raw`` uses MNE's default FIR for it; the replication below
-    used a zero-phase third-order Butterworth,
-    ``raw.filter(0.01, 0.5, method="iir", iir_params=dict(order=3, ftype="butter"))``,
-    and reproduces the paper's numbers (:gh:`1564`). With MNE's default FIR,
-    43.8 % of the window power stays above 0.5 Hz, against 1.1 % with that
-    Butterworth.
-
-    Differences from the reference implementation: the input is a
-    ``(batch, n_chans, n_times)`` tensor with the montage in ``chs_info``;
-    ``final_layer`` and ``pool="channel_temporal_mean"`` are added (the
-    reference returns features only); a window with a NaN sample is left out
-    of the attention and of the average; the reference's ``remainder="overlap"``
-    is not offered. On the released checkpoint, the encoder features equal the
-    authors' ``MtReNIRSEncoder`` (MtReNIRS@16c3082) with max-abs difference
-    0.0.
-
-    Replication on SujinBak 2019 :footcite:`bak2019ufft` (30 subjects, left-
-    hand, right-hand and foot tapping) with this port and ``mtrenirs_10s.pt``
-    (macro-F1, %), under the paper's protocol: leave-one-subject-out with a
-    linear probe (LP), MLP probe, LoRA, full fine-tuning (Full-FT) and random
-    initialization (Scratch-FT), and within-subject few-shot linear probes.
-
-    =========  =====  ====  ====  =======  ==========  ======  ======  ======  ======
-    \          LP     MLP   LoRA  Full-FT  Scratch-FT  2-shot  4-shot  6-shot  8-shot
-    =========  =====  ====  ====  =======  ==========  ======  ======  ======  ======
-    Paper      67.9   67.2  70.3  70.2     66.7        40.4    46.2    50.0    53.0
-    Paper SD   17.7   18.6  18.6  19.1     16.2        8.1     11.9    14.2    15.1
-    Port       68.3   67.4  69.3  69.6     67.8        40.3    46.6    50.4    53.0
-    =========  =====  ====  ====  =======  ==========  ======  ======  ======  ======
 
     References
     ----------
@@ -342,13 +303,13 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         pools = ("temporal_mean", "channel_temporal_mean", "flatten")
         if pool not in pools:
             raise ValueError(f"pool must be one of {pools}, got {pool!r}.")
-        _check_on_non_divisible(on_non_divisible)
 
         # Parameters
         self.window_samples = window_samples
         self.pool = pool
         self.on_non_divisible = on_non_divisible
-        # Number of temporal windows T cut from the recording
+        # Number of temporal windows T cut from the recording; raises for a bad
+        # on_non_divisible
         self.n_windows = patch_count(self.n_times, window_samples, on_non_divisible)
         # u_c = (x, y, z, chromophore): three standardized optode coordinates
         # and the HbO/HbR flag
@@ -404,32 +365,22 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
             persistent=False,
         )
 
-        # Shape layers of the tokenization: windows of one channel become
-        # tokens, and masks and coordinates are broadcast to the same layout.
+        # Shape layers of the tokenization: windows of one channel become tokens
         self.split_windows = Rearrange(
             "batch chans (windows samples) -> batch windows chans samples",
             samples=window_samples,
         )
-        self.chan_over_coordinates = Rearrange("batch chans -> batch chans 1")
-        self.chan_over_windows = Rearrange("batch chans -> batch 1 chans")
         self.merge_tokens = Rearrange(
             "batch windows chans samples -> batch (windows chans) samples"
         )
         self.merge_token_mask = Rearrange(
             "batch windows chans -> batch (windows chans)"
         )
-        self.coordinates_over_windows = Rearrange(
-            "batch chans coords -> batch 1 chans coords"
-        )
         self.merge_coordinates = Rearrange(
             "batch windows chans coords -> batch (windows chans) coords"
         )
 
         # Shape layers of the readout
-        self.token_over_features = Rearrange("batch tokens -> batch tokens 1")
-        self.valid_over_features = Rearrange(
-            "batch windows chans -> batch windows chans 1"
-        )
         self.flatten_channels = Rearrange("batch chans dim -> batch (chans dim)")
         self.flatten_tokens = Rearrange(
             "batch windows chans dim -> batch (windows chans dim)"
@@ -438,12 +389,12 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         # Classification head: one linear layer on the pooled features
         self.final_layer = nn.Linear(self.feature_dim, self.n_outputs)
 
-    def encode_windows(
+    def encode(
         self,
         x: torch.Tensor,
         coordinates: Optional[torch.Tensor] = None,
         ch_mask: Optional[torch.Tensor] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Tokenize the recording and encode its (channel, window) tokens.
 
         Parameters
@@ -461,11 +412,11 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
         Returns
         -------
-        encoded : torch.Tensor
-            Encoded tokens, ``(batch, n_windows, n_chans, embed_dim)``; zero
-            where a token is not valid.
-        valid : torch.Tensor
-            Validity of each token, ``(batch, n_windows, n_chans)``.
+        dict of torch.Tensor
+            ``"foundation"``, the encoded tokens, ``(batch, n_windows,
+            n_chans, embed_dim)``, zero where a token is not valid, and
+            ``"valid"``, the validity of each token, ``(batch, n_windows,
+            n_chans)``.
         """
         batch_size, n_chans, _ = x.shape
 
@@ -519,21 +470,18 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         positions_finite = torch.isfinite(positions)
         # -> (batch, n_chans)
         located = positions_finite.all(dim=-1)
-        # -> (batch, n_chans, 1)
-        located_over_coordinates = self.chan_over_coordinates(located)
         coord_zeros = torch.zeros_like(coord)
+        # The flag gets a trailing axis, to broadcast over the 4 coordinates
         # (batch, n_chans, 4)
-        coord = torch.where(located_over_coordinates, coord, coord_zeros)
-        # (batch, n_chans) -> (batch, 1, n_chans)
-        located_over_windows = self.chan_over_windows(located)
-        # (batch, n_windows, n_chans)
-        valid = valid & located_over_windows
+        coord = torch.where(located[..., None], coord, coord_zeros)
+        # The flag gets a window axis, to broadcast over the windows
+        # (batch, n_chans) -> (batch, 1, n_chans); valid: (batch, n_windows, n_chans)
+        valid = valid & located[:, None]
 
         # Padded channels of a batch that mixes montages are masked too
         if ch_mask is not None:
-            # (batch, n_chans) -> (batch, 1, n_chans)
-            ch_mask = self.chan_over_windows(ch_mask)
-            ch_mask = ch_mask.to(torch.bool)
+            # (batch, n_chans) -> (batch, 1, n_chans), over the windows
+            ch_mask = ch_mask[:, None].to(torch.bool)
             # (batch, n_windows, n_chans)
             valid = valid & ch_mask
 
@@ -549,7 +497,7 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
         # u_c of every token: a channel keeps its coordinates in all windows
         # (batch, n_chans, 4) -> (batch, 1, n_chans, 4)
-        coord_tokens = self.coordinates_over_windows(coord)
+        coord_tokens = coord[:, None]
         # -> (batch, n_windows, n_chans, 4)
         coord_tokens = coord_tokens.expand(-1, n_windows, -1, -1)
         # -> (batch, n_windows * n_chans, 4)
@@ -575,15 +523,14 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
         # Invalid tokens are zeroed so that they cannot reach the readout
         # (batch, n_windows * n_chans) -> (batch, n_windows * n_chans, 1)
-        token_weight = self.token_over_features(valid_tokens)
-        token_weight = token_weight.to(x.dtype)
+        token_weight = valid_tokens[..., None].to(x.dtype)
         # (batch, n_windows * n_chans, embed_dim)
         x = x * token_weight
 
         # Back to the (window, channel) grid for the readout
         # -> (batch, n_windows, n_chans, embed_dim)
         x = x.unflatten(1, [n_windows, n_chans])
-        return x, valid
+        return {"foundation": x, "valid": valid}
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head with a new one of ``n_outputs``."""
@@ -606,7 +553,7 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         return_features : bool, default=False
             Return the pooled features instead of the logits.
         coordinates : torch.Tensor or None
-            :math:`u_c` of the channels of ``x``, as in :meth:`encode_windows`.
+            :math:`u_c` of the channels of ``x``, as in :meth:`encode`.
         ch_mask : torch.Tensor or None
             ``True`` for real channels, ``(batch, n_chans)``
             (:func:`~braindecode.functional.check_ch_mask`). Needs
@@ -632,7 +579,8 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         # Tokenization, token embedding z_{c,t} and Transformer encoder
         # (batch, n_chans, n_times) -> (batch, n_windows, n_chans, embed_dim)
         # valid: (batch, n_windows, n_chans)
-        x, valid = self.encode_windows(x, coordinates, ch_mask)
+        encoded = self.encode(x, coordinates, ch_mask)
+        x, valid = encoded["foundation"], encoded["valid"]
 
         # Readout of the encoded tokens
         if self.pool == "flatten":
@@ -645,8 +593,7 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
             # ("channel_temporal_mean", one vector per recording)
             dims: List[int] = [1] if self.pool == "temporal_mean" else [1, 2]
             # (batch, n_windows, n_chans) -> (batch, n_windows, n_chans, 1)
-            weight = self.valid_over_features(valid)
-            weight = weight.to(x.dtype)
+            weight = valid[..., None].to(x.dtype)
             # Number of valid tokens averaged; at least 1, so a channel with
             # no valid window gives zeros and not NaN
             # -> (batch, n_chans, 1) or (batch, 1)
@@ -672,8 +619,19 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
 
 class _TokenEmbedding(nn.Module):
-    """Signal embedding of the window plus the spatio-chromophore embedding
-    (an MLP of the Fourier features of :math:`u_c`)."""
+    """Token embedding :math:`z_{c,t}` of every (channel, window) pair.
+
+    Steps, with :math:`u_c` the coordinates and chromophore of the channel:
+
+    1. Signal embedding: a linear projection of the window :math:`x_{c,t}`,
+       ``(batch, n_tokens, window_samples)`` -> ``(batch, n_tokens, embed_dim)``.
+    2. Fourier features :math:`\\phi(u_c)`: the sine and cosine of
+       :math:`2^k \\pi u_{c,j}` for every band :math:`k` and coordinate
+       :math:`j`, ``(batch, n_tokens, 2 * n_coordinates * n_fourier_bands)``.
+    3. Spatio-chromophore embedding: an MLP of :math:`\\phi(u_c)`,
+       ``(batch, n_tokens, embed_dim)``.
+    4. The two embeddings are summed, ``(batch, n_tokens, embed_dim)``.
+    """
 
     def __init__(
         self,
@@ -713,10 +671,7 @@ class _TokenEmbedding(nn.Module):
         )
         self.spatial = nn.Sequential(OrderedDict(mlp=mlp))
 
-        # Shape layers of the Fourier features
-        self.coordinates_over_bands = Rearrange(
-            "batch tokens coords -> batch tokens coords 1"
-        )
+        # Shape layer of the Fourier features
         self.merge_bands = Rearrange(
             "batch tokens coords bands -> batch tokens (coords bands)"
         )
@@ -740,11 +695,9 @@ class _TokenEmbedding(nn.Module):
         # (n_fourier_bands,)
         freqs = self.freqs.to(device=coordinates.device, dtype=coordinates.dtype)
 
-        # Angles 2^k pi u_{c,j} of every coordinate j and band k
-        # (batch, n_tokens, n_coordinates) -> (batch, n_tokens, n_coordinates, 1)
-        coordinates = self.coordinates_over_bands(coordinates)
-        # -> (batch, n_tokens, n_coordinates, n_fourier_bands)
-        angles = coordinates * freqs
+        # Angles 2^k pi u_{c,j} of every coordinate j and band k:
+        # (batch, n_tokens, n_coordinates, n_fourier_bands)
+        angles = coordinates[..., None] * freqs
         # -> (batch, n_tokens, n_coordinates * n_fourier_bands)
         angles = self.merge_bands(angles)
 
@@ -775,6 +728,17 @@ class _RotarySelfAttention(nn.Module):
     Private because the attention of :mod:`braindecode.modules` takes neither
     per-token positions nor a mask; ``qkv`` and ``proj`` keep timm's names, as
     in the released ``mtrenirs_10s.pt``.
+
+    Steps, for tokens ``(batch, n_tokens, embed_dim)``:
+
+    1. One fused projection and a split into heads,
+       ``3 x (batch, heads, n_tokens, head_dim)``.
+    2. LayerNorm of the queries and keys of each head.
+    3. Rotary rotation of the queries and keys by the window index of their
+       token, shared by the channels of a window.
+    4. Scaled dot-product attention with an additive key mask: ``-inf`` at the
+       invalid tokens, unless none is valid, so that the softmax stays finite.
+    5. The heads are merged and projected, ``(batch, n_tokens, embed_dim)``.
     """
 
     def __init__(
@@ -810,8 +774,6 @@ class _RotarySelfAttention(nn.Module):
             qkv=n_projections,
             heads=num_heads,
         )
-        self.angles_over_heads = Rearrange("batch tokens dim -> batch 1 tokens dim")
-        self.keys_over_queries = Rearrange("batch tokens -> batch 1 1 tokens")
         self.merge_heads = Rearrange(
             "batch heads tokens dim -> batch tokens (heads dim)"
         )
@@ -859,8 +821,8 @@ class _RotarySelfAttention(nn.Module):
         cosine = angles.cos()
         sine = angles.sin()
         # (batch, n_tokens, head_dim) -> (batch, 1, n_tokens, head_dim)
-        cosine = self.angles_over_heads(cosine)
-        sine = self.angles_over_heads(sine)
+        cosine = cosine[:, None]
+        sine = sine[:, None]
 
         # Rotate queries and keys (not values): their dot product then
         # depends only on the difference of the two window indices
@@ -876,7 +838,7 @@ class _RotarySelfAttention(nn.Module):
         # (batch, n_tokens)
         attend = valid | ~any_valid
         # (batch, n_tokens) -> (batch, 1, 1, n_tokens)
-        attend = self.keys_over_queries(attend)
+        attend = attend[:, None, None]
         # Additive bias: 0 for attended keys, -inf for blocked ones
         # (batch, 1, 1, n_tokens)
         bias = torch.zeros_like(attend, dtype=query.dtype)
@@ -908,6 +870,12 @@ class _TransformerBlock(nn.Module):
     Private because its attention takes per-token positions and a validity mask
     (:class:`~braindecode.modules.PreNormBlock` calls ``attn(x)`` only) and the
     released ``mtrenirs_10s.pt`` keys follow this layout.
+
+    Steps, for tokens ``(batch, n_tokens, embed_dim)``, each with a residual
+    connection that leaves the shape unchanged:
+
+    1. LayerNorm, rotary self-attention over all tokens, dropout.
+    2. LayerNorm, feed-forward ``embed_dim -> mlp_dim -> embed_dim``.
     """
 
     def __init__(
@@ -979,7 +947,13 @@ class _TransformerBlock(nn.Module):
 
 
 class _Encoder(nn.Module):
-    """The Transformer blocks and a final LayerNorm."""
+    """The Transformer blocks and a final LayerNorm.
+
+    Steps, for tokens ``(batch, n_tokens, embed_dim)``: ``depth``
+    :class:`_TransformerBlock` in sequence, each given the window index and the
+    validity of every token, then a LayerNorm of the tokens. The shape is
+    ``(batch, n_tokens, embed_dim)`` throughout.
+    """
 
     def __init__(self, blocks: list[nn.Module], embed_dim: int):
         super().__init__()
