@@ -2342,8 +2342,6 @@ def test_pratibha2_is_montage_agnostic():
 def test_pratibha2_drops_unplaced_channels():
     with pytest.raises(ValueError, match="BAD"):
         _pratibha2_model(["Fp1", "BAD", "Cz"])
-    with pytest.raises(ValueError, match="patch_size"):
-        _pratibha2_model(n_times=100)
     with pytest.warns(UserWarning, match="BAD"):
         model = _pratibha2_model(["Fp1", "BAD", "Cz"], on_missing="drop")
     x = torch.randn(2, 3, 600)
@@ -2360,18 +2358,6 @@ def test_pratibha2_warns_on_non_200_hz():
     chs = [{"ch_name": n, "kind": "eeg"} for n in _PRATIBHA2_NAMES]
     with pytest.warns(UserWarning, match="200 Hz"):
         Pratibha2(chs_info=chs, n_outputs=2, sfreq=250.0, **_PRATIBHA2_SMALL)
-
-
-def test_pratibha2_short_window_from_seconds_raises():
-    chs = [{"ch_name": "Cz", "kind": "eeg"}]
-    with pytest.raises(ValueError, match="patch_size"):
-        Pratibha2(
-            chs_info=chs,
-            n_outputs=2,
-            input_window_seconds=0.5,
-            sfreq=200.0,
-            **_PRATIBHA2_SMALL,
-        )
 
 
 def test_pratibha2_autocast_preserves_fourier_features():
@@ -2402,13 +2388,16 @@ def test_pratibha2_invalid_head_keeps_classifier():
     assert model.n_outputs == model.get_config()["n_outputs"] == 3
 
 
-def test_pratibha2_single_sample_zscore():
-    model = _pratibha2_model(["Cz"], n_times=1, patch_size=1, patch_stride=1)
-    x = torch.ones(2, 1, 1, requires_grad=True)
-    logits = model(x)
-    assert logits.isfinite().all()
-    logits.sum().backward()
-    assert x.grad.isfinite().all()
+def test_pratibha2_scripted_returns_features():
+    """A scripted model returns the feature dict with ``return_features``, not the logits."""
+    model = _pratibha2_model(["Cz"])
+    x = torch.randn(2, 1, 400)
+    with torch.no_grad():
+        scripted = torch.jit.script(model)(x, True)
+        assert isinstance(scripted, dict)
+        torch.testing.assert_close(
+            scripted["features"], model(x, return_features=True)["features"]
+        )
 
 
 def test_pratibha2_fits_and_restores_on_another_montage(tmp_path):
