@@ -891,6 +891,16 @@ def test_segmentation_reconstruction_with_EEGClassifier(dataset, probability):
     _ = clf.fit(X=dataset)
 
 
+def test_segmentation_reconstruction_automatic_n_segments_not_stored():
+    transform = SegmentationReconstruction(probability=1.0, random_state=0)
+    for n_times in (1000, 20):
+        X = torch.rand(4, 2, n_times)
+        y = torch.tensor([0, 1, 0, 1])
+        transformed_X, _ = transform(X, y)
+        assert transformed_X.shape == X.shape
+        assert transform.n_segments is None
+
+
 @pytest.mark.parametrize("n_segments", [1, 3, 5, 10, None, 50])
 def test_segmentation_reconstruction_transform(
         time_aranged_batch,
