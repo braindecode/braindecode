@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import math
+from functools import partial
 from typing import Dict, Optional, Sequence, Union
 
 import torch
@@ -18,6 +19,7 @@ from torch import Tensor, nn
 from braindecode.functional import (
     check_ch_mask,
     check_n_chans,
+    init_weights_,
     pad_or_crop_to_patches,
 )
 from braindecode.functional.patches import _check_on_non_divisible
@@ -70,70 +72,40 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
         **Role:** map the time-averaged features to class logits.
 
-    .. rubric:: Differences from the released code
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - The released model also adds a learned embedding of the Cam-CAN session
-      (621 sessions). It is specific to the pre-training data, and the paper
-      discards it for downstream use (Section 2.5.4), so this class has none:
-      the transplanted checkpoint drops those weights, and the forward equals
-      the released model called without session labels.
-    - The next-token prediction head is replaced by ``final_layer``.
-    - Only the parts of the released configuration are ported: time attention
-      with patching. The reference code's optional channel and cross attention,
-      unpatched keys, rotary or sinusoidal positions and batch/group norms are
-      off in the released configuration and not implemented.
-    - The tokenizer encodes the whole input window in one GRU pass; the
-      reference tokenizes recordings in 200-sample windows, which gives the
-      same tokens for windows of up to 200 samples.
+    - **Temporal:** the tokenizer GRU encodes the whole window in one pass (the
+      reference uses 200-sample windows, with the same tokens up to 200
+      samples); the GPT is causal over segments of ``n_patches[0] *
+      patch_lens[0]`` tokens.
+    - **Spatial:** each parcel is tokenized and attended alone, with a learned
+      channel embedding; only the flattened ``final_layer`` mixes parcels.
+    - **Spectral:** implicit in the tokenizer GRU; there is no explicit
+      transform.
 
-    .. rubric:: Input
+    .. rubric:: Additional Mechanisms
 
-    Source-space MEG: 52 parcels of the Glasser 52 parcellation at 250 Hz,
-    each parcel z-scored over the recording (``tokenize_session(standardize=True)``
-    in the reference). The model does not normalise its input. The channel
-    embedding is indexed by position, so the parcels must come in the order of
-    the released parcellation, sign-flip aligned as in the paper (Section
-    2.5.3). ``sfreq`` is not checked: 250 Hz is assumed. A window that is not a
-    multiple of the segment length is padded or cropped as set by
-    ``on_non_divisible``; with ``"pad"``, the feature mean skips the kept steps
-    that fall after the end of the input, so the last segment counts for fewer
-    steps than the others.
+    - **Input:** the 52 parcels of the Glasser 52 parcellation in the released
+      order, sign-flip aligned (Section 2.5.3), at 250 Hz and z-scored over the
+      recording; the model neither normalises nor checks ``sfreq``. With
+      ``on_non_divisible="pad"``, the feature mean skips the kept steps after
+      the end of the input.
+    - **Channel mask:** with ``return_features=True``, ``ch_mask`` (real channels
+      first) gives each recording the features of its first ``n_i`` parcels run
+      alone, and zeros for padded channels. The flattened head is tied to
+      ``n_chans``, so without ``return_features`` it raises a ``ValueError``.
+    - **Token mask:** ``token_mask`` (True=hide) zeroes selected clean token
+      embeddings before the causal decoder, and :meth:`encode_tokens` returns
+      next-token targets for a downstream vocabulary head.
+    - **Session embedding:** the released model adds one for its 621 Cam-CAN
+      sessions; the paper discards it downstream (Section 2.5.4), so the class
+      has none and the converted weights drop it.
+    - **Weights:** the released Cam-CAN MEG-GPT and EphysTokenizer weights,
+      converted to this class's keys, are at ``braindecode/meggpt-pretrained``
+      (revision ``5c49e27c``); the head is randomly initialized::
 
-    .. rubric:: Channel mask
-
-    With ``return_features=True``, ``forward`` takes ``ch_mask``, the
-    ``(batch, n_chans)`` mask of real channels that
-    :func:`~braindecode.datasets.pad_channels_collate` returns (real channels
-    first). The tokenizer and the attention read each channel alone, so a
-    recording with ``n_i`` real channels gets the features of its first
-    ``n_i`` parcels run alone, and the features and tokens of padded channels
-    are zero. The flattened ``final_layer`` is tied to ``n_chans``, so
-    ``ch_mask`` without ``return_features=True`` raises a ``ValueError``. The
-    argmax of the tokenizer passes no gradient to the input.
-
-    .. rubric:: Token-level self-supervised use
-
-    ``token_mask`` in ``forward`` hides selected clean token embeddings
-    (True=hide) before the causal decoder, without changing the frozen
-    tokenizer or attention masks. :meth:`encode_tokens` accepts clean cached
-    IDs and returns their tail-output/next-target alignment, channel/time
-    validity and selected-target masks for a downstream vocabulary head and
-    shifted next-token cross entropy. No vocabulary head is installed in this
-    encoder; see that method's training example. The optional zero-embedding
-    corruption is not the released pretraining method or a bidirectional
-    masked-sample reconstruction objective.
-
-    .. rubric:: Pre-trained weights
-
-    The released Cam-CAN MEG-GPT and EphysTokenizer weights, converted to this
-    class's keys, are on the Hugging Face Hub at
-    ``braindecode/meggpt-pretrained`` (revision ``5c49e27c``)::
-
-        from braindecode.models import MEGGPT
-        model = MEGGPT.from_pretrained("braindecode/meggpt-pretrained", n_outputs=4)
-
-    The conversion omits the session embedding, next-token head and tokenizer
-    signal decoder; the classification head is randomly initialized.
+          from braindecode.models import MEGGPT
+          model = MEGGPT.from_pretrained("braindecode/meggpt-pretrained", n_outputs=4)
 
     .. versionadded:: 2.1
 
@@ -269,13 +241,11 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
 
     def _init_parameters(self) -> None:
-        # Reference initialisation (meg_gpt/optim/initializer.py).
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
-                nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.Embedding):
-                nn.init.uniform_(module.weight, -0.05, 0.05)
+        # Reference initialisation (meg_gpt/optim/initializer.py): Xavier linear
+        # layers with zero bias, small uniform embeddings.
+        uniform = partial(nn.init.uniform_, a=-_EMBEDDING_INIT, b=_EMBEDDING_INIT)
+        rules = {nn.Linear: nn.init.xavier_uniform_, nn.Embedding: uniform}
+        self.apply(partial(init_weights_, weights=rules))
         nn.init.xavier_uniform_(self.time_embedding)
         nn.init.xavier_uniform_(self.channel_embedding)
 
@@ -343,10 +313,14 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         return self.final_layer(features)
 
     def _pool_steps(self, h: Tensor, n_prepared: int, n_times: int) -> Tensor:
-        # Mean over the kept steps that sit on a real sample: the last segment
-        # of a padded window may keep steps after the end of the input. The kept
-        # steps are in time order, so the real ones are a prefix; counting them
-        # from ints keeps forward free of host syncs.
+        """Mean over the kept steps that sit on a real sample.
+
+        ``h`` is ``(batch, n_segments * n_last_steps, n_chans, embed_dim)`` and
+        the result ``(batch, n_chans, embed_dim)``. The last segment of a padded
+        window may keep steps after the end of the input. The kept steps are in
+        time order, so the real ones are a prefix; counting them from ints keeps
+        forward free of host syncs.
+        """
         first = self.segment_len - self.n_last_steps
         n_real = 0
         for start in range(0, n_prepared, self.segment_len):
@@ -358,6 +332,12 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def _prepare_token_mask(
         self, token_mask: Optional[Tensor], x: Tensor
     ) -> Optional[Tensor]:
+        """Check ``token_mask`` and pad or crop it like the input.
+
+        ``(batch, n_chans, n_times)`` bool -> ``(batch, n_chans, n_segments *
+        segment_len)`` bool, False at the padded positions; ``None`` stays
+        ``None``.
+        """
         if token_mask is None:
             return None
         if token_mask.dtype != torch.bool or list(token_mask.shape) != list(x.shape):
@@ -373,6 +353,14 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def _encode_prepared_tokens(
         self, token_ids: Tensor, token_mask: Optional[Tensor] = None
     ) -> Tensor:
+        """Embed token ids and run the decoder layers.
+
+        Steps: cut the ids into segments, embed them, zero the hidden embeddings,
+        add the time and channel embeddings, apply dropout, run the layers and
+        merge the segments. ``token_ids`` ``(batch, n_chans, n_segments *
+        segment_len)`` -> ``(batch, n_segments * n_last_steps, n_chans,
+        embed_dim)``.
+        """
         batch_size, n_chans = token_ids.shape[0], token_ids.shape[1]
         if n_chans > self.channel_embedding.shape[0]:
             raise ValueError(
@@ -415,56 +403,34 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         ch_mask: Optional[Tensor] = None,
         lengths: Optional[Tensor] = None,
     ) -> Dict[str, Tensor]:
-        """Encode clean IDs with optional corruption and shifted-target metadata.
+        """Encode cached token ids and return their shifted next-token targets.
 
         Parameters
         ----------
         token_ids : Tensor
-            Clean int64 IDs, ``(batch, n_chans, n_times)``. Obtain them with
-            ``model.tokenizer(x)`` or the reference-compatible cached IDs.
-            The tokenizer is frozen: this is token-level training, not raw
-            masked-sample reconstruction.
+            Clean int64 ids ``(batch, n_chans, n_times)``, e.g. from
+            ``model.tokenizer(x)``.
         token_mask : Tensor or None
-            Boolean input shape, True=hide (separate from True=real in
-            ``ch_mask``). Zero selected embeddings before positions/context.
-            This optional corruption is not part of the released method.
+            Boolean, same shape, True hides that token's embedding.
         ch_mask : Tensor or None
-            Boolean ``(batch, n_chans)`` real-channel mask, real parcels first.
+            Boolean ``(batch, n_chans)``, True for real channels (real parcels
+            first).
         lengths : Tensor or None
-            Int64 ``(batch,)`` original valid time counts, default ``n_times``.
-            Invalid IDs (even -1) are sanitized before embedding and targets.
+            Int64 ``(batch,)`` valid time counts, default ``n_times``; ids past
+            them are zeroed before the embedding.
 
         Returns
         -------
         dict of str to Tensor
-            ``features`` and ``tokens`` as in ``forward``; ``token_ids`` are
-            sanitized clean prepared IDs. ``input_indices`` indexes prepared
-            time; ``output_indices`` indexes the last ``n_last_steps`` input
-            positions per segment, corresponding to the returned tokens.
-            ``next_token_targets`` predicts clean IDs at ``output_indices+1``.
-            ``target_valid`` excludes padded channels/times and unavailable
-            next tokens. ``prediction_mask`` is ``target_valid`` if no
-            corruption mask, else additionally selects hidden TARGET positions
-            (at t+1, not t). These three tensors are ``(batch, n_chans,
-            n_segments * n_last_steps)``. Invalid targets are zero, not labels.
-
-        Notes
-        -----
-        A separate vocabulary head can train on the selected valid targets::
-
-            encoded = model.encode_tokens(ids, token_mask=hide, lengths=lengths)
-            selected = encoded["prediction_mask"]
-            if not selected.any():
-                raise ValueError("no selected valid next-token targets")
-            logits = vocabulary_head(encoded["tokens"])  # (B, C, O, n_tokens)
-            loss = torch.nn.functional.cross_entropy(
-                logits[selected], encoded["next_token_targets"][selected]
-            )
-
-        This is shifted next-token supervision, not same-position masked
-        reconstruction. Later GRU tokens may encode earlier raw samples, so
-        causal attention is retained. No vocabulary head/loss is installed in
-        the encoder, and no reference pretraining quality is claimed.
+            ``features`` and ``tokens`` as in ``forward``, and ``token_ids``,
+            the ids as encoded (invalid ones zeroed, padded or cropped).
+            ``output_indices`` are the positions of the ids that ``tokens``
+            output, the last ``n_last_steps`` of each segment, and
+            ``input_indices`` all positions. ``next_token_targets`` are the ids
+            at ``output_indices + 1``, ``target_valid`` marks the available
+            ones, and ``prediction_mask`` also requires the target token to be
+            hidden by ``token_mask``, if given. The three are ``(batch, n_chans,
+            n_segments * n_last_steps)``; invalid targets are zero.
         """
         if token_ids.dim() != 3 or token_ids.dtype != torch.long:
             raise ValueError("token_ids must be int64 (batch, n_chans, n_times).")
@@ -540,13 +506,11 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
-        head = self.final_layer[1]
-        self.final_layer[1] = nn.Linear(
-            head.in_features,
-            n_outputs,
-            device=head.weight.device,
-            dtype=head.weight.dtype,
-        )
+        self.final_layer[1] = nn.Linear(self.final_layer[1].in_features, n_outputs)
+
+
+# Bound of the uniform embedding initialisation (meg_gpt/optim/initializer.py).
+_EMBEDDING_INIT = 0.05
 
 
 class _EphysTokenizer(nn.Module):
@@ -563,6 +527,9 @@ class _EphysTokenizer(nn.Module):
         self.proj = nn.Linear(rnn_hidden_size, n_codes)
         self.norm = nn.LayerNorm(n_codes)
         self.to_series = Rearrange("b c t -> (b c) t 1")
+        # Released scaling of the logits (EphysTokenizer), kept so that float
+        # near-ties break as in the reference.
+        self.temperature = 0.1
         # Placeholder until the released vocabulary is loaded.
         self.register_buffer("vocab", torch.arange(n_codes) % n_tokens)
         self.requires_grad_(False)
@@ -572,9 +539,8 @@ class _EphysTokenizer(nn.Module):
         # (batch, n_chans, n_times) -> (batch * n_chans, n_times, 1)
         # -> (batch * n_chans, n_times, rnn_hidden_size)
         h, _ = self.rnn(self.to_series(x))
-        # Released scaling; kept so that ties break as in the reference.
         # (batch * n_chans, n_times, n_codes)
-        logits = self.norm(self.proj(h)) / 0.1
+        logits = self.norm(self.proj(h)) / self.temperature
         codes = logits.argmax(dim=-1)  # (batch * n_chans, n_times)
         # token ids (batch * n_chans, n_times) -> (batch, n_chans, n_times)
         return self.vocab[codes].unflatten(0, [batch_size, n_chans])
@@ -583,8 +549,11 @@ class _EphysTokenizer(nn.Module):
 class _DecoderLayer(nn.Module):
     """Pre-norm patched time attention and feed-forward block.
 
-    The attention outputs the last ``n_out`` steps; the residual keeps the
-    same steps of the input.
+    Steps: attention on the normed input, dropout, residual, then a normed
+    feed-forward block with its residual. The attention outputs the last
+    ``n_out`` steps; the residual keeps the same steps of the input.
+    ``(batch, n_patches * patch_len, n_chans, embed_dim)`` ->
+    ``(batch, n_out, n_chans, embed_dim)``, with ``batch`` counting segments.
     """
 
     def __init__(
@@ -607,10 +576,10 @@ class _DecoderLayer(nn.Module):
         self.drop = nn.Dropout(drop_prob)
         self.norm2 = nn.LayerNorm(embed_dim)
         self.mlp = FeedForwardBlock(
-            embed_dim,
-            1,
-            0.0,
-            activation,
+            emb_size=embed_dim,
+            expansion=1,  # unused: hidden_features sets the width
+            drop_p=0.0,  # no dropout after the activation, only after the output
+            activation=activation,
             hidden_features=feedforward_dim,
             output_drop_p=drop_prob,
         )
