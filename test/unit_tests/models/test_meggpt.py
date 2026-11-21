@@ -78,7 +78,6 @@ def test_next_token_targets_select_hidden_valid_positions(
     encoded = model.encode_tokens(ids, hide, ch_mask, lengths)
     indices = encoded["output_indices"]
     assert indices.tolist() == expected_indices
-    assert encoded["input_indices"].tolist() == list(range(24 if policy == "pad" else 16))
     target_valid = encoded["target_valid"]
     available = (indices + 1 < lengths[:, None, None]) & ch_mask[:, :, None]
     assert torch.equal(target_valid, available)

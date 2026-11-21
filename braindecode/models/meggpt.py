@@ -426,13 +426,13 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
             ``features`` and ``tokens`` as in ``forward``, and ``token_ids``,
             the ids as encoded (invalid ones zeroed, padded or cropped).
             ``output_indices`` are the positions of the ids that ``tokens``
-            output, the last ``n_last_steps`` of each segment, and
-            ``input_indices`` all positions. ``next_token_targets`` are the ids
-            at ``output_indices + 1``, ``target_valid`` marks those on real
-            channels and before ``lengths``, and ``prediction_mask`` also
-            requires the target token to be hidden by ``token_mask``, if given.
-            The three are ``(batch, n_chans, n_segments * n_last_steps)``;
-            invalid targets are zero.
+            output, the last ``n_last_steps`` of each segment.
+            ``next_token_targets`` are the ids at ``output_indices + 1``,
+            ``target_valid`` marks those on real channels and before
+            ``lengths``, and ``prediction_mask`` also requires the target token
+            to be hidden by ``token_mask``, if given. The three are
+            ``(batch, n_chans, n_segments * n_last_steps)``; invalid targets are
+            zero.
         """
         if token_ids.dim() != 3 or token_ids.dtype != torch.long:
             raise ValueError("token_ids must be int64 (batch, n_chans, n_times).")
@@ -499,7 +499,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
             "features": features,
             "tokens": tokens,
             "token_ids": prepared,
-            "input_indices": input_indices,
             "output_indices": output_indices,
             "next_token_targets": targets,
             "target_valid": target_valid,
