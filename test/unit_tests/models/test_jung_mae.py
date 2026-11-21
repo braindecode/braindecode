@@ -1,8 +1,10 @@
-"""JungMAE: the validity rules, the re-hosted weights and the pair counts."""
+"""JungMAE: the validity rules, the float32 positions, the head dropout, the
+re-hosted weights and the pair counts."""
 
 import pytest
 import torch
 
+from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models import JungMAE
 
 
@@ -32,7 +34,7 @@ def test_jung_mae_invalid_patch_does_not_reach_the_valid_tokens():
         n_chans=4, n_outputs=2, n_times=60, embed_dim=32, depth=2, num_heads=4
     ).eval()
     x = torch.randn(2, 4, 60)
-    x[:, :, 20:25] = float("nan")  # patch 2 of every pair
+    x[:, 2:, 20:25] = float("nan")  # HbR rows only: patch 2 of every pair
     other = x.clone()
     other[:, :, 25:30] = torch.randn(2, 4, 5)  # the 5 finite samples of that patch
     with torch.no_grad():
@@ -41,6 +43,29 @@ def test_jung_mae_invalid_patch_does_not_reach_the_valid_tokens():
     assert out["valid"][..., [0, 1, 3, 4, 5]].all()
     assert not out["foundation"][:, :, 2].any()
     assert torch.equal(out["foundation"], out_other["foundation"])
+
+
+def test_jung_mae_half_precision_positions_are_cast_from_float32():
+    """With a zero patch embedding the encoder input is the position: the
+    float32 sinusoid cast to bfloat16, not a sinusoid computed in bfloat16."""
+    model = JungMAE(
+        n_chans=4, n_outputs=2, n_times=60, embed_dim=32, depth=1, num_heads=4
+    )
+    torch.nn.init.zeros_(model.patch_embed.weight)
+    torch.nn.init.zeros_(model.patch_embed.bias)
+    seen = []
+    model.encoder.register_forward_pre_hook(lambda module, args: seen.append(args[0]))
+    with torch.no_grad():
+        model.to(torch.bfloat16).eval().encode(torch.randn(1, 4, 60).bfloat16())
+    expected = sinusoidal_positional_encoding(6, 32, dtype=torch.float32)
+    assert torch.equal(seen[0][0], expected.to(torch.bfloat16))
+
+
+def test_jung_mae_head_drop_prob_drops_the_features():
+    """``head_drop_prob=1`` zeroes the flattened features in training mode."""
+    model = JungMAE(n_chans=4, n_outputs=2, n_times=60, depth=1, head_drop_prob=1.0)
+    features = model.train()(torch.randn(2, 4, 60), return_features=True)["features"]
+    assert not features.any()
 
 
 @pytest.mark.parametrize(

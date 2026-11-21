@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
 # License: BSD (3-clause)
+#
 # Adapted from the masked autoencoder module of the GeoNIRS authors,
 # https://github.com/GeoNIRS/GeoNIRS (``model/`` at commit 81f8995), their
 # implementation of Jung, Lee and An (2025), doi:10.1109/BCI65088.2025.10931275.
@@ -227,8 +228,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
             " -> (batch pairs) patches (samples chromophores)",
             samples=patch_size,
         )
-        # Patch embedding: the linear projection of a patch to a token of width
-        # D (W and b in the docstring equation)
+        # Patch embedding: the linear projection of a patch to a token of width D
         self.patch_embed = nn.Linear(
             in_features=2 * patch_size,
             out_features=embed_dim,
