@@ -289,42 +289,53 @@ class MLP(nn.Sequential):
 
 
 class TimmMlp(nn.Module):
-    """Two-layer MLP with timm's parameter names (``fc1``, ``act``, ``fc2``,
-    ``drop``), as in ViT/MAE checkpoints: dropout after the activation and after
-    the second layer. EEGPT and LUNA use it, so their released weights load
-    with the same keys.
+    """Two-layer MLP with timm's parameter names (``fc1``, ``act``, ``norm``,
+    ``fc2``, ``drop``), as in ViT/MAE checkpoints: dropout after the
+    activation, optional normalization before the second linear layer, and
+    dropout after the second layer. EEGPT and LUNA use it, so their released
+    weights load with the same keys.
 
     Parameters
     ----------
     in_features : int
-    hidden_features : int, optional
-        Defaults to ``in_features``.
-    out_features : int, optional
-        Defaults to ``in_features``.
-    act_layer : type of torch.nn.Module
-        Activation class. Default: ``nn.GELU``.
-    drop : float
-        Dropout rate. Default: ``0.0``.
+        Input feature dimension.
+    hidden_features : int | None, optional
+        Hidden dimension. Defaults to ``in_features``.
+    out_features : int | None, optional
+        Output feature dimension. Defaults to ``in_features``.
+    act_layer : type[nn.Module], default=nn.GELU
+        Activation class.
+    drop : float, default=0.0
+        Dropout probability.
+    norm_layer : type[nn.Module] | None, optional
+        Normalization layer class before ``fc2``. Defaults to ``None``
+        (``nn.Identity()``).
     """
 
     def __init__(
         self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        drop=0.0,
-    ):
+        in_features: int,
+        hidden_features: int | None = None,
+        out_features: int | None = None,
+        act_layer: type[nn.Module] = nn.GELU,
+        drop: float = 0.0,
+        norm_layer: type[nn.Module] | None = None,
+    ) -> None:
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
         self.fc1 = nn.Linear(in_features, hidden_features)
         self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
+        self.norm = (
+            norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
+        )
+        self.fc2 = nn.Linear(hidden_features, out_features)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.drop(self.act(self.fc1(x)))
+        if hasattr(self, "norm"):
+            x = self.norm(x)
         return self.drop(self.fc2(x))
 
 

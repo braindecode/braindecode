@@ -189,6 +189,9 @@ Enhancements
 API and behavior changes
 ========================
 
+- :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
+  ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
+  so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).
 - :class:`braindecode.models.USleep` crops the upsampled tensor at the start before each skip connection,
   like U-Time's ``CropToMatch``, so at an odd level each residual sample meets its own pooled pair. A USleep
   trained with 2.0 loads but gives different predictions (:gh:`1730` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
