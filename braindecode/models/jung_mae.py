@@ -1,5 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
+# License: BSD (3-clause)
+#
 # Adapted from the masked autoencoder module of the GeoNIRS authors,
 # https://github.com/GeoNIRS/GeoNIRS (``model/`` at commit 81f8995), their
 # implementation of Jung, Lee and An (2025), doi:10.1109/BCI65088.2025.10931275.
@@ -7,7 +9,7 @@ from __future__ import annotations
 
 import math
 from functools import partial
-from typing import Literal, Optional
+from typing import Literal
 
 import torch
 from einops.layers.torch import Rearrange, Reduce
@@ -33,21 +35,20 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
     Jung, Lee and An :footcite:`jung2025mae` pretrain a masked autoencoder on
     unlabelled fNIRS recordings, so that a decoder needs fewer labelled ones.
-    Their paper (IEEE BCI 2025) came without code: this class ports the
-    implementation and the weights of the GeoNIRS authors, whose Jung-MAE
-    baseline it is (:footcite:`li2026geonirs`, ``GeoNIRS/GeoNIRS`` at commit
-    ``81f8995``).
+    Their paper (IEEE BCI 2025) came without code: this class is the encoder of
+    the GeoNIRS authors' implementation, whose Jung-MAE baseline it is
+    (:footcite:`li2026geonirs`, ``GeoNIRS/GeoNIRS`` at commit ``81f8995``), with
+    a linear head; the pretraining decoder is not part of it.
 
-    .. rubric:: Architectural Overview
+    .. rubric:: Architecture Overview
 
-    Every HbO/HbR pair (one source-detector channel) is a sequence of its own.
-    Its window is cut into 2 s patches, each patch becomes one token that
-    holds both chromophores, and a small Transformer encodes the tokens of
-    that pair. The same weights serve every pair, which is how one checkpoint
-    handles montages of any size. The classifier then flattens the tokens of
-    all the pairs. With :math:`B` the batch size, :math:`C` = ``n_chans // 2``
-    pairs, :math:`Q` = ``patch_size``, :math:`P` patches and :math:`D` =
-    ``embed_dim``, the model has the following sequence of steps::
+    Every HbO/HbR pair (one source-detector channel) is a sequence of its own:
+    its window is cut into 2 s patches, each patch becomes one token holding
+    both chromophores, and a Transformer encodes the tokens of each pair. The
+    same weights serve every pair, which is how one checkpoint handles montages
+    of any size; the classifier then flattens the tokens of all the pairs. With
+    :math:`B` the batch size, :math:`C` = ``n_chans // 2`` pairs, :math:`Q` =
+    ``patch_size``, :math:`P` patches and :math:`D` = ``embed_dim``::
 
         x (B, 2C, n_times): HbO and HbR rows, NaN = missing sample
         1. HbO/HbR split, invalid samples to zero  -> (B, C, P*Q) each
@@ -61,97 +62,79 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
     - ``JungMAE.patch_embed`` **Patch tokenization**
 
-      A patch interleaves the :math:`Q` HbO samples :math:`o` and HbR samples
-      :math:`r` of pair :math:`c`. One :class:`~torch.nn.Linear` maps it to a
-      :math:`D`-wide token, and the fixed sinusoidal encoding of the patch
-      index :math:`p` is added:
+      *Operations.* A patch interleaves the :math:`Q` HbO samples :math:`o` and
+      HbR samples :math:`r` of pair :math:`c`. One :class:`~torch.nn.Linear`
+      maps it to a :math:`D`-wide token, and the fixed sinusoidal encoding of
+      the patch index :math:`p` is added:
 
       .. math::
 
           \mathbf{z}_{c,p} = \mathbf{W}\,[o_{c,pQ},\, r_{c,pQ},\, \dots,\,
           o_{c,pQ+Q-1},\, r_{c,pQ+Q-1}] + \mathbf{b} + \mathrm{PE}(p).
 
-    - **Patch validity** (``minimum_patch_valid_fraction``)
-
-      A sample is valid when both chromophores are finite and it is not in
-      ``mask``. Invalid samples are set to zero, and a patch counts only when
-      at least :math:`\lceil 0.8\,Q \rceil` of its samples are valid.
+      *Role.* One token per patch, with both chromophores of each time step.
 
     - ``JungMAE.encoder`` **Transformer encoder**
 
-      Four pre-norm :class:`~torch.nn.TransformerEncoderLayer` blocks (8
-      heads, feed-forward width 768, GELU) and a final
+      *Operations.* Four pre-norm :class:`~torch.nn.TransformerEncoderLayer`
+      blocks (8 heads, feed-forward width 768, GELU) and a final
       :class:`~torch.nn.LayerNorm`, over the :math:`P` tokens of one pair.
-      Invalid patches are not attended and their output is zero, so a pair
-      without any valid patch gives zero features.
+      Invalid patches are masked as attention keys; the reference packs the
+      valid tokens instead, which gives the same features up to float32
+      rounding.
+
+      *Role.* Context across the time of a pair, with the same weights for
+      every pair.
 
     - ``JungMAE.final_layer`` **Classification head**
 
       Flatten, :class:`~torch.nn.Dropout` and one :class:`~torch.nn.Linear`,
-      the ``flatten_linear`` head of the GeoNIRS benchmark. It is not
-      pretrained, and its input size fixes ``n_chans`` and ``n_times``.
+      the ``flatten_linear`` head of the GeoNIRS benchmark. The benchmark
+      standardizes the flattened features with training-set statistics first;
+      this head does not, so standardize the eval-mode ``return_features`` to
+      reproduce it. The head is not pretrained, and its input size fixes
+      ``n_chans`` and ``n_times``.
 
-    .. rubric:: Temporal, Spatial, and Chromophore Encoding
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
 
     - **Temporal.** Non-overlapping 2 s patches (10 samples at 5 Hz) with a
       fixed sinusoidal position. The weights were pretrained on 30 s windows.
     - **Spatial.** None. Pairs never attend to each other and the model sees
       no optode position. A pair is identified only by where its features sit
       in the head input, so the pairs must keep the order used in training.
-    - **Chromophores.** HbO and HbR share each token, sample by sample; HbT
-      is not used. The rows must be the HbO and the HbR rows of the same
-      pairs (see ``channel_order``).
+    - **Spectral.** None: there is no frequency decomposition.
+    - **Chromophores.** HbO and HbR share each token, sample by sample; HbT is
+      not used. The rows must be the HbO and the HbR rows of the same pairs
+      (see ``channel_order``).
 
-    .. rubric:: Pretraining
+    .. rubric:: Additional Mechanisms
 
-    In the reference, each pair keeps half of its valid patches visible,
-    drawn at random, and hides the others. The encoder reads the visible
-    tokens only. A lighter decoder (two layers of width 96, with a learned
-    mask token) predicts every patch, and the loss is the mean squared error
-    over the valid samples of the hidden patches. The decoder is not part of
-    this class or of its weights.
+    - **Missing data.** NaN marks a missing sample, and a pair whose rows are
+      all NaN is a missing channel: the head spans every pair, so there is no
+      ``ch_mask``. A sample is valid when both chromophores are finite, and a
+      patch when at least ``minimum_patch_valid_fraction`` of its samples are
+      (:math:`\lceil 0.8\,Q \rceil` by default). Invalid samples are set to
+      zero, invalid patches are not attended and give zero tokens, and a pair
+      without a valid patch gives zero features.
 
     .. rubric:: Pretrained Weights
 
     The encoder of ``jung_mae.pt``, trained by the GeoNIRS authors and
     converted to these parameter names, is on the Hugging Face Hub at
-    ``braindecode/jungmae-pretrained``. The head is not pretrained: its input
-    size depends on the number of pairs and on ``n_times``.
-
-    .. important::
-
-       .. code-block:: python
-
-           from braindecode.models import JungMAE
-
-           model = JungMAE.from_pretrained(
-               "braindecode/jungmae-pretrained", n_chans=40, n_outputs=2, n_times=60
-           )
-
-    The weights expect the inputs of the GeoNIRS paper (Appendix B.1): HbO and
-    HbR in µmol/L resampled to 5 Hz, each chromophore z-scored per recording
-    over all its valid channels and time points. With them and the GeoNIRS
+    ``braindecode/jungmae-pretrained``; the head is not pretrained. The
+    weights expect the inputs of the GeoNIRS paper (Appendix B.1): HbO and HbR
+    in µmol/L resampled to 5 Hz, each chromophore z-scored per recording over
+    all its valid channels and time points. With them and the GeoNIRS
     benchmark's linear-probe loop, this class reproduces the paper's
     Jung-MAE-LP results (:gh:`1589`).
 
-    .. rubric:: Differences from the Reference Implementation
+    .. code-block:: python
 
-    - **Input.** One tensor ``(batch, n_chans, n_times)``, with the HbO rows
-      then the HbR rows, or MNE's interleaved order read from ``chs_info``.
-      The reference takes ``hbo`` and ``hbr`` tensors with validity masks.
-      Here NaN marks a missing sample (an all-NaN row is a missing channel),
-      and the opt-in ``mask`` marks more.
-    - **Attention.** The reference packs the valid tokens of each pair; this
-      class masks the invalid ones as attention keys, which gives the same
-      features up to float32 rounding.
-    - **Head.** The benchmark head standardizes the flattened features with
-      training-set statistics before its Dropout; this head does not, so
-      standardize the eval-mode ``return_features`` yourself to reproduce
-      the benchmark. ``final_layer`` starts Xavier-uniform with a zero bias,
-      as the other Linear layers of the reference.
-    - **Additions.** ``on_non_divisible="pad"`` or ``"crop"`` (the reference
-      refuses a partial patch) and ``mask``. ``ch_mask`` is refused, because
-      ``final_layer`` spans every pair.
+        from braindecode.models import JungMAE
+
+        model = JungMAE.from_pretrained(
+            "braindecode/jungmae-pretrained", n_chans=40, n_outputs=2, n_times=60
+        )
 
     Parameters
     ----------
@@ -174,13 +157,13 @@ class JungMAE(EEGModuleMixin, nn.Module):
     activation : type[nn.Module], default=nn.GELU
         Activation of the feed-forward layers.
     channel_order : {"stacked", "interleaved"} or None, default=None
-        ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or MNE's ``[HbO_1, HbR_1, ...]``.
+        ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or MNE's ``[HbO_1, HbR_1, ...]``;
         ``None`` reads it from ``chs_info`` (``"stacked"`` without it).
         ``n_chans`` must be even.
     on_non_divisible : {"error", "pad", "crop"}, default="error"
-        What to do when ``n_times`` is not a multiple of ``patch_size``:
-        raise, as the reference does; pad with missing samples, to which the
-        validity rule applies; or crop.
+        ``n_times`` not a multiple of ``patch_size``: raise, as the reference
+        does; pad with missing samples, to which the validity rule applies; or
+        crop.
 
     References
     ----------
@@ -192,7 +175,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # Braindecode parameters
         n_outputs: int | None = None,
         n_chans: int | None = None,
-        chs_info=None,
+        chs_info: list[dict] | None = None,
         n_times: int | None = None,
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
@@ -261,8 +244,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
             " -> (batch pairs) patches (samples chromophores)",
             samples=patch_size,
         )
-        # Patch embedding: the linear projection of a patch to a token of width
-        # D (W and b in the docstring equation)
+        # Patch embedding: the linear projection of a patch to a token of width D
         self.patch_embed = nn.Linear(
             in_features=2 * patch_size,
             out_features=embed_dim,
@@ -278,8 +260,6 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # The encoder reads each pair as a sequence of its own, so the patch
         # validity is laid out like the tokens: one row per pair
         self.merge_pairs = Rearrange("batch pairs patches -> (batch pairs) patches")
-        # Trailing axis, to zero every feature of the token of an invalid patch
-        self.to_token_mask = Rearrange("rows patches -> rows patches 1")
 
         # Transformer encoder: pre-norm layers and a final LayerNorm, over the
         # P tokens of one pair. All the pairs go through the same weights, so
@@ -303,7 +283,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # It is not pretrained: the checkpoint holds the encoder only
 
         # The tokens of all the pairs and patches, in one vector per window
-        self.flatten_layer = Rearrange("batch ... -> batch (...)")
+        self.flatten_layer = nn.Flatten()
         # Dropout on that vector, before the classifier
         self.head_dropout = nn.Dropout(head_drop_prob)
         # Linear classifier over C * P * D features
@@ -325,8 +305,6 @@ class JungMAE(EEGModuleMixin, nn.Module):
         self,
         x: torch.Tensor,
         return_features: bool = False,
-        ch_mask: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Forward pass of the JungMAE model.
 
@@ -338,11 +316,6 @@ class JungMAE(EEGModuleMixin, nn.Module):
         return_features : bool, default=False
             If True, return the input of ``final_layer`` instead of the
             logits.
-        ch_mask : None
-            Not supported, because ``final_layer`` spans every pair. Mark a
-            missing channel with NaN instead.
-        mask : torch.Tensor of bool, optional
-            Same shape as ``x``. True samples count as missing.
 
         Returns
         -------
@@ -354,10 +327,6 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # Shapes use the symbols of the class docstring: C pairs, P patches of
         # Q samples, tokens of width D.
 
-        # The classifier spans every pair, so a missing channel is NaN, not a
-        # masked one
-        if ch_mask is not None:
-            raise ValueError("JungMAE does not accept ch_mask; use NaN channels.")
         if not return_features:
             check_n_chans(
                 x,
@@ -367,7 +336,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
             )
         # A token per patch of each pair, zero where the patch is invalid:
         # (batch, 2C, n_times) -> (batch, C, P, D)
-        x = self.encode(x, mask)["foundation"]
+        x = self.encode(x)["foundation"]
         # Every token of the window in one vector, pair after pair, the input
         # of the benchmark's flatten_linear head: (batch, C * P * D)
         x = self.flatten_layer(x)
@@ -378,26 +347,21 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # Linear classifier: (batch, n_outputs)
         return self.final_layer(x)
 
-    def encode(
-        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None
-    ) -> dict[str, torch.Tensor]:
+    def encode(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Encode the patches of every HbO/HbR pair.
 
-        The samples hidden by ``mask`` count as missing, and the window is cut
-        into whole patches. A sample is valid when both chromophores are
-        finite, and a patch when enough of its samples are. Each patch of a
-        pair, its invalid samples set to zero, becomes a token with its
-        sinusoidal position; the Transformer encodes the tokens of each pair
-        with the invalid patches hidden as keys, and the invalid tokens are
-        zeroed.
+        The window is cut into whole patches. A sample is valid when both
+        chromophores are finite, and a patch when enough of its samples are.
+        Each patch of a pair, its invalid samples set to zero, becomes a token
+        with its sinusoidal position; the Transformer encodes the tokens of
+        each pair with the invalid patches hidden as keys, and the invalid
+        tokens are zeroed.
 
         Parameters
         ----------
         x : torch.Tensor
             Input tensor with shape (batch_size, n_chans, n_times). NaN marks
             a missing sample.
-        mask : torch.Tensor of bool, optional
-            Same shape as ``x``. True samples count as missing.
 
         Returns
         -------
@@ -415,9 +379,6 @@ class JungMAE(EEGModuleMixin, nn.Module):
                 f"JungMAE needs complete HbO/HbR pairs, got {n_chans} channels."
             )
 
-        # Samples hidden by mask are missing, as NaN: (batch, 2C, n_times)
-        if mask is not None:
-            x = x.masked_fill(mask, float("nan"))
         n_times = x.shape[-1]
         # Whole patches; a partial last one is refused, padded or cropped:
         # (batch, 2C, P * Q)
@@ -464,9 +425,10 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # Transformer over the tokens of each pair, with the same weights for
         # every pair: (batch * C, P, D)
         x = self.encoder(x, src_key_padding_mask=key_padding_mask)
-        # Invalid tokens are zero, so a pair without data gives zero features:
+        # Invalid tokens are zero, so a pair without data gives zero features;
+        # the trailing axis of the mask broadcasts over the D features:
         # (batch * C, P, D)
-        x = x.masked_fill(self.to_token_mask(invalid_tokens), 0.0)
+        x = x.masked_fill(invalid_tokens[..., None], 0.0)
         # The pairs back on their own axis: (batch, C, P, D)
         x = x.unflatten(0, [batch_size, n_pairs])
         return {"foundation": x, "valid": valid_patches}
