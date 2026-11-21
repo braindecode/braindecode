@@ -249,6 +249,10 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.preprocessing.create_windows_from_events` rounds the event durations
+  to samples instead of truncating them, so a duration of 230 samples at 200 Hz no longer
+  becomes 229 samples and loses a window sample (:gh:`1727` by
+  `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.Pratibha2` returns the feature dict, not the logits, when it
   is compiled with ``torch.jit.script`` and called with ``return_features=True``
   (:gh:`1710` by `Bruno Aristimunha`_).
