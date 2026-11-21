@@ -632,7 +632,7 @@ Bug fixes
   are unchanged (:gh:`1686` by `Axel Coiffard-Donaty`_).
 - :meth:`braindecode.datasets.BaseConcatDataset.split` raises a ``ValueError`` when the
   description column given as ``by`` has missing values, instead of silently leaving these
-  recordings out of every split (:gh:`XXXX` by `Axel Coiffard-Donaty`_).
+  recordings out of every split (:gh:`1762` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
