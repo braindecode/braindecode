@@ -190,6 +190,9 @@ API and behavior changes
 - :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
   when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
   removed in 2.2 (:gh:`1701` by `Bruno Aristimunha`_).
+- Eight public names with no user in braindecode, listed in :gh:`1442`, emit a
+  ``FutureWarning`` and will be removed in 2.2, e.g. ``braindecode.util.corr``
+  (:gh:`1734` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
