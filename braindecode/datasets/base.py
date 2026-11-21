@@ -912,7 +912,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
 
     Parameters
     ----------
-    windows : mne.Raw or mne.Epochs (Epochs is outdated)
+    raw : mne.Raw or mne.Epochs (Epochs is outdated)
         Windows obtained through the application of a windower to a ``RawDataset``
         (see `braindecode.datautil.windowers`).
     description : dict | pandas.Series | None

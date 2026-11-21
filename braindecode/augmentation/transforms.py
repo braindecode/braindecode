@@ -725,7 +725,7 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
 class SensorsRotation(_SignalTransform):
     """Interpolates EEG signals over sensors rotated around the desired axis.
 
-    with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
+    with an angle sampled uniformly between ``-max_degrees`` and ``max_degrees``.
 
     Suggested in [1]_
 
@@ -745,9 +745,9 @@ class SensorsRotation(_SignalTransform):
 
     axis : 'x' | 'y' | 'z', optional
         Axis around which to rotate. Defaults to 'z'.
-    max_degree : float, optional
+    max_degrees : float, optional
         Maximum rotation. Rotation angles will be sampled between
-        ``-max_degree`` and ``max_degree``. Defaults to 15 degrees.
+        ``-max_degrees`` and ``max_degrees``. Defaults to 15 degrees.
     spherical_splines : bool, optional
         Whether to use spherical splines for the interpolation or not. When
         ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
@@ -856,7 +856,7 @@ class SensorsRotation(_SignalTransform):
 class SensorsZRotation(SensorsRotation):
     """Interpolates EEG signals over sensors rotated around the Z axis.
 
-    with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
+    with an angle sampled uniformly between ``-max_degrees`` and ``max_degrees``.
 
     Suggested in [1]_
 
@@ -870,9 +870,9 @@ class SensorsZRotation(SensorsRotation):
         the order of channels in the input matrices that will be fed to the
         transform. This channel will be used to compute approximate sensors
         positions from a standard 10-20 montage.
-    max_degree : float, optional
+    max_degrees : float, optional
         Maximum rotation. Rotation angles will be sampled between
-        ``-max_degree`` and ``max_degree``. Defaults to 15 degrees.
+        ``-max_degrees`` and ``max_degrees``. Defaults to 15 degrees.
     spherical_splines : bool, optional
         Whether to use spherical splines for the interpolation or not. When
         ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
@@ -913,7 +913,7 @@ class SensorsZRotation(SensorsRotation):
 class SensorsYRotation(SensorsRotation):
     """Interpolates EEG signals over sensors rotated around the Y axis.
 
-    with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
+    with an angle sampled uniformly between ``-max_degrees`` and ``max_degrees``.
 
     Suggested in [1]_
 
@@ -927,9 +927,9 @@ class SensorsYRotation(SensorsRotation):
         the order of channels in the input matrices that will be fed to the
         transform. This channel will be used to compute approximate sensors
         positions from a standard 10-20 montage.
-    max_degree : float, optional
+    max_degrees : float, optional
         Maximum rotation. Rotation angles will be sampled between
-        ``-max_degree`` and ``max_degree``. Defaults to 15 degrees.
+        ``-max_degrees`` and ``max_degrees``. Defaults to 15 degrees.
     spherical_splines : bool, optional
         Whether to use spherical splines for the interpolation or not. When
         ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
@@ -970,7 +970,7 @@ class SensorsYRotation(SensorsRotation):
 class SensorsXRotation(SensorsRotation):
     """Interpolates EEG signals over sensors rotated around the X axis.
 
-    with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
+    with an angle sampled uniformly between ``-max_degrees`` and ``max_degrees``.
 
     Suggested in [1]_
 
@@ -984,9 +984,9 @@ class SensorsXRotation(SensorsRotation):
         the order of channels in the input matrices that will be fed to the
         transform. This channel will be used to compute approximate sensors
         positions from a standard 10-20 montage.
-    max_degree : float, optional
+    max_degrees : float, optional
         Maximum rotation. Rotation angles will be sampled between
-        ``-max_degree`` and ``max_degree``. Defaults to 15 degrees.
+        ``-max_degrees`` and ``max_degrees``. Defaults to 15 degrees.
     spherical_splines : bool, optional
         Whether to use spherical splines for the interpolation or not. When
         ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
