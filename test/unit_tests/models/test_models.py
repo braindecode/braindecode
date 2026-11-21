@@ -7328,7 +7328,8 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
     pret.load_state_dict(plain.state_dict())
     assert repr(pret).splitlines()[1:] == repr(plain).splitlines()[1:]
     x = torch.randn(2, 10, 60)
-    assert torch.equal(pret(x), plain(x))
+    with torch.no_grad():
+        assert torch.equal(pret(x), plain(x))
 
 
 @pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
