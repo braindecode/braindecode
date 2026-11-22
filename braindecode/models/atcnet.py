@@ -435,9 +435,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self._n_times_step = 1
 
     def forward(
-        self, X: torch.Tensor, return_features: bool = False
+        self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Dimension: (batch_size, C, T)
         x = self.ensuredims(x)
         # Dimension: (batch_size, C, T, 1)
