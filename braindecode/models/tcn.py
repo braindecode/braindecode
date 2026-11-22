@@ -3,6 +3,8 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
+from typing import Dict, Optional, Union
+
 import torch
 from torch import nn
 from torch.nn import init
@@ -93,7 +95,17 @@ class BDTCN(EEGModuleMixin, nn.Module):
         )
         self._min_n_times = self.base_tcn.min_len
 
-    def forward(self, x):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+        if not torch.jit.is_scripting() and return_features:
+            # final_layer pools logits, so read the temporal blocks instead.
+            h = self.base_tcn.ensuredims(x).squeeze(3)  # (batch, n_chans, n_times)
+            h = self.base_tcn.temporal_blocks(h)  # (batch, n_filters, n_times)
+            # Keep the steps the head scores: those with a full receptive field.
+            out_size = 1 + h.shape[2] - self.base_tcn.min_len
+            feat = h[:, :, -out_size:].transpose(1, 2)  # (batch, time, n_filters)
+            return {"features": feat, "cls_token": None}
         x = self.base_tcn(x)
         x = self.final_layer(x)
         return x

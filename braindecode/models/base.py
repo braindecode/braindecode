@@ -456,12 +456,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         import torch
 
         x = torch.randn(1, model.n_chans, model.n_times)
-        # Extract encoder features (consistent dict across all models)
+        # Extract a 2-D (batch, dim) embedding and unpooled encoder features
         out = model(x, return_features=True)
-        features = out["features"]
+        embedding = out["embedding"]  # shape (batch, dim)
+        features = out["features"]    # unpooled representation before final_layer
 
         # Replace the classification head
         model.reset_head(n_outputs=10)
+
+    Note: ``torch.jit.script(model)`` supports ``return_features=True`` only
+    on models whose ``forward`` method declares the flag directly.
 
     **Saving and restoring full configuration:**
 
@@ -498,7 +502,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "_chs_info",
         "_ctor_chs_info",
         "_input_sfreq",
+        "_feature_axis",
         "_min_n_times",
+        "_native_features",
         "_time_axis",
         "_time_input_steps",
         "_time_inputs",
@@ -511,6 +517,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def __init_subclass__(cls, **kwargs):
         license = kwargs.pop("license", "bsd-3-clause")
+        forward = getattr(cls, "forward", None)
+        cls._native_features = (
+            forward is not None
+            and "return_features" in inspect.signature(forward).parameters
+        )
 
         if "reset_head" in cls.__dict__:
             cls.reset_head = _new_head_follows_model(cls.__dict__["reset_head"])
@@ -1590,7 +1601,52 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         had_lazy = need_lazy_geometry and any(
             isinstance(p, torch.nn.UninitializedParameter) for p in self.parameters()
         )
-        out = super().__call__(*args, **kwargs)
+        if self._native_features:
+            wants_features = bool(
+                self._call_arg("return_features", args, kwargs, False)
+            )
+            out = super().__call__(*args, **kwargs)
+            if wants_features and isinstance(out, dict) and "embedding" not in out:
+                out["embedding"] = self._pool_embedding(out["features"])
+        else:
+            wants_features = bool(kwargs.pop("return_features", False))
+            if not wants_features:
+                out = super().__call__(*args, **kwargs)
+            else:
+                name = type(self).__name__
+                final_layer = getattr(self, "final_layer", None)
+                if final_layer is None:
+                    raise ValueError(
+                        f"{name}: final_layer ran 0 times in one forward; "
+                        "return_features needs a native implementation for this model."
+                    )
+                recorded: list[torch.Tensor] = []
+
+                def _capture_head_input(_module, hook_args):
+                    if hook_args and torch.is_tensor(hook_args[0]):
+                        recorded.append(hook_args[0])
+
+                handle = final_layer.register_forward_pre_hook(_capture_head_input)
+                try:
+                    super().__call__(*args, **kwargs)
+                finally:
+                    handle.remove()
+                if len(recorded) != 1:
+                    raise ValueError(
+                        f"{name}: final_layer ran {len(recorded)} times in one forward; "
+                        "return_features needs a native implementation for this model."
+                    )
+                feat = recorded[0]
+                if x is not None and (feat.ndim < 2 or feat.shape[0] != x.shape[0]):
+                    raise ValueError(
+                        f"{name}: the head reads a tensor whose first axis is not the "
+                        "batch; return_features needs a native implementation for this model."
+                    )
+                out = {
+                    "features": feat,
+                    "embedding": self._pool_embedding(feat),
+                    "cls_token": None,
+                }
         if had_lazy and not any(
             isinstance(p, torch.nn.UninitializedParameter) for p in self.parameters()
         ):
@@ -1856,6 +1912,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _channel_target: Optional[list] = None
     _time_axis: ClassVar[Optional[str]] = None
     _channel_axis: ClassVar[Optional[str]] = None
+    _feature_axis: ClassVar[int] = -1
+    _native_features: ClassVar[bool] = False
     _time_inputs: ClassVar[tuple[str, ...]] = ("x",)
     _min_n_times: Optional[int] = None
     _n_times_step = 1
@@ -1875,6 +1933,32 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _adapt_channel_strategy: Optional[str] = None
     _adapt_channel_strategy_kwargs: Optional[dict] = None
     _ctor_chs_info: Optional[list[dict]] = None
+
+    @torch.jit.unused
+    def _head_linear(self) -> Optional[torch.nn.Module]:
+        """Return the last linear or conv layer in ``final_layer``, or None."""
+        final_layer = getattr(self, "final_layer", None)
+        if final_layer is None or isinstance(final_layer, torch.nn.Identity):
+            return None
+        head: Optional[torch.nn.Module] = None
+        for module in final_layer.modules():
+            if isinstance(module, (torch.nn.Linear, torch.nn.Conv1d, torch.nn.Conv2d)):
+                head = module
+        return head
+
+    @torch.jit.unused
+    def _pool_embedding(self, features: torch.Tensor) -> torch.Tensor:
+        """Mean-pool ``features`` over spatial/temporal axes to ``(batch, dim)``."""
+        if features.ndim < 2:
+            raise ValueError(
+                f"{type(self).__name__}: expected at least 2-D features, "
+                f"got shape {tuple(features.shape)}."
+            )
+        if features.ndim == 2:
+            return features
+        if self._feature_axis not in (-1, features.ndim - 1):
+            features = features.movedim(self._feature_axis, -1)
+        return features.mean(dim=tuple(range(1, features.ndim - 1)))
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         own = super().state_dict()

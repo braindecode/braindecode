@@ -1,7 +1,7 @@
 # Authors: Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
-from typing import Optional
+from typing import Dict, Optional, Union
 
 import torch
 from einops.layers.torch import Rearrange
@@ -433,7 +433,9 @@ class ATCNet(EEGModuleMixin, nn.Module):
         )
         self._n_times_step = 1
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, X: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         # Dimension: (batch_size, C, T)
         X = self.ensuredims(X)
         # Dimension: (batch_size, C, T, 1)
@@ -468,6 +470,19 @@ class ATCNet(EEGModuleMixin, nn.Module):
             # Dimension: (batch_size, F2)
 
             sw_concat.append(tcn_feat)
+
+        if not torch.jit.is_scripting() and return_features:
+            if self.concat:
+                features = torch.cat(sw_concat, dim=1)
+                embedding = features
+            else:
+                features = torch.stack(sw_concat, dim=1)
+                embedding = features.mean(dim=1)
+            return {
+                "features": features,
+                "embedding": embedding,
+                "cls_token": None,
+            }
 
         # Outputs of sliding window can be either averaged after being
         # mapped by dense layer or concatenated then mapped by a dense

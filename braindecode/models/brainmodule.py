@@ -294,6 +294,7 @@ class BrainModule(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: input_projection.weight
+    _feature_axis = 1
 
     @torch.jit.unused
     def _check_montage_adaptation(self, chs_info):

@@ -371,16 +371,13 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             token_latents.shape[0], self.num_channels, -1, self.latent_dim
         )
         features = structured_latents.mean(dim=2)
-        logits = self.final_layer(features)
 
-        if return_features:
-            if torch.jit.is_scripting():
-                return logits
+        if not torch.jit.is_scripting() and return_features:
             return {
                 "features": features,
                 "cls_token": None,  # nosec B105
             }
-        return logits
+        return self.final_layer(features)
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new number of outputs."""

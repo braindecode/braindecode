@@ -1,8 +1,11 @@
 """Tests for the unified ``return_features`` and ``reset_head`` API."""
 
+import inspect
+
 import mne
 import pytest
 import torch
+from torch import nn
 
 from braindecode.models import (
     AXON,
@@ -53,7 +56,14 @@ from braindecode.models.util import (
     models_dict,
     models_mandatory_parameters,
 )
-from test.unit_tests.models._fixtures import _architecture_kwargs, _get_signal_params
+from test.unit_tests.models._fixtures import (
+    _TOKENIZERS,
+    PARAMS,
+    _architecture_kwargs,
+    _build_case,
+    _get_signal_params,
+    _materialize,
+)
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
 # Window length per model, from the registry.
@@ -179,8 +189,13 @@ _MODELS = [
     pytest.param(
         CORTEG,
         N_CHANS,
-        {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 2,
-         "n_merge_blocks": 1},
+        {
+            "chs_info": _chs(),
+            "embed_dim": 64,
+            "depth": 2,
+            "num_heads": 2,
+            "n_merge_blocks": 1,
+        },
         True,
         id="CORTEG",
     ),
@@ -278,31 +293,134 @@ _MODELS = [
 ]
 
 
-@pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
-def test_return_features(cls, nc, kw, has_cls):
-    n_times = _N_TIMES[cls.__name__]
-    kw = {**_architecture_kwargs(cls.__name__), **kw}
-    model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
-    model.eval()
+_CLS_TOKEN_MODELS = frozenset(
+    {
+        "CORTEG",
+        "EEGDINO",
+        "EpiNT",
+        "FNIRSPreT",
+        "FNIRST",
+        "Labram",
+        "PopulationTransformer",
+        "STEEGFormer",
+    }
+)
+
+
+@PARAMS
+def test_return_features_on_every_model(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer: use tokenize()")
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
     with torch.no_grad():
-        out = model(torch.randn(BATCH, nc, n_times), return_features=True)
-    assert isinstance(out, dict) and "features" in out and "cls_token" in out
-    assert out["features"].shape[0] == BATCH
-    if has_cls:
-        assert isinstance(out["cls_token"], torch.Tensor)
+        default_out = model(x)
+        assert isinstance(default_out, (torch.Tensor, tuple))
+        feats = model(x, return_features=True)
+    assert isinstance(feats, dict)
+    assert {"features", "embedding", "cls_token"} <= set(feats)
+    assert feats["features"].shape[0] == x.shape[0]
+    assert feats["embedding"].ndim == 2 and feats["embedding"].shape[0] == x.shape[0]
+    assert torch.isfinite(feats["embedding"]).all()
+    if model_name in _CLS_TOKEN_MODELS:
+        assert isinstance(feats["cls_token"], torch.Tensor)
     else:
-        assert out["cls_token"] is None
+        assert feats["cls_token"] is None
 
 
-@pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
-def test_default_forward_returns_tensor(cls, nc, kw, has_cls):
-    n_times = _N_TIMES[cls.__name__]
-    kw = {**_architecture_kwargs(cls.__name__), **kw}
-    model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
-    model.eval()
+@PARAMS
+def test_embedding_dim_invariant_across_lengths_and_channels(
+    model_name, required_params, signal_params
+):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    C, T = x.shape[1:]
     with torch.no_grad():
-        out = model(torch.randn(BATCH, nc, n_times))
-    assert isinstance(out, torch.Tensor)
+        emb = model(x, return_features=True)["embedding"]
+        if model._time_axis in {"free", "dense"}:
+            emb_2t = model(torch.randn(2, C, 2 * T), return_features=True)["embedding"]
+            assert emb_2t.shape == emb.shape
+        if (
+            model._channel_axis == "free"
+            and "ch_mask" in inspect.signature(type(model).forward).parameters
+        ):
+            emb_c = model(torch.randn(2, C + 1, T), return_features=True)["embedding"]
+            assert emb_c.shape == emb.shape
+    emb_shape = tuple(emb.shape)
+    del model, emb
+    if model_name != "SignalJEPA":
+        sp_alt = _get_signal_params(signal_params, required_params)
+        alt_n_outputs = int(sp_alt.get("n_outputs", 2)) + 3
+        sp_alt["n_outputs"] = alt_n_outputs
+        model_alt = models_dict[model_name](**sp_alt).eval()
+        _materialize(model_alt, x)
+        with torch.no_grad():
+            emb_alt = model_alt(x, return_features=True)["embedding"]
+        assert tuple(emb_alt.shape) == emb_shape
+        assert emb_alt.shape[1] != alt_n_outputs
+
+
+class _ToyHead(EEGModuleMixin, nn.Module):
+    """Model whose forward calls ``final_layer`` ``n_calls`` times on ``x``."""
+
+    _time_axis = "free"
+    _channel_axis = "fixed"
+
+    def __init__(self, n_chans=2, n_outputs=2, n_times=10, n_calls=1, permute=False):
+        super().__init__(n_chans=n_chans, n_outputs=n_outputs, n_times=n_times)
+        self.n_calls = n_calls
+        self.permute = permute
+        self.final_layer = nn.Linear(n_chans if permute else n_times, n_outputs)
+
+    def forward(self, x):
+        if self.permute:  # time first: (n_times, batch, n_chans)
+            return self.final_layer(x.permute(2, 0, 1)).mean(dim=0)
+        out = x.new_zeros(x.shape[0], self.n_outputs)
+        for _ in range(self.n_calls):
+            out = out + self.final_layer(x.mean(dim=1))
+        return out
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"n_calls": 2}, "final_layer ran 2 times"),  # Review Focus 4
+        ({"n_calls": 0}, "final_layer ran 0 times"),
+        ({"permute": True}, "first axis is not the batch"),
+    ],
+)
+def test_feature_fallback_refuses_heads_it_cannot_read(kwargs, match):
+    model = _ToyHead(**kwargs).eval()
+    with pytest.raises(ValueError, match=match):
+        model(torch.randn(1, 2, 10), return_features=True)
+    assert not model.final_layer._forward_pre_hooks  # hook removed after a refusal
+
+
+def test_head_linear_finds_the_last_linear_or_conv():
+    model = _ToyHead()
+    lin, conv = nn.Linear(4, 2), nn.Conv1d(4, 2, 1)
+    model.final_layer = nn.Sequential(nn.Flatten(), lin)
+    assert model._head_linear() is lin
+    model.final_layer = nn.Sequential(conv, nn.Identity())
+    assert model._head_linear() is conv
+    model.final_layer = nn.Identity()
+    assert model._head_linear() is None
+
+
+def test_return_features_with_channel_strategy():
+    bendr = BENDR(
+        n_chans=N_CHANS,
+        n_times=N_TIMES,
+        n_outputs=N_OUTPUTS,
+        chs_info=_chs(),
+        channel_strategy="spline",
+    ).eval()
+    with torch.no_grad():
+        out = bendr(torch.randn(BATCH, N_CHANS, N_TIMES), return_features=True)
+    assert out["embedding"].shape[0] == BATCH and out["embedding"].ndim == 2
+    assert isinstance(bendr._head_linear(), nn.Linear)
 
 
 # -- Legacy backward compat --

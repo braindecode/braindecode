@@ -181,6 +181,7 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "dense"
     _channel_axis = "fixed"  # fixed: encoder.0.conv.weight is sized by n_chans
+    _feature_axis = 1
 
     def __init__(
         self,

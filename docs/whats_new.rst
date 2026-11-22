@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Every registered model takes ``model(x, return_features=True)``, returning the unpooled ``"features"``
+  before ``final_layer``, ``"cls_token"`` and a ``(batch, dim)`` ``"embedding"`` (``features`` averaged over
+  token, time and spatial axes); TorchScript keeps the flag only where ``forward`` declares it (`Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
   with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
   DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).

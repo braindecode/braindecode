@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -407,7 +408,12 @@ class VEMG2Pose(
         )
         self.decoder.apply(_init_weights)
 
-    def forward(self, x: torch.Tensor, y0: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        y0: torch.Tensor | None = None,
+        return_features: bool = False,
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Decode hand pose from raw EMG.
 
         Parameters
@@ -418,9 +424,19 @@ class VEMG2Pose(
             Ground-truth initial pose (Tracking mode). Falls back to zeros
             (Regression mode) when omitted, which is how the released
             ``regression`` checkpoint was trained.
+        return_features : bool, default=False
+            If ``True``, return a dict with ``"features"``, ``"embedding"``
+            and ``"cls_token"`` instead of decoded trajectories.
         """
         batch_size, _, n_times = x.shape
         features = self.encoder(x)
+        if not torch.jit.is_scripting() and return_features:
+            feat = features.transpose(1, 2).contiguous()
+            return {
+                "features": feat,
+                "embedding": features.mean(dim=-1),
+                "cls_token": None,
+            }
 
         # Predictions span the input past the left context, unrolled at
         # ``rollout_rate``.

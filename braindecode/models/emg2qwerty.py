@@ -428,8 +428,10 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         # it, so the default emissions-only path skips the extra transpose
         # + contiguous copy on every forward.
         if return_features:
+            features = encoded.transpose(0, 1).contiguous()
             return {
-                "features": encoded.transpose(0, 1).contiguous(),
+                "features": features,
+                "embedding": features.mean(dim=1),
                 "cls_token": None,
             }
         emissions = self.final_layer(encoded)

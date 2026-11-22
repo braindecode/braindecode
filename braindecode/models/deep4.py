@@ -94,6 +94,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
     _time_axis = "dense"
     _channel_axis = "fixed"  # fixed: conv_time_spat.conv_spat.weight
+    _feature_axis = 1
 
     def __init__(
         self,

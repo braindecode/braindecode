@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from math import log2
+from typing import Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -264,7 +265,9 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             )
         self.graph_initialized = True
 
-    def forward(self, x) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Parameters
         ----------
@@ -308,6 +311,14 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
                 # Pooling merges the node pairs of the coarsening tree.
                 x = F.max_pool1d(x, pool_size, ceil_mode=True)
             x = x.transpose(1, 2)
+
+        if not torch.jit.is_scripting() and return_features:
+            features = x.reshape(batch_size, n_times, -1, self.n_features[-1])
+            return {
+                "features": features,
+                "embedding": features.mean(dim=(1, 2)),
+                "cls_token": None,
+            }
 
         x = self.final_layer(self.dropout(x.flatten(1)))
         # Average the per-sample logits over time.

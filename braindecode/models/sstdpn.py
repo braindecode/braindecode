@@ -4,7 +4,7 @@
 #
 # License: BSD (3-clause)
 
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -312,8 +312,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         nn.init.normal_(self.proto_cpt, mean=0.0, std=self.proto_cpt_std)
 
     def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[
+        torch.Tensor,
+        Tuple[torch.Tensor, torch.Tensor],
+        Dict[str, Optional[torch.Tensor]],
+    ]:
         """
         Classification is based on the dot product similarity with
         Inter-class Separation Prototypes (:attr:`SSTDPN.proto_sep`).
@@ -324,6 +328,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             Input tensor. Supported shapes:
               - (batch, n_chans, n_times)
+        return_features : bool, default=False
+            If ``True``, return a dict with ``"features"``, ``"embedding"``
+            and ``"cls_token"`` before prototype classification.
 
         Returns
         -------
@@ -334,6 +341,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         """
 
         features = self.encoder(x)  # (b, feat_dim)
+        if not torch.jit.is_scripting() and return_features:
+            return {
+                "features": features,
+                "embedding": features,
+                "cls_token": None,
+            }
         # Project each class prototype before computing its dot-product gradient.
         # ``proto_sep`` is (n_outputs, feat_dim): renorm along dim=0 bounds each
         # class row (``||s_i|| <= S``). The in-place copy into a detached alias
