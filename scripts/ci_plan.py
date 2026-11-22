@@ -1076,6 +1076,7 @@ def compute_plan(
                     durations_map=durations,
                 )
             impacted_tests.add("test/unit_tests/models/test_util.py")
+            impacted_tests.add("test/unit_tests/models/test_model_rules.py")
             impacted_tests.add("test/unit_tests/test_dependencies.py")
             if util_models:
                 impacted_models.update(util_models)
