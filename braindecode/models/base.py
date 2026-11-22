@@ -1792,55 +1792,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             cls._fill_legacy_defaults(model_kwargs)
             resolve_type_kwargs(cls, model_kwargs)
 
-            # config.json gives n_outputs (to detect a head swap) and the saved
-            # time geometry, for local directories and Hub repo IDs alike.
+            # The Hub mixin read config.json (local or Hub) and passed it as
+            # ``config``: it gives n_outputs (to detect a head swap) and the
+            # saved time geometry.
             is_local = Path(model_id).is_dir()
-            saved_config: dict[str, Any] = dict(config) if config is not None else {}
-            if config is None:
-                config_file: Optional[Union[str, Path]] = None
-                if is_local:
-                    candidate = Path(model_id) / "config.json"
-                    if candidate.is_file():
-                        config_file = candidate
-                else:
-                    cached_cfg = (
-                        None
-                        if force_download
-                        else huggingface_hub.try_to_load_from_cache(
-                            model_id,
-                            "config.json",
-                            cache_dir=cache_dir,
-                            revision=revision,
-                        )
-                    )
-                    if isinstance(cached_cfg, str):
-                        config_file = cached_cfg
-                    elif (
-                        not local_files_only
-                        and not getattr(
-                            huggingface_hub.constants, "HF_HUB_OFFLINE", False
-                        )
-                        and huggingface_hub.file_exists(
-                            model_id,
-                            "config.json",
-                            revision=revision,
-                            token=token,
-                        )
-                    ):
-                        config_file = huggingface_hub.hf_hub_download(
-                            repo_id=model_id,
-                            filename="config.json",
-                            revision=revision,
-                            cache_dir=cache_dir,
-                            force_download=force_download,
-                            token=token,
-                            local_files_only=local_files_only,
-                        )
-                if config_file is not None:
-                    with open(config_file, "r") as f:
-                        loaded_cfg = json.load(f)
-                    if isinstance(loaded_cfg, dict):
-                        saved_config = loaded_cfg
+            saved_config = config or {}
 
             # A save spells its window with any two of these three quantities.
             # When only one is known, complete the pair from the save, preferring
