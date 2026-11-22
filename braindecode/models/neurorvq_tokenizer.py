@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -398,8 +398,8 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        Tokenization for Generative Foundation Models. https://arxiv.org/abs/2510.13068
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: spatial_embedding_ix
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: spatial_embedding_ix is sized by n_chans
 
     def __init__(
         self,
@@ -554,6 +554,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         )
         self.final_layer = nn.Identity()
         self._init_parameters()
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else patch_size
         self._n_times_step = patch_size
 
     def _init_parameters(self) -> None:
@@ -570,23 +571,27 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                     nn.init.trunc_normal_(module.weight, std=0.02)
                     nn.init.zeros_(module.bias)
 
-    def _embedding_indices(self, device: torch.device):
+    def _embedding_indices(self, device: torch.device, n_patches: Optional[int] = None):
+        num_patches = self.num_patches if n_patches is None else n_patches
+        if num_patches > self.max_patches:
+            raise ValueError(
+                f"Input supports at most {self.max_patches} patches "
+                f"(got {num_patches})."
+            )
         time = torch.arange(
-            self.max_patches - self.num_patches,
+            self.max_patches - num_patches,
             self.max_patches,
             device=device,
         ).repeat(self.spatial_embedding_ix.numel())
-        spatial = self.spatial_embedding_ix.to(device).repeat_interleave(
-            self.num_patches
-        )
+        spatial = self.spatial_embedding_ix.to(device).repeat_interleave(num_patches)
         return time.unsqueeze(0), spatial.unsqueeze(0)
 
     def _patches(self, x: Tensor) -> Tensor:
         """Validate ``(batch, n_chans, n_times)`` input and split it into patches."""
-        if x.ndim != 3 or x.shape[1] != self.n_chans or x.shape[2] != self.n_times:
+        if x.ndim != 3 or x.shape[1] != self.n_chans:
             raise ValueError(
-                "Expected input shape (batch, {}, {}), got {}.".format(
-                    self.n_chans, self.n_times, list(x.shape)
+                "Expected input shape (batch, {}, n_times), got {}.".format(
+                    self.n_chans, list(x.shape)
                 )
             )
         if self._drops_channels:
@@ -636,7 +641,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         k-means; load pretrained weights first for pretrained codes.
         """
         patches = self._patches(x)
-        time, spatial = self._embedding_indices(x.device)
+        time, spatial = self._embedding_indices(x.device, patches.shape[2])
         scale_codes = []
         for i, latent in enumerate(
             self._branch_latents(patches, time, spatial), start=1
@@ -654,7 +659,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def forward(self, x: Tensor):
         """Return the per-window z-scored target and reconstruction."""
         patches = self._patches(x)
-        time, spatial = self._embedding_indices(x.device)
+        time, spatial = self._embedding_indices(x.device, patches.shape[2])
         spectrum = torch.fft.fft(spectral_input(patches), dim=-1)
         amplitude = torch.log1p(spectrum.abs()).to(patches)
         amplitude, amp_mean, amp_std = self._standardize(amplitude)
@@ -687,7 +692,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         reconstructed_std, _, _ = self._standardize(
             reconstructed.reshape(x.shape[0], -1, 1, self.patch_size).contiguous()
         )
-        n_tokens = patches.shape[1] * self.num_patches
+        n_tokens = patches.shape[1] * patches.shape[2]
         return (
             target_std.reshape(x.shape[0], n_tokens, -1),
             reconstructed_std.reshape(x.shape[0], n_tokens, -1),
