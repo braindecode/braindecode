@@ -2013,16 +2013,14 @@ def test_sleepfm_masked_training_with_autocast(cls):
     assert not torch.equal(before, model.final_layer.weight)
 
 
-def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
+def test_sleepfm_scripted_encode_matches_eager_with_ch_mask():
     model = _small(SleepFM).eval()
     x = torch.randn(2, 3, 1280)
-    missing = torch.tensor([[False, True, False], [False, True, True]])
-    with torch.no_grad(), pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
-        pooled, tokens = model.encode(x, missing)
-    for net in (model, torch.jit.script(model)):
-        expected = net.encode(x, ch_mask=~missing)
-        torch.testing.assert_close(pooled, expected[0])
-        torch.testing.assert_close(tokens, expected[1])
+    real = torch.tensor([[True, False, True], [True, False, False]])
+    with torch.no_grad():
+        expected = model.encode(x, ch_mask=real)
+        scripted = torch.jit.script(model).encode(x, ch_mask=real)
+    torch.testing.assert_close(scripted, expected)
 
 
 @pytest.mark.parametrize(
@@ -2046,19 +2044,6 @@ def test_sleepfm_padded_sample_gives_its_unpadded_output(cls, n_real):
     ch_mask = (torch.arange(3) < n_real).expand(2, 3)
     with torch.no_grad():
         torch.testing.assert_close(padded(x_padded, ch_mask=ch_mask), unpadded(x))
-
-
-@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
-def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
-    model = _small(cls).eval()
-    x = torch.randn(2, 3, 1280)
-    missing = torch.tensor([[False, True, False], [False, False, False]])
-    with torch.no_grad():
-        with pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
-            old = model(x, channel_mask=missing)
-        torch.testing.assert_close(old, model(x, ch_mask=~missing))
-        with pytest.raises(ValueError, match="ch_mask only"):
-            model(x, ch_mask=~missing, channel_mask=missing)
 
 
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])

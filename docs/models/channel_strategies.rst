@@ -268,10 +268,8 @@ Mask and position arguments
      - shape of ``compute_spectrogram``
      - ``True`` bins are visible to the encoder. TFMTokenizer.
 
-The old keywords ``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor`` and LUNA's
-``channel_locations`` still work with a ``FutureWarning`` until 2.2. SleepFM's
-``channel_mask`` is the inverse of ``ch_mask`` (``True`` for missing channels) and is
-deprecated the same way.
+The old keywords ``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor``, LUNA's
+``channel_locations`` and SleepFM's ``channel_mask`` are removed.
 
 Saved state and TorchScript
 ===========================

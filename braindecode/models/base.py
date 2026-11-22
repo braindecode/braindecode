@@ -180,16 +180,6 @@ def _forward_param_names(cls: type) -> tuple[str, ...]:
     )
 
 
-# Old forward keywords, accepted with a FutureWarning until the next minor release.
-_FORWARD_ALIASES: dict[str, str] = {
-    "X": "x",
-    "input": "x",
-    "inputs": "x",
-    "eeg": "x",
-    "input_tensor": "x",
-    "channel_locations": "pos",
-}
-
 _HF_INSTALL_HINT = (
     "requires the `huggingface_hub` package. "
     "Install with: pip install 'braindecode[hub]'"
@@ -1013,24 +1003,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         return args, kwargs
 
     def __call__(self, *args, **kwargs):
-        for old in kwargs.keys() & _FORWARD_ALIASES.keys():
-            new, names = _FORWARD_ALIASES[old], _forward_param_names(type(self))
-            if new not in names or old in names:
-                continue
-            name = type(self).__name__
-            if new in kwargs:
-                raise TypeError(
-                    f"{name}.forward() got multiple values for argument {new!r} "
-                    f"(via deprecated alias {old!r})."
-                )
-            kwargs[new] = kwargs.pop(old)
-            if not torch.jit.is_scripting() and not torch.compiler.is_compiling():
-                warnings.warn(
-                    f"{name}.forward: the keyword {old!r} is now {new!r}; the old "
-                    "name stops working in the next minor release.",
-                    FutureWarning,
-                    stacklevel=2,
-                )
         args, kwargs = self._prepare_inputs(args, kwargs)
         need_chans = (
             getattr(self, "_channel_axis", None) == "fixed"

@@ -206,43 +206,6 @@ def test_forward_takes_x_first(model_name, required_params, signal_params):
     assert first == "x", f"{model_name}.forward takes {first!r} instead of 'x'"
 
 
-@pytest.mark.parametrize(
-    "model_name,old,new",
-    [
-        ("EEGNet", "input", "x"),
-        ("ATCNet", "X", "x"),
-        ("REVE", "eeg", "x"),
-        ("CodeBrain", "inputs", "x"),
-        ("ZUNA", "input_tensor", "x"),
-        ("SleepFM", "channel_mask", "ch_mask"),
-        ("LUNA", "channel_locations", "pos"),
-    ],
-)
-def test_old_forward_keyword_still_works(model_name, old, new):
-    _, req, sp = next(p for p in models_mandatory_parameters if p[0] == model_name)
-    model, x = _build_case(model_name, req, sp)
-    _materialize(model, x)
-    if new == "x":
-        old_kw, new_kw = {old: x}, {new: x}
-    elif new == "ch_mask":
-        mask = torch.tensor([[True] * (x.shape[1] - 1) + [False], [True] * x.shape[1]])
-        # SleepFM's legacy channel_mask was True for missing channels.
-        old_kw, new_kw = {old: ~mask}, {new: mask}
-    else:
-        pos = torch.randn(2, x.shape[1], 3)
-        old_kw, new_kw = {old: pos}, {new: pos}
-    args = () if new == "x" else (x,)
-    # SleepFM keeps its own inverting deprecation; the others go through
-    # _FORWARD_ALIASES ("'X' is now 'x'").
-    with torch.no_grad(), pytest.warns(FutureWarning, match=rf"{old}.*{new}"):
-        out_old = model(*args, **old_kw)
-    with torch.no_grad():
-        torch.testing.assert_close(out_old, model(*args, **new_kw))
-    if new == "x":
-        with pytest.raises(TypeError, match="via deprecated alias"):
-            model(**new_kw, **old_kw)
-
-
 def test_jung_mae_accepts_ch_mask_from_pad_channels_collate():
     from braindecode.models import JungMAE
 
