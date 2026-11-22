@@ -12,6 +12,7 @@ from braindecode.models import (
     BaRISTA,
     Brant,
     CSBrain,
+    DeepSOZ,
     DuIN,
     NeuroRVQ,
     NeuroRVQTokenizer,
@@ -45,6 +46,8 @@ _MODELS = {
                         strides=(5, 1), n_layers=1, n_heads=2, head_dim=8, ffn_dim=16, head_hidden_dim=8),
              20, 20, 60, 70),
     "CSBrain": (CSBrain, dict(n_chans=3, n_outputs=2, n_layer=1, nhead=2), 200, 200, 400, 450),
+    "DeepSOZ": (DeepSOZ, dict(n_chans=3, n_outputs=2, patch_size=16, num_heads=2, dim_feedforward=16,
+                              lstm_hidden_size=8), 16, 16, 64, 70),
     # Keyed "REVE-overlap", not "REVE": conftest marks the "REVE" cases slow; this one is tiny.
     "REVE-overlap": (REVE, dict(chs_info=[{"ch_name": "Cz"}, {"ch_name": "Pz"}], n_outputs=2, embed_dim=32,
                                 depth=1, heads=2, head_dim=8, patch_size=20, patch_overlap=4), 20, 16, 68, 75),

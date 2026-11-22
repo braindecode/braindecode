@@ -34,7 +34,7 @@ all_models_dict = dict(models_dict)
 # until their task-specific output/state contracts are covered here.
 _HF_DENSE_POSE_MODELS = {"NeuroPose", "SensingDynamics", "VEMG2Pose"}
 _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS = set(non_classification_models).difference(
-    _HF_DENSE_POSE_MODELS
+    _HF_DENSE_POSE_MODELS | {"DeepSOZ"}  # DeepSOZ: per-second logits, also a tensor
 )
 
 # Skip all tests in this file if huggingface_hub is not installed

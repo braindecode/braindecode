@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from .dance import DANCE
     from .deep4 import Deep4Net
     from .deepsleepnet import DeepSleepNet
+    from .deepsoz import DeepSOZ
     from .dgcnn import DGCNN
     from .diver1 import DIVER1
     from .duin import DuIN

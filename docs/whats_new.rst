@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
+  with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
+  DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).
 - Linearize the landing-page architecture and modality bar charts, add live
   dark/light theme synchronization to the Plotly models visualization, align and
   format the interactive models summary DataTable, and resolve WCAG 2.2 AA
