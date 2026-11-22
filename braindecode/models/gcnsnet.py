@@ -110,10 +110,6 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self.graph_initialized = False
         self.register_buffer("permutation", None)
         self.laplacians = nn.ModuleList([_LaplacianModule() for _ in n_features])
-        if adjacency is not None:
-            self._initialize_graph(
-                torch.as_tensor(adjacency, dtype=torch.float32).clone()
-            )
 
         in_features = [1, *n_features[:-1]]  # one scalar per node at the input
         self.graph_convs = nn.ModuleList(
@@ -125,6 +121,13 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self.activation = activation()
         self.dropout = nn.Dropout(drop_prob)
         self.final_layer = nn.LazyLinear(self.n_outputs)
+
+        # Initialize after biases and final_layer exist so they materialize eagerly
+        # alongside the graph when adjacency is supplied at construction.
+        if adjacency is not None:
+            self._initialize_graph(
+                torch.as_tensor(adjacency, dtype=torch.float32).clone()
+            )
 
         self.register_load_state_dict_pre_hook(self._prepare_graph_state)
         self._min_n_times = 1
@@ -214,6 +217,30 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             )
             laplacian_module.matrix = normalized - identity
         self.graph_initialized = True
+        with torch.no_grad():
+            for bias_module, laplacian_module, n_feat in zip(
+                self.biases, self.laplacians, self.n_features
+            ):
+                if bias_module.has_uninitialized_params():
+                    bias_module(
+                        torch.empty(
+                            0,
+                            len(laplacian_module.matrix),
+                            n_feat,
+                            device=adjacency.device,
+                            dtype=adjacency.dtype,
+                        )
+                    )
+            if isinstance(self.final_layer, nn.LazyLinear):
+                n_nodes_out = -(-len(self.laplacians[-1].matrix) // self.pool_sizes[-1])
+                self.final_layer(
+                    torch.empty(
+                        0,
+                        n_nodes_out * self.n_features[-1],
+                        device=adjacency.device,
+                        dtype=adjacency.dtype,
+                    )
+                )
 
     def _prepare_graph_state(self, module, state_dict, prefix, *_):
         """Allocate the graph buffers a checkpoint holds before loading it."""

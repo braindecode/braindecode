@@ -37,6 +37,7 @@ from braindecode.models.util import (
 )
 from test.unit_tests.models._fixtures import (
     _build_case,
+    _get_signal_params,
     _materialize,
     _tensor_leaves,
 )
@@ -763,3 +764,85 @@ def _check_mapping_targets(name, model):
         f"{name}.mapping points at keys that are not in state_dict: {missing}"
     )
     assert len(targets) == len(set(targets)), f"{name}.mapping repeats a target"
+
+
+@pytest.mark.parametrize(
+    "model_name,required_params,signal_params",
+    models_mandatory_parameters,
+    ids=[case[0] for case in models_mandatory_parameters],
+)
+def test_no_lazy_weights_once_the_shape_is_known(
+    model_name, required_params, signal_params
+):
+    """Once all signal/graph shapes are supplied at construction, no lazy weights remain."""
+    sp = _get_signal_params(signal_params)
+    if model_name == "GCNsNet":
+        n_chans = sp["n_chans"]
+        sp["adjacency"] = torch.ones(n_chans, n_chans) - torch.eye(n_chans)
+    model = all_models_dict[model_name](**sp).eval()
+    lazy = [
+        name
+        for name, param in model.named_parameters()
+        if isinstance(param, nn.UninitializedParameter)
+    ]
+    assert lazy == []
+
+
+def test_lazy_weights_remain_only_when_shape_is_unknown():
+    """CBraMod, CSBrain, and GCNsNet keep lazy heads only when geometry is omitted."""
+    cbramod_cls = all_models_dict["CBraMod"]
+    csbrain_cls = all_models_dict["CSBrain"]
+    gcnsnet_cls = all_models_dict["GCNsNet"]
+
+    assert isinstance(cbramod_cls(n_outputs=2).final_layer[1], nn.LazyLinear)
+    assert isinstance(csbrain_cls(n_outputs=2).final_layer[1], nn.LazyLinear)
+
+    eager_cb = cbramod_cls(
+        chs_info=[{"ch_name": f"C{i + 1}", "kind": "eeg"} for i in range(3)],
+        input_window_seconds=2.0,
+        sfreq=200.0,
+        n_outputs=2,
+        n_layer=1,
+    )
+    assert type(eager_cb.final_layer[1]) is nn.Linear
+
+    eager_cs = csbrain_cls(
+        chs_info=[{"ch_name": f"C{i + 1}", "kind": "eeg"} for i in range(3)],
+        input_window_seconds=2.0,
+        sfreq=200.0,
+        n_outputs=2,
+        n_layer=1,
+    )
+    assert all(
+        type(layer) is nn.Linear
+        for layer in eager_cs.final_layer
+        if isinstance(layer, nn.Linear)
+    )
+
+    lazy_gcn = gcnsnet_cls(n_chans=4, n_outputs=2, n_times=64)
+    assert any(
+        isinstance(p, nn.UninitializedParameter) for p in lazy_gcn.parameters()
+    )
+    assert isinstance(lazy_gcn.final_layer, nn.LazyLinear)
+    lazy_gcn.fit_graph(torch.randn(3, 4, 64))
+    assert not any(
+        isinstance(p, nn.UninitializedParameter) for p in lazy_gcn.parameters()
+    )
+    assert type(lazy_gcn.final_layer) is nn.Linear
+
+    adj = torch.ones(4, 4) - torch.eye(4)
+    eager_gcn = gcnsnet_cls(n_chans=4, n_outputs=2, n_times=64, adjacency=adj).eval()
+    assert type(eager_gcn.final_layer) is nn.Linear
+    scripted = torch.jit.script(eager_gcn)
+    x = torch.randn(2, 4, 64)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(x), eager_gcn(x))
+
+    # Coarsened node count depends on adjacency edges, not n_chans alone.
+    conn = torch.ones(6, 6) - torch.eye(6)
+    sparse = torch.zeros(6, 6)
+    sparse[0, 1] = sparse[1, 0] = 1.0
+    gcn_conn = gcnsnet_cls(n_chans=6, n_outputs=2, n_times=64, adjacency=conn)
+    gcn_sparse = gcnsnet_cls(n_chans=6, n_outputs=2, n_times=64, adjacency=sparse)
+    assert gcn_conn.biases[0].bias.shape[1] != gcn_sparse.biases[0].bias.shape[1]
+    assert gcn_conn.final_layer.in_features != gcn_sparse.final_layer.in_features
