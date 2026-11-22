@@ -137,6 +137,9 @@ net = EEGClassifier(
     module__final_conv_length="auto",
     train_split=ValidSplit(0.2),
     # To train a neural network you need validation split, here, we use 20%.
+    batch_size=16,
+    # The 80 training examples are fewer than the default batch size (128); as
+    # incomplete batches are dropped, a smaller batch size is needed to train.
 )
 
 ######################################################################
@@ -160,6 +163,71 @@ print(f"Inferred signal properties:\n{sig_props}")
 # we can train it by simply calling the ``fit`` method:
 
 net.fit(epochs, y)
+
+######################################################################
+# ``net.history`` keeps the loss of each epoch on the training data and on
+# the 20 % validation split, and the validation accuracy. Our labels are
+# random, so the network has nothing to learn: the validation accuracy
+# stays around the 25 % chance level of four balanced classes.
+
+import matplotlib.pyplot as plt
+
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+
+plt.rcdefaults()  # importing MOABB applies seaborn's "whitegrid" style globally
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+history_epochs = net.history[:, "epoch"]
+fig, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(8, 3.2), layout="constrained")
+for split, color in [("Train", GREY), ("Valid", BLUE)]:
+    loss = net.history[:, f"{split.lower()}_loss"]
+    ax_loss.plot(history_epochs, loss, color=color, lw=1.8)
+    ax_loss.annotate(
+        split,
+        xy=(history_epochs[-1], loss[-1]),
+        xytext=(4, 0),
+        textcoords="offset points",
+        color=color,
+        va="center",
+        fontweight="bold",
+    )
+ax_acc.plot(history_epochs, 100 * np.array(net.history[:, "valid_acc"]), color=BLUE)
+ax_acc.axhline(25, color=GREY, ls="--", lw=0.9)
+ax_acc.text(
+    history_epochs[-1],
+    23,
+    "Chance (25%)",
+    color=GREY,
+    fontsize=8.5,
+    ha="right",
+    va="top",
+)
+ax_acc.set_ylim(0, 100)
+ax_acc.set_yticks([0, 25, 50, 75, 100])
+for ax, letter, title, ylabel in [
+    (ax_loss, "A", "Cross-entropy loss", "Loss"),
+    (ax_acc, "B", "Validation accuracy", "Accuracy (%)"),
+]:
+    ax.set_title(f"{letter}  {title}", loc="left", fontweight="bold", color=INK)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel(ylabel)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(4, integer=True))
 
 ######################################################################
 # The pre-trained model is accessible via the ``module_`` attribute:

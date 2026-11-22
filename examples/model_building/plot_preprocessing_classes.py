@@ -12,7 +12,9 @@ convenient and type-safe way to preprocess EEG data.
 #
 # License: BSD (3-clause)
 
+import matplotlib.pyplot as plt
 import mne
+import numpy as np
 
 from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing import (
@@ -175,6 +177,9 @@ print(
     f"{len(dataset_complete.datasets[0].raw.ch_names)} channels"
 )
 
+# Keep an untouched copy of the first run to compare with after preprocessing
+raw_before = dataset_complete.datasets[0].raw.copy().load_data()
+
 preprocess(dataset_complete, complete_pipeline)
 
 print(
@@ -184,6 +189,87 @@ print(
 )
 
 print("\nPreprocessing complete!")
+
+###############################################################################
+# Before and after the pipeline
+# -----------------------------
+# Panel A shows two seconds of channel C3 before the pipeline, after it, and
+# the Hilbert envelope computed in the first part of this example. Panel B
+# compares the power spectra up to 50 Hz, the highest frequency left at
+# the new 100 Hz sampling rate, averaged over the EEG channels. The shaded
+# band is the 4-30 Hz pass band of the filter.
+
+BLUE, VERMILION, INK = "#0072B2", "#D55E00", "#14181F"
+GREY, LIGHT_GREY = "#7F7F7F", "#B0B0B0"
+plt.rcdefaults()  # importing MOABB applies seaborn's "whitegrid" style globally
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+raw_after = dataset_complete.datasets[0].raw
+raw_envelope = dataset.datasets[0].raw
+t_start, t_stop = 10.0, 12.0  # seconds into the run
+
+
+def segment_uv(raw, channel="C3"):
+    """Return times and microvolt values of one channel, t_start to t_stop."""
+    data, times = (
+        raw.copy()
+        .pick([channel])
+        .get_data(tmin=t_start, tmax=t_stop, return_times=True)
+    )
+    return times, 1e6 * data[0]
+
+
+fig, (ax_time, ax_psd) = plt.subplots(
+    1, 2, figsize=(9, 3.4), gridspec_kw={"width_ratios": [1.4, 1]}
+)
+times, before = segment_uv(raw_before)
+ax_time.plot(times, before - before.mean(), color=LIGHT_GREY, lw=0.8)
+for raw, color in [(raw_after, BLUE), (raw_envelope, VERMILION)]:
+    ax_time.plot(*segment_uv(raw), color=color, lw=1.2)
+for text, y, color in [
+    ("Raw (mean removed)", 0.98, GREY),
+    ("After pipeline (4-30 Hz, 100 Hz)", 0.90, BLUE),
+    ("Hilbert envelope", 0.82, VERMILION),
+]:
+    ax_time.text(0.01, y, text, color=color, transform=ax_time.transAxes, va="top")
+y_low, y_high = ax_time.get_ylim()
+ax_time.set_ylim(y_low, y_high + 0.45 * (y_high - y_low))  # room for the names
+ax_time.xaxis.set_major_locator(plt.MaxNLocator(5))
+ax_time.set_xlabel("Time (s)")
+ax_time.set_ylabel("C3 amplitude (µV)")
+ax_time.set_title("A  Channel C3", loc="left", fontweight="bold", color=INK)
+
+for raw, color, label in [
+    (raw_before, GREY, "Raw"),
+    (raw_after, BLUE, "After pipeline"),
+]:
+    psd = raw.compute_psd(method="welch", picks="eeg", fmax=50, verbose=False)
+    power, freqs = psd.get_data(return_freqs=True)
+    power_db = 10 * np.log10(1e12 * power.mean(axis=0))  # V²/Hz to dB re 1 µV²/Hz
+    ax_psd.plot(freqs, power_db, color=color, lw=1.5)
+    ax_psd.text(freqs[-1], power_db[-1], f" {label}", color=color, va="center")
+ax_psd.axvspan(4, 30, color="#EAEAEA", lw=0, zorder=0)
+ax_psd.yaxis.set_major_locator(plt.MaxNLocator(4))
+ax_psd.set_xlabel("Frequency (Hz)")
+ax_psd.set_ylabel("Power (dB re 1 µV²/Hz)")
+ax_psd.set_title("B  Welch power spectrum", loc="left", fontweight="bold", color=INK)
+fig.tight_layout()
 
 ###############################################################################
 # Summary
