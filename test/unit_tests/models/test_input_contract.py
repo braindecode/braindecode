@@ -525,3 +525,85 @@ def test_summary_generator_subset_and_cli(tmp_path):
         ValueError, match="EEGNet is missing editorial column 'Application'"
     ):
         generate_summary_rows(names=["EEGNet"], csv_path=missing_editorial_csv)
+
+
+# Free or dense models whose export pins the time axis: model name to the first
+# line of its export error (T is the input length). Shrink-only: fix the forward
+# and remove the entry. With torch 2.15, export specializes the output length of
+# nn.MaxPool1d alone: CareSleepNet and SeizureTransformer specialize at their
+# MaxPool1d call; FNIRSCNN1D and USleep pool with it too.
+_EXPORT_STATIC_TIME: dict[str, str] = {
+    "ATCNet": "unprovable guard (2 % ((-8) + 2*(T // 56))) != 0",
+    "AXON": "unprovable guard T != (180 + 180*(((-200) + T) // 180))",
+    "BBL": "unprovable guard on torch.sym_max(0, 3 - ((T - 1) // 2)) padding",
+    "BENDR": "unprovable guard (2 % (2 + 2*(((-1) + T) // 96))) != 0",
+    "BIOT": "unprovable guard (2 % (2 + 2*(((-250) + T) // 100))) != 0",
+    "BrainBERT": "unprovable guard (T % 50) != 0",
+    "BrainOmni": "AssertionError: Cannot create Dim with inconsistent min=-2, max=-10",
+    "BrainTokenizer": "unprovable guard (T // 512) == 1",
+    "CareSleepNet": "AssertionError: Guard failed: 1 + (-1 + T // 20) // 12 == 25",
+    "ContraWR": "unprovable guard 1000 <= T and T <= 1279",
+    "DANCE": "time specialized to 200",
+    "DeepSOZ": "AssertionError: Guard failed: T // 256 == 20",
+    # avg_pool2d over the whole time axis reads its kernel from the shape;
+    # adaptive pooling exports but changes outputs by 1e-7.
+    "EEGInceptionMI": "time specialized to 1000",
+    "EEGSimpleConv": "AssertionError: Guard failed: 8 * T / 25 == 320.32",
+    "EMG2QwertyNet": "unprovable guard (((-3) + (T // 16)) % ((-18) + 6*(T // 16))) != 0",
+    "FBCNet": "AssertionError: Guard failed: (1 + (331 + T) // 2) // 2 % 2 != 0",
+    "FBMSNet": "AssertionError: Guard failed: (1 + (331 + T) // 2) // 2 % 2 != 0",
+    # forward cuts every input to n_times_truncated (see port/goal-part0-snap).
+    "FBLightConvNet": "time specialized to 1000",
+    "FNIRSCNN1D": "time specialized to 60",
+    "IFNet": "AssertionError: Guard failed: (331 + T) // 2 % 5 == 0",
+    "MAPA": "GuardOnDataDependentSymNode: Could not extract specialized integer u2",
+    "MEGGPT": "time (100*k) specialized to 1000",
+    "MEGXL": "unprovable guard on torch.sym_max(0, 3 - T) padding",
+    "MetaNeuromotorHand": "unprovable guard (33 % (33*(((-11) + (((-64) + T) // 10)) // 4))) != 0",
+    "MSCFormer": "unprovable guard (1 % (T // 44)) != 0",
+    "MtReNIRS": "time (100*k) specialized to 100",
+    "MVPFormer": "time (2560*k) specialized to 2560",
+    "NeuroPose": "unprovable guard (2 % (640*(T // 320))) != 0",
+    "NeuroRVQTokenizer": "GuardOnDataDependentSymNode: Could not guard on zuf0",
+    "SAMBA": "time specialized to 128",
+    "SeizureTransformer": "time specialized to 2048",
+    "SignalJEPA": "unprovable guard (3 % (3 + 3*(... (T // 8) ...))) != 0",
+    "SleepFM": "time (640*k) specialized to 640",
+    "SleepFMStager": "time (640*k) specialized to 640",
+    "SPARCNet": "NotImplementedError: Eq(63*(((x/4)//128)) - 63, 0) cannot be solved",
+    "TCFormer": "unprovable guard (2 % (2*(T // 56))) != 0",
+    "TFMTokenizer": "unprovable guard (6 % ((-6) + 6*(T // 100))) != 0",
+    # Also nn.MaxPool1d; with a branch-free odd-length pad instead of the
+    # `if x.shape[-1] % 2` branch, export of the 12 levels ran past 15 minutes.
+    "USleep": "time specialized to 2000",
+    "VEMG2Pose": "unprovable guard (2 % ((-14) + 2*(((-18) + (((-11) + T) // 10)) // 4))) != 0",
+}
+
+
+@PARAMS
+def test_export_with_dynamic_time(model_name, required_params, signal_params, request):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    if model._time_axis == "fixed":
+        pytest.skip("fixed length")
+    if model_name in _EXPORT_STATIC_TIME:
+        request.applymarker(
+            pytest.mark.xfail(reason=_EXPORT_STATIC_TIME[model_name], strict=True)
+        )
+    C, T = x.shape[1:]
+    step, offset = model._n_times_step, model._n_times_offset
+    # A dense model returns one step at its build length and a time axis for
+    # longer inputs, so its range starts where the output has several steps.
+    low = 2 * T if model._time_axis == "dense" else T
+    # Lengths on the model's grid, offset + step * k, from low to 4 T.
+    k_min = -(-(low - offset) // step)
+    k_max = max((4 * T - offset) // step, k_min + 1)
+    k = torch.export.Dim("k", min=k_min, max=k_max)
+    time = k if step == 1 else step * k + offset
+    example = torch.randn(2, C, offset + step * k_min)
+    program = torch.export.export(
+        model, (example,), dynamic_shapes=({2: time},), strict=False
+    )
+    longer = torch.randn(2, C, offset + step * ((k_min + k_max + 1) // 2))
+    with torch.no_grad():
+        torch.testing.assert_close(program.module()(longer), model(longer))
