@@ -547,6 +547,7 @@ class _SpatialEmbedding(nn.Module):
 
         Per-sample indices give ``(batch, n_chans, d_model)``, one montage per sample.
         """
+        caller_indices = indices is not None
         if indices is None:
             default = self.default_indices
             if default is None:
@@ -566,16 +567,21 @@ class _SpatialEmbedding(nn.Module):
                 "(batch, n_chans, 3) for coordinates and (n_chans,) or "
                 "(batch, n_chans) for region scales."
             )
-        grid = grid.to(self.tables[0].weight.device)
-        # Value check only in eager mode: it branches on tensor data, which
-        # TorchScript, torch.export and torch.compile graphs cannot express.
+        # Value check only for caller-passed CPU indices in eager mode:
+        # default_indices are validated at construction, and reading device
+        # tensors forces a host sync (and fails TorchScript / torch.compile).
         if not torch.jit.is_scripting():
-            if not torch.compiler.is_compiling():
+            if (
+                caller_indices
+                and grid.device.type == "cpu"
+                and not torch.compiler.is_compiling()
+            ):
                 n_slots = self.tables[0].num_embeddings
                 if bool((grid < 0).any()) or bool((grid >= n_slots).any()):
                     raise ValueError(
                         f"spatial_indices must contain integers in [0, {n_slots})."
                     )
+        grid = grid.to(self.tables[0].weight.device)
         return torch.stack(
             [table(grid[..., dim]) for dim, table in enumerate(self.tables)]
         ).sum(dim=0)

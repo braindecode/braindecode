@@ -276,6 +276,9 @@ Requirements
 Bug fixes
 ==========
 
+- Avoid per-step host scalar reads and keep the ``on_missing="drop"`` channel
+  index buffer on the module device in :class:`braindecode.models.BaRISTA`,
+  :class:`braindecode.models.REVE` and :class:`braindecode.modules.EMACodebook`.
 - A refit or ``clone`` of a fitted :class:`braindecode.EEGClassifier` or :class:`braindecode.EEGRegressor` infers
   ``n_outputs``, ``n_chans``, ``n_times`` and ``chs_info`` from its own data instead of reusing the first fit's, which could
   predict classes the new data does not have; ``get_params`` no longer lists inferred values (:gh:`1770` by `Raghav Rathi`_).

@@ -278,7 +278,6 @@ def test_registered_model_training_contract(
 
 # ``.item()`` in forward, which meta tensors cannot answer (see _HOST_SYNC).
 _DATA_DEPENDENT_FORWARD = {
-    "BaRISTA",
     "BrainOmni",
     "BrainTokenizer",
     "CodeBrain",
@@ -486,15 +485,13 @@ _SYNC_OPS = {
 # Allowed per model: (findings, reason).
 _QUANTIZER = (
     ("_local_scalar_dense", "index_put_ with a boolean mask", "unique_dim"),
-    "codebook k-means init flag, first-batch k-means (on its distinct rows) and "
-    "dead-code expiry (the released EuclideanCodebook)",
+    "codebook first-batch k-means init check on CPU and k-means "
+    "(on its distinct rows) (the released EuclideanCodebook)",
 )
 _HOST_SYNC = {
-    "BaRISTA": (("_local_scalar_dense",), "eager-only spatial_indices range check"),
     "BENDR": (("_local_scalar_dense",), "LayerDrop coin flip on a CPU torch.rand(1)"),
     "BrainOmni": _QUANTIZER,
     "BrainTokenizer": _QUANTIZER,
-    "CodeBrain": (("_local_scalar_dense",), "lazy kernel-norm init flag (buffer)"),
     "EEGSimpleConv": (
         ("_local_scalar_dense",),
         "torchaudio Resample takes the output length from a CPU scalar",

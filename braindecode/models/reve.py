@@ -365,7 +365,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self._position_bank = RevePositionBank()
         default_pos = None  # (n_kept, 3) positions of the chs_info montage
-        self.channel_index = None  # input channels kept by on_missing (None: all)
+        channel_index = None  # input channels kept by on_missing (None: all)
         self._n_pos_chans: Optional[int] = None
         if self._chs_info is not None:
             pos, kept = resolve_channel_positions(
@@ -377,8 +377,9 @@ class REVE(EEGModuleMixin, nn.Module):
             default_pos = torch.as_tensor(pos, dtype=torch.float32)
             self._n_pos_chans = len(kept)
             if len(kept) < len(self._chs_info):
-                self.channel_index = torch.as_tensor(kept)
-        # A buffer, so that .to() moves it; not saved, positions are not weights.
+                channel_index = torch.as_tensor(kept, dtype=torch.long)
+        # Buffers, so that .to() moves them; not saved, positions are not weights.
+        self.register_buffer("channel_index", channel_index, persistent=False)
         self.register_buffer("default_pos", default_pos, persistent=False)
 
         self.to_patch_embedding = nn.Sequential(
@@ -408,6 +409,13 @@ class REVE(EEGModuleMixin, nn.Module):
 
         if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if "channel_index" in self.__dict__:
+            # Migrate pickles saved when channel_index was a plain attribute.
+            channel_index = self.__dict__.pop("channel_index")
+            self.register_buffer("channel_index", channel_index, persistent=False)
 
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""
@@ -819,7 +827,9 @@ class FourierEmb4D(nn.Module):
         input_shape = positions.shape
         batch_dims = list(input_shape[:-1])
 
-        freqs_w = torch.arange(self.freqs, device=positions.device).to(positions)
+        freqs_w = torch.arange(
+            self.freqs, device=positions.device, dtype=positions.dtype
+        )
         freqs_z = freqs_w[:, None]
         freqs_y = freqs_z[:, None]
         freqs_x = freqs_y[:, None]

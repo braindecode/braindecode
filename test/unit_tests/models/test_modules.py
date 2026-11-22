@@ -2354,6 +2354,93 @@ def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
         assert torch.equal(codebook.quantize(x), expected)
 
 
+def test_ema_codebook_warm_forward_no_host_sync_and_compiles():
+    from torch.utils._python_dispatch import TorchDispatchMode
+
+    class _ScalarReadRecorder(TorchDispatchMode):
+        def __init__(self):
+            self.reads = 0
+
+        def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+            if func.overloadpacket.__name__ == "_local_scalar_dense":
+                self.reads += 1
+            return func(*args, **(kwargs or {}))
+
+    torch.manual_seed(0)
+    cb = EMACodebook(dim=8, codebook_size=4, threshold_ema_dead_code=2, kmeans_iters=2)
+    x = torch.randn(16, 8)
+    cb.train()(x)
+    with _ScalarReadRecorder() as rec:
+        cb.train()(x)
+        with torch.no_grad():
+            cb.eval()(x)
+    assert rec.reads == 0
+
+    restored = EMACodebook(
+        dim=8, codebook_size=4, threshold_ema_dead_code=2, kmeans_iters=2
+    )
+    restored.load_state_dict(cb.state_dict(), strict=True)
+    embed_before = restored.embed.clone()
+    with _ScalarReadRecorder() as rec_eval, torch.no_grad():
+        out_eval, _ = restored.eval()(x)
+    assert rec_eval.reads == 0
+    assert torch.equal(restored.embed, embed_before)
+
+    compiled = torch.compile(restored, fullgraph=True)
+    with torch.no_grad():
+        out_comp_eval, _ = compiled.eval()(x)
+    torch.testing.assert_close(out_comp_eval, out_eval)
+    out_train, _ = compiled.train()(x)
+    assert out_train.shape == x.shape
+
+
+def test_ema_codebook_unpickles_legacy_state_without_cached_init_flag():
+    import pickle
+
+    from torch.utils._python_dispatch import TorchDispatchMode
+
+    class _ScalarReadRecorder(TorchDispatchMode):
+        def __init__(self):
+            self.reads = 0
+
+        def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+            if func.overloadpacket.__name__ == "_local_scalar_dense":
+                self.reads += 1
+            return func(*args, **(kwargs or {}))
+
+    torch.manual_seed(0)
+    x = torch.randn(16, 8)
+    cb = EMACodebook(dim=8, codebook_size=4, threshold_ema_dead_code=2, kmeans_iters=2)
+    cb.train()(x)
+    embed_before = cb.embed.clone()
+    del cb.__dict__["_is_inited"]
+    payload = pickle.dumps(cb)
+
+    loaded = pickle.loads(payload)
+    assert loaded._is_inited is True
+    with _ScalarReadRecorder() as rec, torch.no_grad():
+        out_eval, _ = loaded.eval()(x)
+    assert rec.reads == 0
+    assert out_eval.shape == x.shape
+    assert torch.equal(loaded.embed, embed_before)
+
+    loaded_meta = pickle.loads(payload).to("meta")
+    assert loaded_meta._is_inited is True
+    assert loaded_meta.embed.is_meta
+    out_meta, _ = loaded_meta.eval()(torch.empty_like(x, device="meta"))
+    assert out_meta.is_meta and out_meta.shape == x.shape
+
+    uninit_cb = EMACodebook(
+        dim=8, codebook_size=4, threshold_ema_dead_code=2, kmeans_iters=2
+    )
+    del uninit_cb.__dict__["_is_inited"]
+    uninit_loaded = pickle.loads(pickle.dumps(uninit_cb))
+    assert uninit_loaded._is_inited is False
+    uninit_loaded.train()(x)
+    assert uninit_loaded._is_inited is True
+    assert bool(uninit_loaded.inited.item()) is True
+
+
 def test_mlp_normalize():
     model = MLP(in_features=8, hidden_features=(16, 12), out_features=4, normalize=True)
     norms = [m for m in model if isinstance(m, nn.LayerNorm)]

@@ -4792,6 +4792,26 @@ def test_barista_forward_rejects_out_of_range_indices(bad):
         model(torch.randn(1, 4, 128), spatial_indices=torch.tensor(bad))
 
 
+def test_barista_forward_default_indices_no_host_sync():
+    from torch.utils._python_dispatch import TorchDispatchMode
+
+    class _ScalarReadRecorder(TorchDispatchMode):
+        def __init__(self):
+            self.reads = 0
+
+        def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+            if func.overloadpacket.__name__ == "_local_scalar_dense":
+                self.reads += 1
+            return func(*args, **(kwargs or {}))
+
+    model = _barista_model("parcels", spatial_indices=[1, 2, 3, 4]).eval()
+    x = torch.randn(1, 4, 128)
+    with _ScalarReadRecorder() as rec, torch.no_grad():
+        out = model(x)
+    assert out.shape == (1, 2)
+    assert rec.reads == 0
+
+
 def test_barista_learned_pooling_needs_construction_grid():
     model = _barista_model("parcels", pooling="learned", spatial_indices=[1, 2, 3, 4])
     with pytest.raises(ValueError, match="pooling='mean'"):
