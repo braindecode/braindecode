@@ -7,8 +7,8 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import csv
+import difflib
 import functools
 import inspect
 import io
@@ -105,20 +105,6 @@ _CPU_SUMMARY_MODELS: frozenset[str] = frozenset(
 )
 
 _ALL_MODELS_FILES: frozenset[str] = frozenset({"__init__", "_summary", "base", "util"})
-_NON_MODEL_LAZY_EXPORTS: frozenset[str] = frozenset(
-    {
-        "EEGModuleMixin",
-        "HybridNet",
-        "TCN",
-        "TFMTokenizerOutput",
-        "_init_models_dict",
-        "build_model_config",
-        "extract_channel_locations_from_chs_info",
-        "models_mandatory_parameters",
-        "positions_from_chs_info",
-    }
-)
-
 _TEN_TWENTY_19: tuple[str, ...] = (
     "Fp1",
     "Fp2",
@@ -146,14 +132,12 @@ _TEN_TWENTY_19: tuple[str, ...] = (
 # ("_chs", kind, n_chans) builds deterministic channel metadata of length n_chans
 # and renders cleanly as ``chs_info=chs_info`` in ``get_#Parameters``.
 _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
-    "ATCNet": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "AXON": {
         "n_chans": 22,
         "chs_info": ("_chs", "eeg", 22),
         "n_outputs": 4,
         "n_times": 1000,
     },
-    "AttentionBaseNet": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "BaRISTA": {
         "n_chans": 22,
         "chs_info": ("_chs", "seeg", 22),
@@ -190,9 +174,7 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
         "num_heads": 2,
         "embed_dim": 16,
     },
-    "Deep4Net": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "DeepSleepNet": {"n_chans": 1, "n_outputs": 5, "n_times": 7680, "sfreq": 256},
-    "EEGConformer": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "EEGCLIP": {"n_chans": 21, "n_outputs": 64, "n_times": 1000},
     "EEGPT": {
         "n_chans": 58,
@@ -212,13 +194,6 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
     "EEGITNet": {"n_chans": 22, "n_outputs": 4, "n_times": 500},
     "EEGNet": {"n_chans": 22, "n_outputs": 4, "n_times": 512},
     "EEGNeX": {"n_chans": 22, "n_outputs": 4, "n_times": 500},
-    "EEGSym": {
-        "n_chans": 22,
-        "chs_info": ("_chs", "eeg", 22),
-        "n_outputs": 4,
-        "n_times": 1000,
-        "sfreq": 250,
-    },
     "EEGMiner": {"n_chans": 62, "n_outputs": 2, "n_times": 2560, "sfreq": 128},
     "EEGSimpleConv": {"n_chans": 22, "n_outputs": 4, "n_times": 320, "sfreq": 80},
     "EEGTCNet": {"n_chans": 22, "n_outputs": 4, "n_times": 1000, "kern_length": 32},
@@ -228,9 +203,6 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
         "n_outputs": 4,
         "n_times": 1000,
     },
-    "MSVTNet": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
-    "MSCFormer": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
-    "TMSANet": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "SCCNet": {"n_chans": 22, "n_outputs": 4, "n_times": 1000, "sfreq": 125},
     "SignalJEPA": {
         "n_chans": 62,
@@ -276,7 +248,6 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
     "SPARCNet": {"n_chans": 16, "n_outputs": 6, "n_times": 2000, "sfreq": 200},
     "SyncNet": {"n_chans": 62, "n_outputs": 3, "n_times": 5120, "sfreq": 256},
     "TSception": {"n_chans": 62, "n_outputs": 3, "n_times": 5120, "sfreq": 256},
-    "TIDNet": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "USleep": {"n_chans": 2, "n_outputs": 5, "n_times": 3000, "sfreq": 100},
     "CareSleepNet": {"n_chans": 8, "n_outputs": 5, "n_times": 60000, "sfreq": 100},
     "FBCNet": {"n_chans": 22, "n_outputs": 4, "n_times": 1000, "sfreq": 250},
@@ -306,7 +277,6 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
         "n_outputs": 4,
         "n_times": 1000,
     },
-    "SSTDPN": {"n_chans": 22, "n_outputs": 4, "n_times": 1000, "sfreq": 250},
     "BENDR": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "LUNA": {"n_chans": 22, "n_outputs": 4, "n_times": 512, "sfreq": 128},
     "MAPA": {
@@ -316,7 +286,6 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
         "n_times": 2048,
         "sfreq": 2048,
     },
-    "MEDFormer": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "MEGGPT": {"n_chans": 52, "n_outputs": 4, "n_times": 1000},
     "REVE": {
         "n_chans": 19,
@@ -358,8 +327,6 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
         "n_times": 1024,
         "sfreq": 256.0,
     },
-    "BBL": {"n_chans": 22, "n_outputs": 4, "n_times": 125, "sfreq": 250.0},
-    "TCFormer": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "TFMTokenizer": {"n_chans": 3, "n_outputs": 2, "n_times": 1000, "sfreq": 200},
     "EEGDINO": {"n_chans": 19, "n_outputs": 4, "n_times": 1000},
     "DANCE": {
@@ -369,7 +336,6 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
         "n_times": 6400,
         "sfreq": 200,
     },
-    "STEEGFormer": {"n_chans": 22, "n_outputs": 4, "n_times": 1000},
     "CORTEG": {
         "n_chans": 16,
         "chs_info": ("_chs", "ecog", 16),
@@ -473,20 +439,7 @@ def _build_chs_info(kind: str, n_chans: int) -> list[dict[str, Any]]:
                 "kind": FIFF.FIFFV_MEG_CH,
                 "coil_type": FIFF.FIFFV_COIL_VV_MAG_T1,
                 "loc": np.array(
-                    [
-                        0.08 * np.cos(i),
-                        0.08 * np.sin(i),
-                        0.05,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                    ]
+                    [0.08 * np.cos(i), 0.08 * np.sin(i), 0.05, *([0.0] * 8), 1.0]
                 ),
             }
             for i in range(n_chans)
@@ -588,120 +541,57 @@ def _output_kind(name: str) -> str:
     return "(batch, outputs)"
 
 
-def _has_strided_layer(model: Any) -> bool:
-    for module in model.modules():
-        stride = getattr(module, "stride", None)
-        if isinstance(stride, int) and stride > 1:
-            return True
-        if isinstance(stride, tuple) and any(s > 1 for s in stride):
-            return True
-    return False
+def _capabilities(name: str, cls: type[EEGModuleMixin]) -> dict[str, str]:
+    """The capability columns of a model; later hooks add their rules here."""
+    from braindecode.models.base import EEGModuleMixin
+
+    head = name not in _TOKENIZERS
+    flags = {
+        "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
+        "adapt_input": hasattr(cls, "adapt_input"),
+        "reset_head": head and cls.reset_head is not EEGModuleMixin.reset_head,
+        "return_features": head
+        and "return_features" in inspect.signature(cls.forward).parameters,
+    }
+    return {col: "yes" if flag else "no" for col, flag in flags.items()}
 
 
-def _cropped_capability(
+def _count_parameters(
     name: str,
     cls: type[EEGModuleMixin],
-    model: Any,
-    base_cls: type[EEGModuleMixin],
-) -> str:
-    if hasattr(base_cls, "_dense_conversion"):
-        ok = (
-            cls._time_axis != "fixed"
-            and bool(getattr(cls, "_dense_conversion", True))
-            and (cls._time_axis == "dense" or _has_strided_layer(model))
-        )
-        return "yes" if ok else "no"
-    return "yes" if name in _INITIAL_CROPPED_MODELS else "no"
-
-
-def _adapt_capability(cls: type[EEGModuleMixin], model: Any) -> str:
-    if hasattr(model, "_can_adapt_input"):
-        return "yes" if model._can_adapt_input() else "no"
-    return "yes" if hasattr(cls, "adapt_input") else "no"
-
-
-def _reset_head_capability(
-    name: str,
-    cls: type[EEGModuleMixin],
-    model: Any,
-    base_cls: type[EEGModuleMixin],
-) -> str:
-    if name in _TOKENIZERS:
-        return "no"
-    if hasattr(model, "_can_reset_head"):
-        return "yes" if model._can_reset_head() else "no"
-    return "yes" if cls.reset_head is not base_cls.reset_head else "no"
-
-
-def _return_features_capability(
-    name: str,
-    cls: type[EEGModuleMixin],
-    base_cls: type[EEGModuleMixin],
-) -> str:
-    if name in _TOKENIZERS:
-        return "no"
-    if "return_features" in inspect.signature(cls.forward).parameters:
-        return "yes"
-    if getattr(cls, "_native_features", False) or hasattr(base_cls, "_pool_embedding"):
-        return "yes"
-    return "no"
-
-
-def _instantiate_and_measure(
-    name: str,
-    cls: type[EEGModuleMixin],
-    base_cls: type[EEGModuleMixin],
     init_kwargs: dict[str, Any],
     probe_shape: tuple[int, int],
-) -> tuple[int, str, str, str]:
+) -> int:
     import torch
     from torch import nn
 
-    use_cpu = name in _CPU_SUMMARY_MODELS
-    device_ctx = contextlib.nullcontext() if use_cpu else torch.device("meta")
-    device = "cpu" if use_cpu else "meta"
-
-    with warnings.catch_warnings():
+    device = "cpu" if name in _CPU_SUMMARY_MODELS else "meta"
+    with warnings.catch_warnings(), torch.device(device):
         warnings.simplefilter("ignore")
-        with device_ctx:
-            model = cls(**init_kwargs)
-            if any(
-                isinstance(p, nn.UninitializedParameter) for p in model.parameters()
-            ):
-                n_chans, n_times = probe_shape
-                with torch.no_grad():
-                    model.eval()(torch.zeros(1, n_chans, n_times, device=device))
-        n_params = sum(p.numel() for p in model.parameters())
-        cropped = _cropped_capability(name, cls, model, base_cls)
-        adapt_input = _adapt_capability(cls, model)
-        reset_head = _reset_head_capability(name, cls, model, base_cls)
-    return n_params, cropped, adapt_input, reset_head
+        model = cls(**init_kwargs)
+        if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
+            with torch.no_grad():
+                model.eval()(torch.zeros(1, *probe_shape))
+    return sum(p.numel() for p in model.parameters())
 
 
-def _read_existing_csv(csv_path: Path) -> tuple[list[str], list[dict[str, str]]]:
+def _read_rows(csv_path: Path) -> list[dict[str, str]]:
     if not csv_path.is_file():
-        return [], []
+        return []
     with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle, skipinitialspace=True)
-        headers = list(reader.fieldnames or ())
-        rows = [
+        return [
             {k: (v or "").strip() for k, v in row.items() if k is not None}
             for row in reader
             if (row.get("Model") or "").strip()
         ]
-    return headers, rows
 
 
 def _serialize_csv(rows: Sequence[dict[str, str]]) -> str:
     buf = io.StringIO()
-    writer = csv.DictWriter(
-        buf,
-        fieldnames=list(SUMMARY_COLUMNS),
-        lineterminator="\n",
-    )
+    writer = csv.DictWriter(buf, fieldnames=SUMMARY_COLUMNS, lineterminator="\n")
     writer.writeheader()
-    for row in rows:
-        writer.writerow({col: row.get(col, "") for col in SUMMARY_COLUMNS})
+    writer.writerows({col: row.get(col, "") for col in SUMMARY_COLUMNS} for row in rows)
     return buf.getvalue()
 
 
@@ -711,154 +601,85 @@ def generate_summary_rows(
     csv_path: Path = SUMMARY_CSV_PATH,
 ) -> list[dict[str, str]]:
     """Compute canonical ``summary.csv`` rows for registered models."""
-    from braindecode import models as bd_models
-    from braindecode.models.base import EEGModuleMixin
-    from braindecode.models.util import models_mandatory_parameters
+    from braindecode.models.util import models_dict, models_mandatory_parameters
 
-    _, existing_rows = _read_existing_csv(csv_path)
-    existing_by_name = {row["Model"]: row for row in existing_rows}
-    mandatory_by_name = {
-        name: (req, sp) for name, req, sp in models_mandatory_parameters
-    }
-
+    existing = {row["Model"]: row for row in _read_rows(csv_path)}
+    mandatory = {name: (req, sp) for name, req, sp in models_mandatory_parameters}
     if names is None:
-        from braindecode.models.util import models_dict
-
-        registered = dict(models_dict)
-        ordered_names = [
-            row["Model"] for row in existing_rows if row["Model"] in registered
-        ]
-        seen = set(ordered_names)
-        for name, _, _ in models_mandatory_parameters:
-            if name in registered and name not in seen:
-                ordered_names.append(name)
-                seen.add(name)
-        for name in sorted(registered):
-            if name not in seen:
-                ordered_names.append(name)
-                seen.add(name)
-        resolve_cls = lambda n: registered[n]  # noqa: E731
-    else:
-        ordered_names = list(names)
-        resolve_cls = lambda n: getattr(bd_models, n)  # noqa: E731
+        # Keep the committed order; new models go last, in registry order.
+        names = [n for n in existing if n in mandatory]
+        names += [n for n in mandatory if n not in existing]
 
     generated: list[dict[str, str]] = []
-    for name in ordered_names:
-        cls = resolve_cls(name)
-        req, sp = mandatory_by_name[name]
-        editorial = existing_by_name.get(name, {})
-        init_kwargs, expr, probe_shape = _resolve_kwargs(name, req, sp)
-        n_params, cropped, adapt_input, reset_head = _instantiate_and_measure(
-            name, cls, EEGModuleMixin, init_kwargs, probe_shape
-        )
-        time_axis = cls._time_axis
-        channel_axis = cls._channel_axis
-        if time_axis is None or channel_axis is None:
+    for name in names:
+        cls = models_dict[name]
+        if cls._time_axis is None or cls._channel_axis is None:
             raise ValueError(f"{name} must declare _time_axis and _channel_axis.")
-
-        row: dict[str, str] = {
-            "Model": name,
-            "Application": editorial.get("Application", ""),
-            "Type": editorial.get("Type", ""),
-            "Sampling Frequency (Hz)": editorial.get("Sampling Frequency (Hz)", ""),
-            "Hyperparameters": ", ".join(req),
-            "#Parameters": str(n_params),
-            "get_#Parameters": expr,
-            "Categorization": _parse_categorization(name, cls),
-            "Modality": editorial.get("Modality", ""),
-            "Time axis": time_axis,
-            "Channel axis": channel_axis,
-            "Output": _output_kind(name),
-            "Cropped decoding": cropped,
-            "adapt_input": adapt_input,
-            "reset_head": reset_head,
-            "return_features": _return_features_capability(name, cls, EEGModuleMixin),
-        }
+        req, sp = mandatory[name]
+        init_kwargs, expr, probe_shape = _resolve_kwargs(name, req, sp)
+        editorial = existing.get(name, {})
         for col in EDITORIAL_COLUMNS:
-            if not row[col]:
+            if not editorial.get(col):
                 raise ValueError(f"{name} is missing editorial column {col!r}.")
-        generated.append(row)
+        generated.append(
+            {
+                **{col: editorial[col] for col in EDITORIAL_COLUMNS},
+                "Model": name,
+                "Hyperparameters": ", ".join(req),
+                "#Parameters": str(
+                    _count_parameters(name, cls, init_kwargs, probe_shape)
+                ),
+                "get_#Parameters": expr,
+                "Categorization": _parse_categorization(name, cls),
+                "Time axis": cls._time_axis,
+                "Channel axis": cls._channel_axis,
+                "Output": _output_kind(name),
+                **_capabilities(name, cls),
+            }
+        )
     return generated
 
 
 def check_summary_csv(csv_path: Path = SUMMARY_CSV_PATH) -> list[str]:
-    """Compare ``csv_path`` on disk against freshly generated summary rows."""
-    if not csv_path.is_file():
-        return [f"Missing summary CSV: {csv_path}"]
-
-    raw_text = csv_path.read_text(encoding="utf-8")
-    diffs: list[str] = []
-    if raw_text.startswith("\ufeff"):
-        diffs.append("summary.csv starts with a UTF-8 BOM; write plain UTF-8.")
-
-    headers, disk_rows = _read_existing_csv(csv_path)
-    if headers != list(SUMMARY_COLUMNS):
-        diffs.append(
-            f"Header mismatch: got {headers}, expected {list(SUMMARY_COLUMNS)}"
+    """Diff lines between ``csv_path`` and a fresh generation, empty if equal."""
+    text = csv_path.read_text(encoding="utf-8") if csv_path.is_file() else ""
+    expected = _serialize_csv(generate_summary_rows(csv_path=csv_path))
+    if text == expected:
+        return []
+    return list(
+        difflib.unified_diff(
+            text.splitlines(),
+            expected.splitlines(),
+            "summary.csv on disk",
+            "generated",
+            lineterm="",
         )
-
-    expected_rows = generate_summary_rows(csv_path=csv_path)
-    disk_names = [r["Model"] for r in disk_rows]
-    expected_names = [r["Model"] for r in expected_rows]
-    if disk_names != expected_names:
-        missing = sorted(set(expected_names) - set(disk_names))
-        extra = sorted(set(disk_names) - set(expected_names))
-        if missing:
-            diffs.append(f"Missing models in summary.csv: {missing}")
-        if extra:
-            diffs.append(f"Unexpected models in summary.csv: {extra}")
-        if not missing and not extra:
-            diffs.append("Row order in summary.csv differs from generator order.")
-
-    disk_by_name = {r["Model"]: r for r in disk_rows}
-    for exp in expected_rows:
-        name = exp["Model"]
-        got = disk_by_name.get(name)
-        if got is None:
-            continue
-        for col in SUMMARY_COLUMNS:
-            if got.get(col) != exp[col]:
-                diffs.append(
-                    f"{name}.{col}: disk={got.get(col)!r} != expected={exp[col]!r}"
-                )
-
-    if not diffs and raw_text != _serialize_csv(expected_rows):
-        diffs.append(
-            "Formatting or line endings in summary.csv differ from canonical CSV."
-        )
-    return diffs
+    )
 
 
 def _models_for_files(files: Sequence[str]) -> list[str] | None:
     """Return model names affected by ``files``, ``[]`` if none, or ``None`` for all."""
     from braindecode import models as bd_models
+    from braindecode.models.util import models_mandatory_parameters
 
-    models_dir = SUMMARY_CSV_PATH.parent.resolve()
-    repo_root = SUMMARY_CSV_PATH.parents[2].resolve()
-    module_to_models: dict[str, list[str]] = {}
-    for sym, mod_name in bd_models._LAZY.items():
-        if sym not in _NON_MODEL_LAZY_EXPORTS:
-            module_to_models.setdefault(mod_name, []).append(sym)
-
+    registered = {name for name, _, _ in models_mandatory_parameters}
+    models_dir = SUMMARY_CSV_PATH.parent
     selected: list[str] = []
-    seen: set[str] = set()
     for raw_file in files:
         path = Path(raw_file)
-        if path.is_absolute():
-            resolved = path.resolve()
-        elif (repo_root / path).exists():
-            resolved = (repo_root / path).resolve()
-        else:
-            resolved = (Path.cwd() / path).resolve()
-        if resolved.parent != models_dir or resolved.suffix != ".py":
+        if not path.is_absolute():
+            repo_path = SUMMARY_CSV_PATH.parents[2] / path
+            path = repo_path if repo_path.exists() else Path.cwd() / path
+        path = path.resolve()
+        if path.parent != models_dir or path.suffix != ".py":
             continue
-        stem = resolved.stem
-        if stem in _ALL_MODELS_FILES:
+        if path.stem in _ALL_MODELS_FILES:
             return None
-        for model_name in module_to_models.get(stem, ()):
-            if model_name not in seen:
-                selected.append(model_name)
-                seen.add(model_name)
+        selected += [
+            sym
+            for sym, module in bd_models._LAZY.items()
+            if module == path.stem and sym in registered and sym not in selected
+        ]
     return selected
 
 
@@ -868,32 +689,19 @@ def update_summary_csv(
     csv_path: Path = SUMMARY_CSV_PATH,
 ) -> bool:
     """Regenerate all or touched model rows in ``csv_path``. Return True if modified."""
-    target_names: list[str] | None = None
-    if files is not None:
-        target_names = _models_for_files(files)
-        if target_names == []:
-            return False
-
-    headers, existing_rows = _read_existing_csv(csv_path)
-    if target_names is not None and headers == list(SUMMARY_COLUMNS):
-        existing_names = {r["Model"] for r in existing_rows}
-        if set(target_names) <= existing_names:
-            updated_by_name = {
-                r["Model"]: r
-                for r in generate_summary_rows(names=target_names, csv_path=csv_path)
-            }
-            merged = [updated_by_name.get(r["Model"], r) for r in existing_rows]
-            rendered = _serialize_csv(merged)
-            current = csv_path.read_text(encoding="utf-8") if csv_path.is_file() else ""
-            if rendered == current:
-                return False
-            csv_path.write_text(rendered, encoding="utf-8")
-            return True
-
-    full_rows = generate_summary_rows(csv_path=csv_path)
-    rendered = _serialize_csv(full_rows)
-    current = csv_path.read_text(encoding="utf-8") if csv_path.is_file() else ""
-    if rendered == current:
+    targets = None if files is None else _models_for_files(files)
+    if targets == []:
+        return False
+    rows = _read_rows(csv_path)
+    if targets is not None and set(targets) <= {r["Model"] for r in rows}:
+        fresh = {
+            r["Model"]: r for r in generate_summary_rows(targets, csv_path=csv_path)
+        }
+        rows = [fresh.get(r["Model"], r) for r in rows]
+    else:
+        rows = generate_summary_rows(csv_path=csv_path)
+    rendered = _serialize_csv(rows)
+    if csv_path.is_file() and csv_path.read_text(encoding="utf-8") == rendered:
         return False
     csv_path.write_text(rendered, encoding="utf-8")
     return True
@@ -925,11 +733,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.check:
         diffs = check_summary_csv(args.csv)
-        if diffs:
-            for line in diffs:
-                print(line, file=sys.stderr)
-            return 1
-        return 0
+        print("\n".join(diffs), file=sys.stderr, end="\n" if diffs else "")
+        return 1 if diffs else 0
 
     update_summary_csv(args.files, csv_path=args.csv)
     return 0
