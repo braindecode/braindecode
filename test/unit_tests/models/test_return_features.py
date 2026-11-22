@@ -63,6 +63,7 @@ from test.unit_tests.models._fixtures import (
     _build_case,
     _get_signal_params,
     _materialize,
+    _tensor_leaves,
 )
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
@@ -421,6 +422,67 @@ def test_return_features_with_channel_strategy():
         out = bendr(torch.randn(BATCH, N_CHANS, N_TIMES), return_features=True)
     assert out["embedding"].shape[0] == BATCH and out["embedding"].ndim == 2
     assert isinstance(bendr._head_linear(), nn.Linear)
+
+
+def _encoder_state(model):
+    """Tensors outside ``final_layer``, keyed by name."""
+    return {
+        k: v.detach().clone()
+        for k, v in model.state_dict().items()
+        if not k.startswith("final_layer.")
+    }
+
+
+@PARAMS
+def test_reset_head_on_every_model(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS or model_name == "SignalJEPA":
+        pytest.skip("no classification head")
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    n = (model._signal_param("n_outputs") or 2) + 3
+    encoder = _encoder_state(model)
+    model.reset_head(n)
+    kept = _encoder_state(model)
+    with torch.no_grad():
+        out = next(_tensor_leaves(model(x)))
+    assert n in out.shape[1:]
+    assert model.n_outputs == model.get_config()["n_outputs"] == n
+    generic = type(model).reset_head is EEGModuleMixin.reset_head
+    for key, value in encoder.items() if generic else ():  # encoder kept
+        if key in kept and kept[key].shape == value.shape:
+            assert torch.equal(kept[key], value), key
+    rebuilt = type(model).from_config(model.get_config()).eval()
+    _materialize(rebuilt, x)
+    with torch.no_grad():
+        assert next(_tensor_leaves(rebuilt(x))).shape == out.shape
+
+
+@PARAMS
+def test_headless_build_and_reset_head(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS or model_name == "SignalJEPA":
+        pytest.skip("no classification head")
+    model, x = _build_case(model_name, required_params, signal_params, headless=True)
+    _materialize(model, x, return_features=True)
+    assert list(model.final_layer.parameters()) == []
+    with pytest.raises(ValueError, match="n_outputs not specified"):
+        model.n_outputs
+    with torch.no_grad():
+        emb = model(x, return_features=True)["embedding"]
+    assert emb.ndim == 2 and emb.shape[0] == x.shape[0]
+    with pytest.raises(ValueError, match="built with n_outputs=None"):
+        model(x)
+    encoder = _encoder_state(model)
+    model.reset_head(7)
+    kept = _encoder_state(model)
+    with torch.no_grad():
+        out = next(_tensor_leaves(model(x)))
+        emb_after = model(x, return_features=True)["embedding"]
+    assert 7 in out.shape[1:]
+    assert model.get_config()["n_outputs"] == 7
+    torch.testing.assert_close(emb_after, emb, rtol=0, atol=0)
+    for key, value in encoder.items():
+        if key in kept and kept[key].shape == value.shape:
+            assert torch.equal(kept[key], value), key
 
 
 # -- Legacy backward compat --

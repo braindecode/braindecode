@@ -212,7 +212,15 @@ def track_model_init_kwargs(cls) -> None:
             elif param.kind != param.VAR_POSITIONAL:
                 captured_kwargs[name] = value
         self._braindecode_init_kwargs = captured_kwargs
-        return init(self, *args, **kwargs)
+        # n_outputs=None builds the model without a head (see _drop_head).
+        headless = (
+            "n_outputs" in captured_kwargs and captured_kwargs["n_outputs"] is None
+        )
+        self.__dict__["_headless_build"] = headless
+        out = init(self, *args, **kwargs)
+        if headless:
+            self._drop_head()
+        return out
 
     setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
     cls.__init__ = wrapped

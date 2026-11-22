@@ -333,7 +333,10 @@ def _new_head_follows_model(reset_head):
         # Hold the old tensors until the end, so that their ids cannot be
         # reused by the new ones.
         old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
-        out = reset_head(self, *args, **kwargs)
+        if self._headless:  # an override expects the head it replaces
+            out = _adopt_new_head(self, *args, **kwargs)
+        else:
+            out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
                 tensors = [*module.parameters(), *module.buffers()]
@@ -354,6 +357,53 @@ def _new_head_follows_model(reset_head):
     return wrapper
 
 
+def _adopt_new_head(model, n_outputs: int) -> None:
+    """Give ``model`` the head of a fresh build with ``n_outputs`` outputs.
+
+    The fresh build supplies ``final_layer`` and each module holding a tensor
+    whose shape depends on ``n_outputs``; that module keeps the model's
+    tensors whose shape did not change. All other modules stay as they are.
+    """
+    model._set_n_outputs(n_outputs)
+    fresh = type(model).from_config(model.get_config())
+    own = model.state_dict(keep_vars=True)
+    uninitialized = torch.nn.parameter.UninitializedParameter
+    changed = {"final_layer"}
+    for name, tensor in fresh.state_dict(keep_vars=True).items():
+        old = own.get(name)
+        if (
+            not torch.is_tensor(old)
+            or isinstance(tensor, uninitialized)  # sized by the next forward
+            or (not isinstance(old, uninitialized) and old.shape == tensor.shape)
+        ):
+            continue
+        changed.add(name.rpartition(".")[0])
+    for path in sorted(changed):
+        if any(path.startswith(done + ".") for done in changed if done):
+            continue  # an enclosing module is replaced already
+        if not path:  # a tensor held by the model itself, such as a prototype
+            for leaf, tensor in fresh.named_parameters(recurse=False):
+                if own[leaf].shape != tensor.shape:
+                    setattr(model, leaf, tensor)
+            continue
+        new = fresh.get_submodule(path)
+        new_state = new.state_dict(keep_vars=True)
+        with torch.no_grad():  # keep the tensors whose shape did not change
+            for key, value in own.items():
+                sub = key[len(path) + 1 :]
+                if not key.startswith(path + ".") or sub not in new_state:
+                    continue
+                target = new_state[sub]
+                if not isinstance(value, uninitialized) and not isinstance(
+                    target, uninitialized
+                ):
+                    if target.shape == value.shape:
+                        target.copy_(value)
+        parent, _, child = path.rpartition(".")
+        setattr(model.get_submodule(parent), child, new)
+    model._headless = False
+
+
 class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     """
     Mixin class for all EEG models in braindecode.
@@ -364,9 +414,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     Parameters
     ----------
-    n_outputs : int
+    n_outputs : int | None
         Number of outputs of the model. This is the number of classes
-        in the case of classification.
+        in the case of classification. ``None`` builds the model without a
+        head (``final_layer`` is ``nn.Identity``), for self-supervised
+        training with ``model(x, return_features=True)``; attach a head
+        later with :meth:`reset_head`.
     n_chans : int
         Number of EEG channels.
     chs_info : list of dict
@@ -1123,6 +1176,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     @property
     def n_outputs(self) -> int:
         if self._n_outputs is None:
+            if not torch.jit.is_scripting():
+                if self.__dict__.get("_headless_build"):
+                    # n_outputs=None: the constructor builds a head of this
+                    # placeholder width, which _drop_head replaces after __init__.
+                    self.__dict__["_headless_placeholder_read"] = True
+                    return 2
             raise ValueError("n_outputs not specified.")
         return self._n_outputs
 
@@ -1605,11 +1664,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             wants_features = bool(
                 self._call_arg("return_features", args, kwargs, False)
             )
+        else:
+            wants_features = bool(kwargs.pop("return_features", False))
+        if self._headless and not wants_features:
+            raise ValueError(
+                f"{type(self).__name__} was built with n_outputs=None (headless); "
+                "call model(x, return_features=True) or attach a head with "
+                "model.reset_head(n_outputs)."
+            )
+        if self._native_features:
             out = super().__call__(*args, **kwargs)
             if wants_features and isinstance(out, dict) and "embedding" not in out:
                 out["embedding"] = self._pool_embedding(out["features"])
         else:
-            wants_features = bool(kwargs.pop("return_features", False))
             if not wants_features:
                 out = super().__call__(*args, **kwargs)
             else:
@@ -1879,6 +1946,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         This is called automatically by :meth:`from_pretrained` when the
         user passes an ``n_outputs`` that differs from the saved config.
+        The default takes ``final_layer``, and every module holding a tensor
+        whose shape depends on ``n_outputs``, from a new build of the same
+        configuration; the other weights stay. A model built with
+        ``n_outputs=None`` always takes this path.
         Override in subclasses that need a model-specific head structure.
         Implementations keep changed constructor arguments in sync with
         ``self._update_init_kwargs``, so that a saved model can be loaded
@@ -1900,11 +1971,23 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         .. versionadded:: 1.4
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement reset_head(). "
-            "Override this method to support changing n_outputs after "
-            "loading pretrained weights."
-        )
+        _adopt_new_head(self, n_outputs)
+
+    reset_head = _new_head_follows_model(reset_head)
+
+    def _can_reset_head(self) -> bool:
+        """Whether the model has a ``final_layer`` that :meth:`reset_head` replaces."""
+        return isinstance(getattr(self, "final_layer", None), torch.nn.Module)
+
+    def _drop_head(self) -> None:
+        """Replace ``final_layer`` by ``nn.Identity`` after a build with
+        ``n_outputs=None``, so the model holds no head parameters."""
+        self.__dict__["_headless_build"] = False
+        if not self.__dict__.pop("_headless_placeholder_read", False):
+            return  # the model builds no head without n_outputs (SignalJEPA)
+        if isinstance(getattr(self, "final_layer", None), torch.nn.Module):
+            self.final_layer = torch.nn.Identity()
+        self._headless = True
 
     mapping: Optional[Dict[str, str]] = None
     #: Channels the backbone consumes under a ``channel_strategy`` (names or
@@ -1914,6 +1997,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _channel_axis: ClassVar[Optional[str]] = None
     _feature_axis: ClassVar[int] = -1
     _native_features: ClassVar[bool] = False
+    #: True after a build with ``n_outputs=None`` dropped the head.
+    _headless = False
     _time_inputs: ClassVar[tuple[str, ...]] = ("x",)
     _min_n_times: Optional[int] = None
     _n_times_step = 1
@@ -2664,15 +2749,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 and requested_n_outputs is not None
                 and requested_n_outputs != saved_n_outputs
             ):
-                try:
-                    model.reset_head(requested_n_outputs)
-                except NotImplementedError:
+                if not model._can_reset_head():
                     raise ValueError(
                         f"{type(model).__name__} does not support changing "
                         f"n_outputs after loading. Saved model has "
                         f"n_outputs={saved_n_outputs}, but "
                         f"n_outputs={requested_n_outputs} was requested."
-                    ) from None
+                    )
+                model.reset_head(requested_n_outputs)
 
             if input_adaptation is not None:
                 model._apply_input_adaptation_config(input_adaptation)
