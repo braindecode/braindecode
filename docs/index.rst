@@ -37,7 +37,7 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
               <span>Tutorials</span>
             </a>
-            <a class="btn" href="#model-zoo">Explore 103 models</a>
+            <a class="btn" href="models/models_table.html">Explore 103 models</a>
             <a class="btn" href="https://github.com/braindecode/braindecode" target="_blank" rel="noopener">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.38-3.88-1.38-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.26 5.67.42.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
               <span>GitHub</span>
@@ -142,7 +142,8 @@
             </g>
 
             <g class="hero-cortex" transform="translate(30, 55) scale(2.38)">
-              <path class="hero-cortex-fill" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" d="M 60.93 13.09 C 60.19 12.72, 59.87 11.80, 59.40 10.99 C 58.92 10.19, 58.30 9.51, 57.60 8.90 C 56.22 7.70, 54.57 6.81, 52.81 6.26 C 49.48 5.23, 45.78 5.45, 42.60 6.84 C 40.92 7.57, 39.39 8.63, 38.19 10.07 C 37.58 10.79, 37.06 11.60, 36.32 12.06 C 35.58 12.53, 34.62 12.64, 33.68 12.68 C 32.74 12.73, 31.82 12.71, 30.94 12.87 C 30.05 13.03, 29.19 13.38, 28.36 13.79 C 26.87 14.54, 25.45 15.52, 24.74 17.05 C 24.35 17.90, 24.18 18.92, 23.64 19.57 C 23.32 19.97, 22.86 20.23, 22.33 20.35 C 21.97 20.42, 21.57 20.43, 21.20 20.46 C 20.26 20.54, 19.45 20.76, 18.61 21.18 C 17.78 21.60, 16.92 22.23, 16.44 22.99 C 15.49 24.50, 16.06 26.53, 15.77 28.36 C 15.63 29.28, 15.28 30.15, 14.61 30.73 C 14.08 31.20, 13.34 31.48, 12.64 31.78 C 11.77 32.15, 10.95 32.56, 10.29 33.16 C 9.63 33.75, 9.13 34.54, 8.70 35.38 C 8.28 36.23, 7.93 37.14, 7.84 38.01 C 7.77 38.71, 7.87 39.38, 8.14 40.09 C 8.47 40.98, 9.07 41.92, 9.06 42.76 C 9.06 43.60, 8.45 44.33, 7.86 45.09 C 6.80 46.45, 5.81 47.86, 5.64 49.45 C 5.45 51.20, 6.26 53.17, 7.64 54.41 C 8.33 55.04, 9.16 55.48, 9.67 56.21 C 10.19 56.93, 10.39 57.94, 10.33 58.85 C 10.26 59.77, 9.91 60.59, 9.84 61.51 C 9.76 62.43, 9.96 63.43, 10.35 64.27 C 11.05 65.77, 12.41 66.70, 13.72 67.77 C 14.45 68.37, 15.17 69.00, 15.45 69.82 C 15.74 70.63, 15.58 71.63, 15.54 72.59 C 15.46 74.52, 15.81 76.33, 17.09 77.65 C 17.73 78.30, 18.60 78.84, 19.49 79.13 C 20.37 79.42, 21.27 79.46, 22.16 79.65 C 22.70 79.77, 23.22 79.93, 23.56 80.30 C 23.79 80.55, 23.93 80.89, 24.07 81.24 C 24.34 81.94, 24.59 82.65, 24.96 83.28 C 25.90 84.86, 27.59 85.86, 29.30 86.53 C 30.15 86.87, 31.01 87.12, 31.93 87.18 C 32.85 87.25, 33.82 87.13, 34.72 87.29 C 35.61 87.45, 36.42 87.90, 37.09 88.53 C 37.75 89.15, 38.27 89.95, 38.89 90.63 C 40.01 91.85, 41.47 92.67, 43.02 93.26 C 46.30 94.50, 49.99 94.68, 53.27 93.51 C 54.99 92.90, 56.61 91.91, 57.95 90.66 C 58.63 90.04, 59.23 89.35, 59.68 88.53 C 60.04 87.88, 60.30 87.15, 60.94 86.92 L 60.98 13.03 Z"/>
+              <defs><path id="bd-cortex-shape" d="M 60.93 13.09 C 60.19 12.72, 59.87 11.80, 59.40 10.99 C 58.92 10.19, 58.30 9.51, 57.60 8.90 C 56.22 7.70, 54.57 6.81, 52.81 6.26 C 49.48 5.23, 45.78 5.45, 42.60 6.84 C 40.92 7.57, 39.39 8.63, 38.19 10.07 C 37.58 10.79, 37.06 11.60, 36.32 12.06 C 35.58 12.53, 34.62 12.64, 33.68 12.68 C 32.74 12.73, 31.82 12.71, 30.94 12.87 C 30.05 13.03, 29.19 13.38, 28.36 13.79 C 26.87 14.54, 25.45 15.52, 24.74 17.05 C 24.35 17.90, 24.18 18.92, 23.64 19.57 C 23.32 19.97, 22.86 20.23, 22.33 20.35 C 21.97 20.42, 21.57 20.43, 21.20 20.46 C 20.26 20.54, 19.45 20.76, 18.61 21.18 C 17.78 21.60, 16.92 22.23, 16.44 22.99 C 15.49 24.50, 16.06 26.53, 15.77 28.36 C 15.63 29.28, 15.28 30.15, 14.61 30.73 C 14.08 31.20, 13.34 31.48, 12.64 31.78 C 11.77 32.15, 10.95 32.56, 10.29 33.16 C 9.63 33.75, 9.13 34.54, 8.70 35.38 C 8.28 36.23, 7.93 37.14, 7.84 38.01 C 7.77 38.71, 7.87 39.38, 8.14 40.09 C 8.47 40.98, 9.07 41.92, 9.06 42.76 C 9.06 43.60, 8.45 44.33, 7.86 45.09 C 6.80 46.45, 5.81 47.86, 5.64 49.45 C 5.45 51.20, 6.26 53.17, 7.64 54.41 C 8.33 55.04, 9.16 55.48, 9.67 56.21 C 10.19 56.93, 10.39 57.94, 10.33 58.85 C 10.26 59.77, 9.91 60.59, 9.84 61.51 C 9.76 62.43, 9.96 63.43, 10.35 64.27 C 11.05 65.77, 12.41 66.70, 13.72 67.77 C 14.45 68.37, 15.17 69.00, 15.45 69.82 C 15.74 70.63, 15.58 71.63, 15.54 72.59 C 15.46 74.52, 15.81 76.33, 17.09 77.65 C 17.73 78.30, 18.60 78.84, 19.49 79.13 C 20.37 79.42, 21.27 79.46, 22.16 79.65 C 22.70 79.77, 23.22 79.93, 23.56 80.30 C 23.79 80.55, 23.93 80.89, 24.07 81.24 C 24.34 81.94, 24.59 82.65, 24.96 83.28 C 25.90 84.86, 27.59 85.86, 29.30 86.53 C 30.15 86.87, 31.01 87.12, 31.93 87.18 C 32.85 87.25, 33.82 87.13, 34.72 87.29 C 35.61 87.45, 36.42 87.90, 37.09 88.53 C 37.75 89.15, 38.27 89.95, 38.89 90.63 C 40.01 91.85, 41.47 92.67, 43.02 93.26 C 46.30 94.50, 49.99 94.68, 53.27 93.51 C 54.99 92.90, 56.61 91.91, 57.95 90.66 C 58.63 90.04, 59.23 89.35, 59.68 88.53 C 60.04 87.88, 60.30 87.15, 60.94 86.92 L 60.98 13.03 Z"/></defs>
+              <use href="#bd-cortex-shape" class="hero-cortex-fill" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
               <g class="hero-cortex-sulci" fill="none" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M 24.17 19.70 C 24.96 23.20, 28.38 25.18, 31.70 25.44"/>
                 <path d="M 10.05 57.97 C 13.21 57.70, 17.00 57.97, 18.89 61.03"/>
@@ -157,6 +158,7 @@
                 <path d="M 25.55 36.92 C 24.03 39.93, 23.39 43.35, 23.13 46.70"/>
                 <path d="M 39.30 58.26 C 40.29 59.77, 42.00 60.93, 43.13 62.46 C 44.11 63.77, 44.67 65.36, 44.68 67.13"/>
               </g>
+              <use href="#bd-cortex-shape" class="hero-cortex-outline" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
             </g>
 
             <g class="hero-net">
@@ -1183,67 +1185,6 @@
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section zoo-section" id="model-zoo">
-      <div class="container">
-        <div class="zoo-head-center">
-          <span class="section-eyebrow">MODEL ZOO · <span data-count-to="103">103</span> ARCHITECTURES</span>
-          <h2 class="section-title is-center">Explore <span class="zoo-count-num" data-count-to="103">103</span> published architectures</h2>
-          <p class="zoo-sub">Every model is reproduced from its original paper and ships with a consistent constructor. The shared <code class="bd-mono">EEGModuleMixin</code> takes any of <code class="bd-mono">n_chans</code>, <code class="bd-mono">n_outputs</code>, <code class="bd-mono">n_times</code>, <code class="bd-mono">chs_info</code>, <code class="bd-mono">input_window_seconds</code>, or <code class="bd-mono">sfreq</code>; the missing ones are derived for you. Hover any pill or card to preview its Python API.</p>
-        </div>
-
-.. raw:: html
-    :file: generated/zoo_browser.html
-
-.. raw:: html
-
-      </div>
-    </section>
-
-    <section class="section tut-section">
-      <div class="container">
-        <div class="tut-head">
-          <div>
-            <span class="section-eyebrow">EXECUTED GALLERY</span>
-            <h2 class="section-title is-left">Runnable tutorials from executed notebooks</h2>
-          </div>
-          <a class="btn" href="auto_examples/index.html">Browse all tutorials <span aria-hidden="true">→</span></a>
-        </div>
-
-        <div class="tut-grid">
-          <a class="tut-card" href="auto_examples/model_building/plot_bcic_iv_2a_moabb_trial.html">
-            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_bcic_iv_2a_moabb_trial_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
-            <span class="tut-tag bd-mono">Motor Imagery · EEG</span>
-            <h3 class="tut-title">Trialwise decoding on BCI Competition IV-2a</h3>
-          </a>
-          <a class="tut-card" href="auto_examples/model_building/plot_load_pretrained_models.html">
-            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_load_pretrained_models_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
-            <span class="tut-tag bd-mono">Hugging Face Hub</span>
-            <h3 class="tut-title">Load, adapt, and audit pretrained foundation models</h3>
-          </a>
-          <a class="tut-card" href="auto_examples/model_building/plot_channel_interpolation.html">
-            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_channel_interpolation_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
-            <span class="tut-tag bd-mono">Montage · ChannelLayer</span>
-            <h3 class="tut-title">Exact, spherical-spline, and source montage interpolation</h3>
-          </a>
-          <a class="tut-card" href="auto_examples/advanced_training/plot_sae_reve.html">
-            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_sae_reve_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
-            <span class="tut-tag bd-mono">Mechanistic XAI · REVE</span>
-            <h3 class="tut-title">Causal sparse-autoencoder feature interventions on REVE</h3>
-          </a>
-          <a class="tut-card" href="auto_examples/applied_examples/plot_sleep_staging_chambon2018.html">
-            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_sleep_staging_chambon2018_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
-            <span class="tut-tag bd-mono">Sleep PSG</span>
-            <h3 class="tut-title">Clinical polysomnography staging on Sleep Physionet</h3>
-          </a>
-          <a class="tut-card" href="auto_examples/advanced_training/plot_interpretability.html">
-            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_interpretability_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
-            <span class="tut-tag bd-mono">Attribution &amp; XAI</span>
-            <h3 class="tut-title">Amplitude-spectrum gradients and randomization checks</h3>
-          </a>
         </div>
       </div>
     </section>
