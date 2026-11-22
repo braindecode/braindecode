@@ -379,6 +379,12 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
 
         self._init_parameters()
 
+    def forward(self, x):
+        """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
+
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
         glorot_weight_zero_bias(self)

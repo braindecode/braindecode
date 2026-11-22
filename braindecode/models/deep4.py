@@ -362,6 +362,12 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
         self.train()
 
+    def forward(self, x):
+        """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
+
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
         # was default from lasagne

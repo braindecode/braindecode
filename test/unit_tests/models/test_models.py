@@ -2757,7 +2757,7 @@ def test_batchnorm_decorator_preserves_forward_input_keyword():
 
     model.train()
     with torch.no_grad():
-        out = model(X=x)
+        out = model(x=x)
 
     assert out.shape == (1, model.n_outputs)
 

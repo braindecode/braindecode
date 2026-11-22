@@ -235,9 +235,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         )
 
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(self, X):
+    def forward(self, x):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
-        features = self.eeg_encoder(X)
+        features = self.eeg_encoder(x)
         if features.ndim == 2:
             features = features.unsqueeze(-1)
         batch_size = features.shape[0]

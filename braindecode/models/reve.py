@@ -485,7 +485,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
     def forward(
         self,
-        eeg: torch.Tensor,
+        x: torch.Tensor,
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
         return_features: bool = False,
@@ -502,7 +502,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         Parameters
         ----------
-        eeg : torch.Tensor
+        x : torch.Tensor
             Input EEG tensor of shape (batch_size, channels, sequence_length).
         pos : torch.Tensor
             Position tensor of shape (batch_size, channels, 3) representing (x, y, z) coordinates.
@@ -536,7 +536,7 @@ class REVE(EEGModuleMixin, nn.Module):
                 "return_output and return_features are mutually exclusive."
             )
 
-        mask = check_ch_mask(ch_mask, eeg)
+        mask = check_ch_mask(ch_mask, x)
         if (
             mask is not None
             and not self.use_attention_pooling
@@ -548,7 +548,7 @@ class REVE(EEGModuleMixin, nn.Module):
             )
         if pos is None and self.default_pos is not None:  # the chs_info montage
             check_n_chans(
-                eeg,
+                x,
                 self.n_chans,
                 "REVE",
                 "pass pos for these channels, or use a channel_strategy.",
@@ -558,27 +558,27 @@ class REVE(EEGModuleMixin, nn.Module):
         ):
             head_channels = self._n_pos_chans
             check_n_chans(
-                eeg,
+                x,
                 self.n_chans if head_channels is None else head_channels,
                 "REVE",
                 "use attention_pooling=True or return_features=True for another montage.",
             )
         channel_index = self.channel_index
         if pos is None and channel_index is not None:
-            eeg = eeg.index_select(1, channel_index.to(eeg.device))
+            x = x.index_select(1, channel_index.to(x.device))
             if mask is not None:
                 # A sample whose real channels were all dropped has none left.
                 mask = check_ch_mask(
-                    mask.index_select(1, channel_index.to(eeg.device)), eeg
+                    mask.index_select(1, channel_index.to(x.device)), x
                 )
         if mask is not None:
             # Padding may hold NaN, which the patch embedding would spread.
-            eeg = eeg.masked_fill(~mask[:, :, None], 0.0)
+            x = x.masked_fill(~mask[:, :, None], 0.0)
         step = self.patch_size - self.patch_overlap
         # Right zero-pad (or crop) so the overlapping patches tile the window;
         # a tiled window is passed through untouched.
-        eeg = pad_or_crop_to_patches(eeg, self.patch_size, self.on_non_divisible, step)
-        patches = eeg.unfold(dimension=2, size=self.patch_size, step=step)
+        x = pad_or_crop_to_patches(x, self.patch_size, self.on_non_divisible, step)
+        patches = x.unfold(dimension=2, size=self.patch_size, step=step)
         batch_size, channel, n_patches, _ = patches.shape
 
         if pos is None:
@@ -587,7 +587,7 @@ class REVE(EEGModuleMixin, nn.Module):
                     "No positions provided and no default positions available. Please provide channel positions."
                 )
             # One copy for the whole batch: the embedding below broadcasts.
-            pos = self.default_pos.unsqueeze(0).to(eeg.device)
+            pos = self.default_pos.unsqueeze(0).to(x.device)
         token_mask: Optional[torch.Tensor] = None
         attn_mask: Optional[torch.Tensor] = None
         if mask is not None:
@@ -600,7 +600,7 @@ class REVE(EEGModuleMixin, nn.Module):
         # Positions stay in float32 for the Fourier features; the embedding
         # follows the signal's dtype.
         pos_embed = self.ln(
-            self.fourier4d(pos).to(eeg.dtype) + self.mlp4d(pos.to(eeg.dtype))
+            self.fourier4d(pos).to(x.dtype) + self.mlp4d(pos.to(x.dtype))
         )
 
         # Patch embedding: (batch, channels, n_patches, patch_size) -> (batch, channels, n_patches, embed_dim)

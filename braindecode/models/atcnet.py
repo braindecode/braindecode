@@ -433,15 +433,15 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.n_windows * self.conv_block_pool_size_1 * self.conv_block_pool_size_2
         )
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Dimension: (batch_size, C, T)
-        X = self.ensuredims(X)
+        x = self.ensuredims(x)
         # Dimension: (batch_size, C, T, 1)
-        X = self.dimshuffle(X)
+        x = self.dimshuffle(x)
         # Dimension: (batch_size, 1, T, C)
 
         # ----- Sliding window -----
-        conv_feat = self.conv_block(X)
+        conv_feat = self.conv_block(x)
         # Dimension: (batch_size, F2, Tc, 1)
         tc = conv_feat.shape[2]
         conv_feat = conv_feat.view(-1, self.F2, tc)

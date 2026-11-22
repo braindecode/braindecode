@@ -189,14 +189,14 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
     def forward(
         self,
-        X: torch.Tensor,
+        x: torch.Tensor,
     ) -> torch.Tensor:
-        X = self.ensuredims(X)
-        X = self.dimshuffle(X)
+        x = self.ensuredims(x)
+        x = self.dimshuffle(x)
 
-        res1 = self.residual_block_1(X)
+        res1 = self.residual_block_1(x)
 
-        out = self.initial_inception_module(X)
+        out = self.initial_inception_module(x)
         for layer in self.intermediate_inception_modules_1:
             out = layer(out)
 

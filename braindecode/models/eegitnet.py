@@ -234,6 +234,12 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             LinearWithConstraint(num_features, self.n_outputs, max_norm=0.25),
         )
 
+    def forward(self, x):
+        """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
+
     @staticmethod
     def _get_inception_branch(
         in_channels,

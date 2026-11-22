@@ -211,6 +211,9 @@ Enhancements
 API and behavior changes
 ========================
 
+- Every model's ``forward`` takes its signal as ``x`` and :class:`braindecode.models.LUNA` its
+  positions as ``pos``; the old keywords ``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor`` and
+  ``channel_locations`` still work with a ``FutureWarning`` until 2.2 (by `Bruno Aristimunha`_).
 - Constructor feature-extraction flags (``return_feats`` on
   :class:`braindecode.models.AttnSleep`, :class:`~braindecode.models.DeepSleepNet`,
   :class:`~braindecode.models.SleepStagerBlanco2020`, and

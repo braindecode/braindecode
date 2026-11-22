@@ -1423,7 +1423,7 @@ def test_luna_impulse_patch_has_real_spectrum(device, n_times):
     model.freq_embed.frequency_to_embed.register_forward_pre_hook(
         lambda module, args: captured.append(args[0])
     )
-    model(signal, channel_locations=torch.ones(1, 3, 3, device=device))
+    model(signal, pos=torch.ones(1, 3, 3, device=device))
 
     magnitude, phase = captured[0][0, :, -1].chunk(2, dim=-1)
     expected = torch.tensor([torch.pi, 0, 0], device=device)[:, None]
@@ -1467,7 +1467,7 @@ def test_luna_matches_explicit_locations_when_channel_count_changes():
         x = torch.randn(2, len(expected), 80)
         explicit = expected.expand(len(x), -1, -1)
         with torch.no_grad():
-            torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
+            torch.testing.assert_close(model(x), model(x, pos=explicit))
 
 
 @pytest.mark.parametrize("assign", [False, True], ids=["to_empty", "assign"])
@@ -3858,12 +3858,12 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
     x = torch.randn(2, 4, 80)
     locations = torch.randn(2, 4, 3)
     with torch.no_grad():
-        expected = old(x, channel_locations=locations)
+        expected = old(x, pos=locations)
         if scripted:
             old_script = torch.jit.script(old)
             model = torch.jit.script(model)
             torch.testing.assert_close(
-                old_script(x, channel_locations=locations), expected
+                old_script(x, pos=locations), expected
             )
-        actual = model(x, channel_locations=locations)
+        actual = model(x, pos=locations)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
