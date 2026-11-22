@@ -445,7 +445,11 @@ def test_filterbank_models_pad_after_convs_and_script_dynamic_lengths(
         torch.testing.assert_close(scripted(x_1001), eager_out, atol=0, rtol=0)
     model_div.on_non_divisible = "crop"
     with torch.no_grad():
-        assert model_div(x_1001).shape == (2, 2)
+        # IFNet's 0.01-std init hides the trailing samples at unit scale
+        crop_out = model_div(100.0 * x_1001)
+        crop_scripted = torch.jit.script(model_div)(100.0 * x_1001)
+    assert crop_out.shape == (2, 2)
+    torch.testing.assert_close(crop_scripted, crop_out, atol=0, rtol=0)
 
 
 _VALID_OUTPUT_TAGS = {

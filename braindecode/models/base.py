@@ -934,9 +934,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         snap_here = (
             snap_mode is True
             or (snap_mode == "pad_only" and on_non_divisible == "pad")
-            or (snap_mode == "crop_only" and on_non_divisible == "crop")
         )
-        snapped_anywhere = snap_here or snap_mode in (False, "crop_only")
+        snapped_anywhere = snap_here or snap_mode is False
         if snap_here:
             args, kwargs = self._replace_time_inputs(
                 args, kwargs, self._snap_grid_tensor
