@@ -97,7 +97,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         https://github.com/Want2Vanish/FBMSNet
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _time_axis = "free"
     _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
 
     def __init__(
@@ -219,6 +219,11 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             max_norm=linear_max_norm,
         )
+        self._n_times_step = self.stride_factor
+        self.on_non_divisible = "pad"
+        self._min_n_times = (
+            2 if temporal_layer in ("VarLayer", "StdLayer", "LogVarLayer") else 1
+        ) * self.stride_factor
 
     def forward(self, x):
         """
@@ -253,7 +258,8 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         # shape: (batch, self.out_channels_spatial, 1, n_times)
 
         # Apply some padding to the input to make it divisible by the stride factor
-        x = self.padding_layer(x)
+        if x.shape[-1] % self.stride_factor != 0:
+            x = self.padding_layer(x)
         # shape: (batch, self.out_channels_spatial, 1, n_times_padded)
 
         # Reshape for temporal layer
