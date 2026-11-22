@@ -230,6 +230,84 @@ parcel mixing, the fitted covariance) lives under ``channel_layer.*``, so a back
 checkpoint without these keys still loads. The layer runs in eager mode, and TorchScript
 works under ``"native"`` only.
 
+.. _channel-strategies-forward-arguments:
+
+****************************************
+ Mask and position arguments of forward
+****************************************
+
+Every model takes its signal as ``x``. A channel mask is always ``ch_mask``, of shape
+``(batch, n_chans)``, ``True`` for real channels (see
+:func:`~braindecode.functional.check_ch_mask`); these models take it: BBL, BIOT,
+BaRISTA, BrainBERT, Brant, CBraMod, CORTEG, DIVER1, EpiNT, GeoNIRS, LUNA, Labram, MAPA,
+MEGGPT, MVPFormer, MtReNIRS, PopulationTransformer, REVE, SleepFM and SleepFMStager.
+Electrode positions in metres are always ``pos``. The other arguments describe something
+else, so they keep their own name:
+
+.. list-table::
+    :header-rows: 1
+    :widths: 24 22 54
+
+    - - Model
+      - Argument
+      - Shape and meaning
+    - - CORTEG, LUNA, REVE
+      - ``pos``
+      - ``(batch, n_chans, 3)`` electrode positions in metres (CORTEG also takes
+        ``(n_chans, 3)``), as :func:`~braindecode.datasets.pad_channels_collate` gives
+    - - MtReNIRS
+      - ``coordinates``
+      - ``(n_chans, 4)`` or ``(batch, n_chans, 4)``: standardized optode coordinates
+        (x, y, z) and the chromophore (0 HbO, 1 HbR)
+    - - GeoNIRS
+      - ``geometry``
+      - ``(n_pairs, 6)`` or ``(batch, n_pairs, 6)`` geometry vector of each pair
+    - - PopulationTransformer
+      - ``coords``
+      - ``(batch, n_chans, 3)`` integer voxel coordinates
+    - - BaRISTA
+      - ``spatial_indices``
+      - embedding indices of the montage, ``(n_chans, 3)`` or ``(n_chans,)``, with an
+        optional batch axis
+    - - DIVER1
+      - ``chan_metadata``
+      - ``(n_chans, 5)`` or ``(batch, n_chans, 5)``: x, y, z, modality, sub-modality
+    - - MAPA
+      - ``sensor_indices``
+      - ``(n_chans, 3)`` or ``(batch, n_chans, 3)``: array, contact, region slot
+    - - Labram
+      - ``ch_names``
+      - list of channel names, matched to ``LABRAM_CHANNEL_ORDER``
+    - - LUNA
+      - ``channel_names``
+      - channel ids for the reconstruction head (``n_outputs=0``)
+    - - CBraMod, CSBrain, CodeBrain
+      - ``mask``
+      - ``(batch, n_chans, n_patches)`` patches replaced by the mask encoding where ``1``
+    - - LUNA
+      - ``mask``
+      - shaped like ``x``; a patch with a masked sample becomes the mask token
+    - - NICE
+      - ``mask``
+      - boolean ``(batch, n_chans, n_times)``; ``True`` samples are set to zero
+    - - BBL
+      - ``temporal_mask``
+      - boolean ``(batch, n_times)``; ``True`` samples are set to zero on every channel
+    - - SleepFMStager
+      - ``temporal_mask``
+      - ``(batch, n_patches)``, ``True`` for padded patches
+    - - MEGGPT
+      - ``token_mask``
+      - boolean ``(batch, n_chans, n_times)``; ``True`` hides the token
+    - - TFMTokenizer
+      - ``spectrogram_mask``
+      - boolean, shaped like the spectrogram; ``True`` bins are visible
+
+The old names ``X``, ``input``, ``inputs``, ``eeg`` and ``input_tensor`` for ``x``, and
+LUNA's ``channel_locations`` for ``pos``, still work by keyword with a ``FutureWarning``
+until braindecode 2.2. SleepFM's ``channel_mask`` is the inverse of ``ch_mask`` and is
+removed in 2.2 too.
+
 ***************************
  Reconstruct a bad channel
 ***************************

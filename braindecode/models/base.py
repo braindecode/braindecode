@@ -259,6 +259,19 @@ def _forward_param_names(forward_fn) -> tuple[str, ...]:
     )
 
 
+#: Old ``forward`` keywords and their current names, accepted with a
+#: ``FutureWarning`` until braindecode 2.2. SleepFM's ``channel_mask`` is not
+#: here: it is the inverse of ``ch_mask`` and SleepFM converts it itself.
+_FORWARD_ALIASES = {
+    "X": "x",
+    "input": "x",
+    "inputs": "x",
+    "eeg": "x",
+    "input_tensor": "x",
+    "channel_locations": "pos",
+}
+
+
 _HF_INSTALL_HINT = (
     "requires the `huggingface_hub` package. "
     "Install with: pip install 'braindecode[hub]'"
@@ -1641,7 +1654,29 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     )
         return args, kwargs
 
+    @torch.jit.unused
+    def _rename_old_keywords(self, kwargs: dict) -> dict:
+        """Move old ``forward`` keywords (``_FORWARD_ALIASES``) to their new name."""
+        names = _forward_param_names(type(self).forward)
+        for old, new in _FORWARD_ALIASES.items():
+            if (
+                old in kwargs
+                and new not in kwargs
+                and old not in names
+                and new in names
+            ):
+                warnings.warn(
+                    f"{type(self).__name__}.forward: the keyword {old!r} is now "
+                    f"{new!r}; the old name stops working in braindecode 2.2.",
+                    FutureWarning,
+                    stacklevel=3,
+                )
+                kwargs = {new if k == old else k: v for k, v in kwargs.items()}
+        return kwargs
+
     def __call__(self, *args, **kwargs):
+        if kwargs:
+            kwargs = self._rename_old_keywords(kwargs)
         args, kwargs = self._prepare_inputs(args, kwargs)
         x = self._first_input(args, kwargs)
         need_lazy_geometry = (

@@ -126,7 +126,7 @@ _CASES = {
         LUNA(n_chans=3, n_outputs=3, n_times=80, patch_size=20, embed_dim=32,
              num_queries=2, depth=1),
         80,
-        ("channel_locations", _positions, True),
+        ("pos", _positions, True),
     ),
     "BIOT": lambda: (
         BIOT(n_chans=3, n_outputs=3, n_times=400, sfreq=200, embed_dim=32,

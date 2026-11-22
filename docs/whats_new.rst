@@ -224,6 +224,9 @@ API and behavior changes
 - Constructor feature flags set to ``True`` (``return_feats``, ``return_feature``, ``return_encoder_output`` and the
   constructor ``return_features`` of 17 models) emit a ``FutureWarning`` and still work; they are removed in 2.2 in
   favour of ``model(x, return_features=True)`` (`Bruno Aristimunha`_).
+- The first ``forward`` argument of every model is ``x`` and :class:`braindecode.models.LUNA` takes ``pos`` for
+  ``channel_locations``; the old keywords (``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor``,
+  ``channel_locations``) emit a ``FutureWarning`` and are removed in 2.2 (:ref:`channel-strategies-forward-arguments`, `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).

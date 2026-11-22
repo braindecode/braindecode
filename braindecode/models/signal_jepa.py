@@ -559,9 +559,9 @@ class SignalJEPA(_BaseSignalJEPA):
         self._min_n_times = _need
 
     def forward(
-        self, X: torch.Tensor, return_features: bool = False
+        self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        local_features = self.feature_encoder(X)  # type: ignore
+        local_features = self.feature_encoder(x)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features = local_features + pos_encoding  # type: ignore
         contextual_features = self._encode(local_features)  # type: ignore
@@ -754,9 +754,9 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         )
 
     def forward(
-        self, X: torch.Tensor, return_features: bool = False
+        self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        local_features = self.feature_encoder(X)  # type: ignore
+        local_features = self.feature_encoder(x)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features = local_features + pos_encoding  # type: ignore
         contextual_features = self._encode(local_features)  # type: ignore
@@ -1080,9 +1080,9 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         return new_model
 
     def forward(
-        self, X: torch.Tensor, return_features: bool = False
+        self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        local_features = self.feature_encoder(X)  # type: ignore[misc]
+        local_features = self.feature_encoder(x)  # type: ignore[misc]
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": local_features,
@@ -1333,10 +1333,10 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         return new_model
 
     def forward(
-        self, X: torch.Tensor, return_features: bool = False
+        self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        X = self.spatial_conv(X)
-        local_features = self.feature_encoder(X)  # type: ignore[misc]
+        x = self.spatial_conv(x)
+        local_features = self.feature_encoder(x)  # type: ignore[misc]
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": local_features,

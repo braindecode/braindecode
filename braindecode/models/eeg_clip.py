@@ -219,8 +219,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+    def forward(self, x):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
-        features = self.eeg_encoder(X)
+        features = self.eeg_encoder(x)
         if features.ndim == 2:
             features = features.unsqueeze(-1)
         if not torch.jit.is_scripting() and return_features:

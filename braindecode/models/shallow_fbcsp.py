@@ -231,6 +231,12 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             - 1
         )
 
+    def forward(self, x):
+        """Run the layers in order on ``x`` of shape ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
+
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
         if self.split_first_layer:

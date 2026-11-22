@@ -355,6 +355,9 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                 continue
             if name == "flat":
                 x = self._pool_adapted_time(x, self._pool_t_target, dim=-1)
+    def forward(self, x):
+        """Run the layers in order on ``x`` of shape ``(batch, n_chans, n_times)``."""
+        for module in self:
             x = module(x)
         return x
 

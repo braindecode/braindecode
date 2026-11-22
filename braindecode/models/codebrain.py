@@ -282,7 +282,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
 
     def forward(
         self,
-        inputs: torch.Tensor,
+        x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         return_features: bool = False,
     ) -> Union[
@@ -290,16 +290,14 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Dict[str, Optional[torch.Tensor]],
         Tuple[torch.Tensor, torch.Tensor],
     ]:
-        # inputs: (batch, n_chans, n_times)
-        batch, n_chans, n_times = inputs.shape
+        # x: (batch, n_chans, n_times)
+        batch, n_chans, n_times = x.shape
         patch_size = self.patch_size
         seq_len = n_times // patch_size
 
         # Trim to nearest multiple of patch_size and reshape into patches
         # (batch, n_chans, seq_len, patch_size)
-        x = inputs[:, :, : seq_len * patch_size].reshape(
-            batch, n_chans, seq_len, patch_size
-        )
+        x = x[:, :, : seq_len * patch_size].reshape(batch, n_chans, seq_len, patch_size)
         # Dual temporal-spectral patch embedding
         # (batch, n_chans, seq_len, emb_dim)
         x = self.patch_embedding(x, mask=mask)

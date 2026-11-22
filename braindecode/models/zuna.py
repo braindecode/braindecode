@@ -362,10 +362,10 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def forward(
         self,
-        input_tensor: torch.Tensor,
+        x: torch.Tensor,
         return_features: bool = False,
     ):
-        patch_tokens = self.patch_embedding(input_tensor)
+        patch_tokens = self.patch_embedding(x)
         token_latents = self.encoder(patch_tokens)
         structured_latents = token_latents.reshape(
             token_latents.shape[0], self.num_channels, -1, self.latent_dim

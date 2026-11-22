@@ -306,12 +306,12 @@ class PBT(EEGModuleMixin, nn.Module):
         """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Classify a window from the transformer output of its class token.
 
         Parameters
         ----------
-        X : torch.Tensor
+        x : torch.Tensor
             Input tensor with shape (batch_size, n_chans, n_times). Each
             channel contributes its complete patches within the configured window.
 
@@ -320,11 +320,11 @@ class PBT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
-        X, int_pos = self.patch_signal(X)
+        x, int_pos = self.patch_signal(x)
 
-        tokens = self.patching_projection(X)
+        tokens = self.patching_projection(x)
 
-        cls_token = self.cls_token.expand(X.size(0), 1, -1)
+        cls_token = self.cls_token.expand(x.size(0), 1, -1)
 
         tokens = torch.cat([cls_token, tokens], dim=1)
         pos_emb = self.pos_embedding(int_pos)

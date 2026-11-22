@@ -342,7 +342,7 @@ def test_padded_batch_passes_channel_check():
     X_pos, _, _, pos, mask_pos = pad_channels_collate(pos_batch)
     assert X_pos.shape[1] == 5 and pos.shape == (2, 5, 3)
     with torch.no_grad():
-        luna_out = luna(X_pos, channel_locations=pos, ch_mask=mask_pos)
+        luna_out = luna(X_pos, pos=pos, ch_mask=mask_pos)
     assert luna_out.shape == (2, 2)
     assert torch.isfinite(luna_out).all()
 
@@ -416,6 +416,39 @@ def test_dense_conversion_multiplies_existing_dilation():
     dense_convert(net, axis=(2, 3))
     assert [m.stride for m in net] == [(1,), (1,), (1,)]
     assert [m.dilation for m in net] == [(1,), (4,), (4,)]
+
+
+
+@PARAMS
+def test_forward_takes_x_first(model_name, required_params, signal_params):
+    assert list(inspect.signature(models_dict[model_name].forward).parameters)[1] == "x"
+
+
+_REGISTRY_CASES = {name: (req, sp) for name, req, sp in models_mandatory_parameters}
+
+
+@pytest.mark.parametrize(
+    "model_name,old,new",
+    [
+        ("ATCNet", "X", "x"),
+        ("EEGNet", "input", "x"),
+        ("CodeBrain", "inputs", "x"),
+        ("REVE", "eeg", "x"),
+        ("ZUNA", "input_tensor", "x"),
+        ("LUNA", "channel_locations", "pos"),
+    ],
+)
+def test_old_forward_keyword_still_works(model_name, old, new):
+    model, x = _build_case(model_name, *_REGISTRY_CASES[model_name])
+    _materialize(model, x)
+    pos = torch.rand(x.shape[0], x.shape[1], 3) * 0.1
+    value, rest = (x, {}) if new == "x" else (pos, {"x": x})
+    with torch.no_grad():
+        with pytest.warns(FutureWarning, match=rf"keyword '{old}' is now '{new}'"):
+            out_old = model(**rest, **{old: value})
+        out_new = model(**rest, **{new: value})
+    for a, b in zip(_tensor_leaves(out_old), _tensor_leaves(out_new), strict=True):
+        assert torch.equal(a, b)
 
 
 def test_mvpformer_concat_pooling_enforces_fixed_channels():
