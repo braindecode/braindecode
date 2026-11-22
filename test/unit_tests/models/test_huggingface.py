@@ -928,6 +928,7 @@ def test_provenance_sleepfm_supplement_records_encoder_and_source(tmp_path):
         tmp_path / "stager", encoder_model_name_or_path=tmp_path / "encoder",
         local_files_only=True,
     )
+    assert loaded.training is False
     provenance = loaded._pretrained_provenance
     assert set(dict(loaded.named_parameters())) <= provenance["loaded"]
     assert provenance["repo_id"] == str(tmp_path / "stager")
@@ -941,6 +942,70 @@ def test_provenance_sleepfm_supplement_records_encoder_and_source(tmp_path):
     loaded.reset_parameters()
     assert not provenance["loaded"]
     assert not supplement["loaded"]
+
+
+def test_sleepfm_stager_from_pretrained_eval_and_supplementary_warnings(
+    tmp_path, monkeypatch
+):
+    import warnings
+
+    import huggingface_hub
+    from safetensors.torch import save_file
+
+    from braindecode.models import SleepFM, SleepFMStager
+
+    kwargs = dict(
+        n_chans=2, n_times=128, n_outputs=2, sfreq=128, patch_size=64,
+        embed_dim=8, drop_prob=0.0,
+    )
+    stager = SleepFMStager(
+        **kwargs, channel_modalities=["A", "B"], max_seq_length=2,
+        encoder_num_heads=2, encoder_num_layers=6, encoder_pooling_heads=2,
+        encoder_chunk_patches=2, staging_num_heads=2, staging_num_layers=1,
+        staging_pooling_heads=2,
+    )
+    encoder = SleepFM(
+        **kwargs, max_seq_length=128, num_heads=2, num_layers=6, pooling_heads=2,
+    )
+    stager.save_pretrained(tmp_path / "full")
+    full = SleepFMStager.from_pretrained(tmp_path / "full", local_files_only=True)
+    assert full.training is False
+
+    stager.save_pretrained(tmp_path / "stager")
+    head = ("patch_embedding.", "staging_head.", "final_layer.")
+    head_only = {k: v for k, v in stager.state_dict().items() if k.startswith(head)}
+    save_file(head_only, tmp_path / "stager" / "model.safetensors")
+
+    commit = "4261d6581f000000000000000000000000000000"
+    snap = tmp_path / "hub" / "models--braindecode--SleepFM" / "snapshots" / commit
+    snap.mkdir(parents=True)
+    save_file(encoder.state_dict(), snap / "model.safetensors")
+    monkeypatch.setattr(
+        huggingface_hub, "hf_hub_download", lambda *a, **k: str(snap / "model.safetensors")
+    )
+    monkeypatch.setattr(
+        huggingface_hub, "try_to_load_from_cache", lambda *a, **k: str(snap / "model.safetensors")
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        loaded = SleepFMStager.from_pretrained(
+            tmp_path / "stager", encoder_revision="main", local_files_only=True
+        )
+    assert loaded.training is False
+    assert not [w for w in caught if "not loaded from" in str(w.message)]
+    supplement = loaded._pretrained_provenance["supplementary"]
+    assert supplement["repo_id"] == "braindecode/SleepFM"
+    assert supplement["revision"] == "main"
+    assert supplement["commit"] == commit
+    assert f"supplementary: braindecode/SleepFM @ {commit[:7]}" in str(loaded)
+
+    empty_enc = tmp_path / "empty_enc"
+    empty_enc.mkdir()
+    save_file({"unrelated": torch.zeros(1)}, empty_enc / "model.safetensors")
+    with pytest.warns(UserWarning, match="parameters of SleepFMStager were not loaded from"):
+        SleepFMStager.from_pretrained(
+            tmp_path / "stager", encoder_model_name_or_path=empty_enc, local_files_only=True
+        )
 
 
 def test_provenance_manual_reload_invalidates_source(tmp_path):
