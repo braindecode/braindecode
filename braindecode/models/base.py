@@ -1627,30 +1627,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             if isinstance(model, torch.nn.Module):
                 provenance = model.__dict__.setdefault("_pretrained_provenance", {})
                 provenance.update(_checkpoint_source(*args, **kwargs))
-                params = list(model.named_parameters(remove_duplicate=False))
-                loaded = provenance.get("loaded") or set()
-                # Tied parameters may be saved under only one of their names.
-                loaded_ids = {id(p) for n, p in params if n in loaded}
-                # A new head is initialised here: only the rest must load.
-                body = [n for n, _ in params if not n.startswith("final_layer.")]
-                unloaded = [
-                    n
-                    for n, p in params
-                    if id(p) not in loaded_ids and not n.startswith("final_layer.")
-                ]
-                # Most of the body unloaded: the checkpoint is in another format.
-                # A few fresh layers (Labram's fc_norm, CORTEG's channel_adapter)
-                # are by design and stay silent.
-                if 2 * len(unloaded) > len(body):
-                    more = ", ..." if len(unloaded) > 10 else ""
-                    warnings.warn(
-                        f"{len(unloaded)} of {len(params)} parameters of "
-                        f"{cls.__name__} were not loaded from "
-                        f"{provenance['repo_id']} (the checkpoint keys do not "
-                        f"match the model): {', '.join(unloaded[:10])}{more}",
-                        UserWarning,
-                        stacklevel=2,
-                    )
+                if not model.__dict__.get("_missing_encoder_keys"):
+                    cls._warn_if_unloaded(model, provenance)
             card_data = _load_card_data(*args, **kwargs)
             if card_data is not None:
                 model.card_data = card_data
@@ -1660,6 +1638,78 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         cls.__name__,
                         card_data.datasets,
                     )
+            return model
+
+        @classmethod
+        def _warn_if_unloaded(cls, model, provenance):
+            params = list(model.named_parameters(remove_duplicate=False))
+            loaded = provenance.get("loaded") or set()
+            # Tied parameters may be saved under only one of their names.
+            loaded_ids = {id(p) for n, p in params if n in loaded}
+            # A new head is initialised here: only the rest must load.
+            body = [n for n, _ in params if not n.startswith("final_layer.")]
+            unloaded = [
+                n
+                for n, p in params
+                if id(p) not in loaded_ids and not n.startswith("final_layer.")
+            ]
+            # Most of the body unloaded: the checkpoint is in another format.
+            # A few fresh layers (Labram's fc_norm, CORTEG's channel_adapter)
+            # are by design and stay silent.
+            if 2 * len(unloaded) > len(body):
+                more = ", ..." if len(unloaded) > 10 else ""
+                warnings.warn(
+                    f"{len(unloaded)} of {len(params)} parameters of "
+                    f"{cls.__name__} were not loaded from "
+                    f"{provenance['repo_id']} (the checkpoint keys do not "
+                    f"match the model): {', '.join(unloaded[:10])}{more}",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        @classmethod
+        def _load_supplementary_safetensors(
+            cls,
+            model,
+            source,
+            keys,
+            *,
+            revision=None,
+            cache_dir=None,
+            local_files_only=False,
+            token=None,
+        ):
+            from safetensors.torch import load_file
+
+            source = str(source)
+            if Path(source).is_dir():
+                path = _local_weights_path(source, "model.safetensors")
+            else:
+                path = huggingface_hub.hf_hub_download(
+                    source,
+                    "model.safetensors",
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    local_files_only=local_files_only,
+                    token=token,
+                )
+            state_dict = load_file(path)
+            to_load = {k: state_dict[k] for k in keys if k in state_dict}
+            rec_token = _RECORD_LOADED_KEYS.set(True)
+            try:
+                model.load_state_dict(to_load, strict=False)
+            finally:
+                _RECORD_LOADED_KEYS.reset(rec_token)
+            provenance = model.__dict__.setdefault("_pretrained_provenance", {})
+            supplementary = {
+                **_checkpoint_source(source, revision=revision, cache_dir=cache_dir),
+                "loaded": set(to_load),
+            }
+            snapshot = Path(path).parent
+            if not supplementary.get("local") and snapshot.parent.name == "snapshots":
+                supplementary["commit"] = snapshot.name
+            provenance["supplementary"] = supplementary
+            cls._warn_if_unloaded(model, provenance)
             return model
 
         def generate_model_card(self, *args, **kwargs):

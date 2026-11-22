@@ -192,7 +192,6 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         self,
         x: Tensor,
         return_features: bool = False,
-        ch_mask: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         """Encode ``x`` of shape (batch, n_chans, n_times).
@@ -216,17 +215,10 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         also shares statistics across time, channels and recordings. Account
         for this when choosing masked spans and reconstruction targets.
 
-        A ``ch_mask`` (see :func:`~braindecode.functional.check_ch_mask`) raises
-        a ``ValueError``: the spatial convolution has one weight per channel of
-        the ``n_chans`` montage, so a recording cannot run on fewer channels.
+        There is no ``ch_mask``: the spatial convolution has one weight per
+        channel of the ``n_chans`` montage, so a recording cannot run on fewer
+        channels.
         """
-        if ch_mask is not None:
-            # Its kernel spans all n_chans rows; a padded channel, even zeroed,
-            # still enters the sum through the temporal bias and BatchNorm shift.
-            raise ValueError(
-                "NICE does not accept ch_mask: its spatial convolution is sized to "
-                "all n_chans channels, so it cannot run on fewer channels."
-            )
         if mask is not None:
             if mask.shape != x.shape or mask.dtype != torch.bool:
                 raise ValueError(

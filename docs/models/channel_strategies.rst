@@ -33,6 +33,17 @@ outputs (max-abs difference 0.0) with the same ``state_dict``. The config saves
 ``channel_strategy``, ``channel_strategy_kwargs`` and the input montage, so
 ``from_config`` rebuilds the same model.
 
+.. note::
+
+    **When to attach an external strategy vs. keep "native".** Across five pretrained
+    EEG foundation models and five downstream tasks, :footcite:t:`kokate2026channel`
+    report a regime-dependent trade-off: rigid-montage models (such as
+    :class:`~braindecode.models.BENDR`) require an external adapter on mismatched caps,
+    whereas montage-flexible models (such as :class:`~braindecode.models.EEGPT` and
+    :class:`~braindecode.models.CBraMod`) benefit from external interpolation under
+    frozen-encoder linear probing but match or exceed it under ``"native"`` during full
+    fine-tuning.
+
 ****************
  The strategies
 ****************
@@ -282,3 +293,7 @@ the signal of its nearest good electrode, and ``C3`` and ``C4`` are copied as th
 .. rubric:: Examples that use the channel layer
 
 .. minigallery:: braindecode.modules.ChannelLayer
+
+.. rubric:: References
+
+.. footbibliography::

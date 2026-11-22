@@ -252,6 +252,27 @@ def test_split_dataset(concat_ds_targets):
     assert (splits["test"].description["run"] == "2").all()
 
 
+@pytest.mark.parametrize("missing", [None, np.nan])
+def test_split_by_column_with_missing_value_raises(missing):
+    # pandas groupby drops the rows whose key is missing: the recording
+    # without a value would silently end up in no split at all
+    info = mne.create_info(["C3", "C4"], sfreq=100.0, ch_types="eeg")
+    concat_ds = BaseConcatDataset(
+        [
+            RawDataset(
+                mne.io.RawArray(np.zeros((2, 100)), info, verbose=False),
+                {"subject": subject, "session": session},
+            )
+            for subject, session in [(1, "a"), (2, "a"), (3, missing), (4, "b")]
+        ]
+    )
+    with pytest.raises(ValueError, match=r"'session'.*\[2\]"):
+        concat_ds.split("session")
+    # a complete column still splits every recording
+    splits = concat_ds.split("subject")
+    assert sum(len(split.datasets) for split in splits.values()) == 4
+
+
 def test_metadata(concat_windows_dataset):
     md = concat_windows_dataset.get_metadata()
     assert isinstance(md, pd.DataFrame)

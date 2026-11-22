@@ -281,3 +281,87 @@ jobs:
 
       - name: Run Acceptance Tests
         run: pytest test/acceptance_tests --run-network -n 0 -vv -rP --durations=0
+
+  torch-floor:
+    name: torch-floor (ubuntu-latest, py3.12, torch==2.6.*)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OMP_NUM_THREADS: "2"
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - name: Restore MNE Data Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/mne_data
+          key: test-2-${{ runner.os }}-3.12
+          restore-keys: |
+            test-2-${{ runner.os }}-3.12-
+            test-2-${{ runner.os }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install Braindecode (torch 2.6 floor)
+        env:
+          UV_TORCH_BACKEND: cpu
+        run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]" "torch==2.6.*" "torchaudio==2.6.*"
+
+      - name: Verify Torch 2.6 Floor Versions
+        run: python -c 'import torch, torchaudio; print(torch.__version__, torchaudio.__version__); assert torch.__version__.startswith("2.6.") and torchaudio.__version__.startswith("2.6.")'
+
+      - name: Materialize MOABB Data
+        run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1, 2, 4])"
+
+      - name: Run Unit Suite on Torch 2.6 Floor
+        env:
+          BRAINDECODE_COMPILE_ALL: "0"
+        run: |
+          python .github/scripts/with_memory_log.py pytest -vv --durations=25 -n 2 --dist worksteal --max-worker-restart=2 test/unit_tests
+          pytest -vv --durations=25 -m slow test/unit_tests
+
+  network-pins:
+    name: network-pins (ubuntu-latest, py3.12, HF unit pins)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OMP_NUM_THREADS: "1"
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install Braindecode
+        env:
+          UV_TORCH_BACKEND: cpu
+        run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
+
+      - name: Run Pinned Hub Unit Tests
+        env:
+          HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
+          HF_HUB_DISABLE_TELEMETRY: "1"
+        run: pytest test/unit_tests -m "network and huggingface" --run-network -n 0 -vv -rs -rP --durations=0

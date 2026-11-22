@@ -51,7 +51,7 @@ def _coerce_rows(rows_or_df: Any) -> list[dict[str, Any]]:
 def gen_models_visualization(
     rows_or_df: Iterable[dict[str, Any]],
     out_html: str = _DEFAULT_OUT_HTML,
-    bar_color: str = "#3B82F6",
+    bar_color: str = "#2a527a",
 ) -> str:
     rows = _coerce_rows(rows_or_df)
 
@@ -115,7 +115,7 @@ def gen_models_visualization(
             "x": param_x,
             "y": param_y,
             "orientation": "h",
-            "marker": {"color": bar_color, "line": {"color": "#2b4ea1", "width": 0.8}},
+            "marker": {"color": bar_color, "line": {"color": "#163350", "width": 0.8}},
             "hovertemplate": "<b>%{y}</b><br>#Params: %{x:,}<extra></extra>",
             "xaxis": "x",
             "yaxis": "y",
@@ -127,7 +127,8 @@ def gen_models_visualization(
             "orientation": "h",
             "text": app_x,
             "textposition": "auto",
-            "marker": {"color": bar_color, "line": {"color": "#2b4ea1", "width": 0.8}},
+            "insidetextfont": {"color": "#ffffff"},
+            "marker": {"color": bar_color, "line": {"color": "#163350", "width": 0.8}},
             "hovertemplate": "%{y}: %{x}<extra></extra>",
             "xaxis": "x2",
             "yaxis": "y2",
@@ -143,20 +144,23 @@ def gen_models_visualization(
         "paper_bgcolor": "rgba(0,0,0,0)",
         "plot_bgcolor": "rgba(0,0,0,0)",
         "showlegend": False,
-        "font": {"family": _FONT_FAMILY, "size": 14},
+        "font": {"family": _FONT_FAMILY, "size": 14, "color": "#121821"},
         "uniformtext": {"minsize": 10, "mode": "hide"},
         "xaxis": {
             "domain": [0.0, 0.684],
             "anchor": "y",
             "type": "log",
             "title": {"text": "#Parameters (log scale)"},
+            "showline": True,
+            "linecolor": "rgba(18,33,51,0.32)",
+            "linewidth": 1,
             "showgrid": True,
-            "gridcolor": "rgba(0,0,0,0.18)",
+            "gridcolor": "rgba(18,33,51,0.14)",
             "gridwidth": 1,
             "minor": {
                 "showgrid": True,
                 "dtick": "D1",
-                "gridcolor": "rgba(0,0,0,0.10)",
+                "gridcolor": "rgba(18,33,51,0.07)",
                 "griddash": "dot",
                 "gridwidth": 0.5,
             },
@@ -168,6 +172,9 @@ def gen_models_visualization(
             "domain": [0.0, 1.0],
             "anchor": "x",
             "title": {"text": "Model"},
+            "showline": True,
+            "linecolor": "rgba(18,33,51,0.32)",
+            "linewidth": 1,
             "categoryorder": "array",
             "categoryarray": param_y,
             "labelalias": label_map,
@@ -177,39 +184,45 @@ def gen_models_visualization(
             "domain": [0.784, 1.0],
             "anchor": "y2",
             "title": {"text": "Count"},
+            "showline": True,
+            "linecolor": "rgba(18,33,51,0.32)",
+            "linewidth": 1,
             "showgrid": True,
-            "gridcolor": "rgba(0,0,0,0.12)",
+            "gridcolor": "rgba(18,33,51,0.12)",
             "ticks": "outside",
             "ticklen": 6,
         },
         "yaxis2": {
             "domain": [0.0, 1.0],
             "anchor": "x2",
+            "showline": True,
+            "linecolor": "rgba(18,33,51,0.32)",
+            "linewidth": 1,
             "labelalias": par_alias,
             "automargin": True,
         },
         "annotations": [
             {
-                "text": "Model Complexity (log₁₀ #Parameters)",
-                "x": 0.342,
-                "y": 1.0,
+                "text": "<b>a</b>  Model complexity (log₁₀ #parameters)",
+                "x": 0.0,
+                "y": 1.01,
                 "xref": "paper",
                 "yref": "paper",
-                "xanchor": "center",
+                "xanchor": "left",
                 "yanchor": "bottom",
                 "showarrow": False,
-                "font": {"size": 16, "color": "#111", "family": _FONT_FAMILY},
+                "font": {"size": 15, "color": "#121821", "family": _FONT_FAMILY},
             },
             {
-                "text": "Models per Application",
-                "x": 0.892,
-                "y": 1.0,
+                "text": "<b>b</b>  Models per application",
+                "x": 0.784,
+                "y": 1.01,
                 "xref": "paper",
                 "yref": "paper",
-                "xanchor": "center",
+                "xanchor": "left",
                 "yanchor": "bottom",
                 "showarrow": False,
-                "font": {"size": 16, "color": "#111", "family": _FONT_FAMILY},
+                "font": {"size": 15, "color": "#121821", "family": _FONT_FAMILY},
             },
         ],
     }
@@ -226,6 +239,57 @@ def gen_models_visualization(
         out_path = Path(out_html)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    theme_sync_js = (
+        "(function(){"
+        'var el=document.getElementById("models-analysis");'
+        "if(!el)return;"
+        f"var traces={json.dumps(traces, ensure_ascii=False)};"
+        f"var layout={json.dumps(layout, ensure_ascii=False)};"
+        f"var config={json.dumps(config)};"
+        "function themeSpec(dark){"
+        "return dark?{"
+        'ink:"#eef2f7",grid:"rgba(241,236,225,0.14)",minor:"rgba(241,236,225,0.06)",'
+        'spine:"rgba(241,236,225,0.32)",bar:"#2d6da8",line:"#7db4e6"'
+        "}:{"
+        'ink:"#121821",grid:"rgba(18,33,51,0.14)",minor:"rgba(18,33,51,0.07)",'
+        f'spine:"rgba(18,33,51,0.32)",bar:{json.dumps(bar_color)},line:"#163350"'
+        "};}"
+        "function applyToSpec(dark){"
+        "var s=themeSpec(dark);"
+        "layout.font.color=s.ink;"
+        "layout.annotations[0].font.color=s.ink;"
+        "layout.annotations[1].font.color=s.ink;"
+        "layout.xaxis.gridcolor=s.grid;"
+        "layout.xaxis.minor.gridcolor=s.minor;"
+        "layout.xaxis.linecolor=s.spine;"
+        "layout.yaxis.linecolor=s.spine;"
+        "layout.xaxis2.gridcolor=s.grid;"
+        "layout.xaxis2.linecolor=s.spine;"
+        "layout.yaxis2.linecolor=s.spine;"
+        "traces[0].marker={color:s.bar,line:{color:s.line,width:0.8}};"
+        "traces[1].marker={color:s.bar,line:{color:s.line,width:0.8}};"
+        "}"
+        'applyToSpec(document.documentElement.dataset.theme==="dark");'
+        'Plotly.newPlot("models-analysis", traces, layout, config);'
+        "new MutationObserver(function(){"
+        'var s=themeSpec(document.documentElement.dataset.theme==="dark");'
+        "Plotly.relayout(el,{"
+        '"font.color":s.ink,'
+        '"annotations[0].font.color":s.ink,'
+        '"annotations[1].font.color":s.ink,'
+        '"xaxis.gridcolor":s.grid,'
+        '"xaxis.minor.gridcolor":s.minor,'
+        '"xaxis.linecolor":s.spine,'
+        '"yaxis.linecolor":s.spine,'
+        '"xaxis2.gridcolor":s.grid,'
+        '"xaxis2.linecolor":s.spine,'
+        '"yaxis2.linecolor":s.spine'
+        "});"
+        'Plotly.restyle(el,{"marker.color":s.bar,"marker.line.color":s.line});'
+        '}).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});'
+        "})();"
+    )
+
     snippet = (
         "<div>"
         '<script type="text/javascript">'
@@ -234,16 +298,7 @@ def gen_models_visualization(
         f'<script charset="utf-8" src="{_PLOTLY_CDN}"></script>'
         f'<div id="models-analysis" class="plotly-graph-div" '
         f'style="height:{dynamic_h}px; width:100%;"></div>'
-        '<script type="text/javascript">'
-        "window.PLOTLYENV=window.PLOTLYENV || {};"
-        'if (document.getElementById("models-analysis")) {'
-        "Plotly.newPlot("
-        '"models-analysis", '
-        f"{json.dumps(traces, ensure_ascii=False)}, "
-        f"{json.dumps(layout, ensure_ascii=False)}, "
-        f"{json.dumps(config)}"
-        ");}"
-        "</script>"
+        f'<script type="text/javascript">{theme_sync_js}</script>'
         "</div>\n"
     )
     out_path.write_text(snippet, encoding="utf-8")
@@ -329,29 +384,43 @@ def wrap_categorization(spec: str, sep: str = "<br/>") -> str:
     return sep.join(out)
 
 
+def _format_params_td(raw_val: Any) -> str:
+    cleaned = str(raw_val or "").strip()
+    if not cleaned:
+        return "<td></td>"
+    plain = cleaned.replace(",", "")
+    try:
+        num = int(float(plain))
+        return f'<td data-order="{num}">{num:,}</td>'
+    except ValueError:
+        return f"<td>{html.escape(cleaned)}</td>"
+
+
 def _render_summary_table(rows: list[dict[str, str]]) -> str:
     header_cells = "".join(
         f"      <th>{html.escape(col)}</th>\n" for col in _TABLE_COLUMNS
     )
     body_rows: list[str] = []
     for row in rows:
-        cells = [
+        lead_cells = [
             wrap_model_name(row.get("Model", "")),
             wrap_tags(row.get("Application", "")),
             wrap_tags(row.get("Modality", "")),
             wrap_tags(row.get("Type", "")),
             wrap_tags(row.get("Categorization", "")),
             html.escape(str(row.get("Sampling Frequency (Hz)") or "").strip()),
-            html.escape(str(row.get("#Parameters") or "").strip()),
-            wrap_hyperparameters(row.get("Hyperparameters", "")),
         ]
-        rendered_cells = "".join(f"      <td>{cell}</td>\n" for cell in cells)
+        rendered_cells = (
+            "".join(f"      <td>{cell}</td>\n" for cell in lead_cells)
+            + f"      {_format_params_td(row.get('#Parameters', ''))}\n"
+            + f"      <td>{wrap_hyperparameters(row.get('Hyperparameters', ''))}</td>\n"
+        )
         body_rows.append(f"    <tr>\n{rendered_cells}    </tr>\n")
 
     return (
         '<table border="1" class="dataframe sd-table sortable">\n'
         "  <thead>\n"
-        '    <tr style="text-align: right;">\n'
+        "    <tr>\n"
         f"{header_cells}"
         "    </tr>\n"
         "  </thead>\n"

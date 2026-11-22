@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Hashable, Sequence
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import torch
@@ -21,12 +20,7 @@ from braindecode.functional import (
     sinusoidal_positional_encoding,
 )
 from braindecode.functional.patches import _check_on_non_divisible
-from braindecode.models.base import (
-    _RECORD_LOADED_KEYS,
-    EEGModuleMixin,
-    _checkpoint_source,
-    huggingface_hub,
-)
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
 
@@ -382,7 +376,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
        The released stager is mirrored at
        `braindecode/SleepFMStager <https://huggingface.co/braindecode/SleepFMStager>`_
-       (revision ``8681fbad``, CC BY-NC 4.0).
+       (revision ``e75a1832``, CC BY-NC 4.0).
 
        .. code-block:: python
 
@@ -534,35 +528,15 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             )
         missing = model.__dict__.pop("_missing_encoder_keys", None)
         if missing:
-            from safetensors.torch import load_file
-
-            source = str(encoder_model_name_or_path or "braindecode/SleepFM")
-            path = Path(source) / "model.safetensors"
-            if not path.parent.is_dir():
-                path = huggingface_hub.hf_hub_download(
-                    source,
-                    "model.safetensors",
-                    revision=encoder_revision,
-                    cache_dir=kwargs.get("cache_dir"),
-                    local_files_only=kwargs.get("local_files_only", False),
-                    token=kwargs.get("token"),
-                )
-            state_dict = load_file(path)
-            token = _RECORD_LOADED_KEYS.set(True)
-            try:
-                model.load_state_dict({k: state_dict[k] for k in missing}, strict=False)
-            finally:
-                _RECORD_LOADED_KEYS.reset(token)
-            model._pretrained_provenance["supplementary"] = {
-                **_checkpoint_source(
-                    source, revision=encoder_revision, cache_dir=kwargs.get("cache_dir")
-                ),
-                "loaded": set(missing),
-            }
-            supplementary = model._pretrained_provenance["supplementary"]
-            snapshot = Path(path).parent
-            if not supplementary.get("local") and snapshot.parent.name == "snapshots":
-                supplementary["commit"] = snapshot.name
+            cls._load_supplementary_safetensors(
+                model,
+                encoder_model_name_or_path or "braindecode/SleepFM",
+                missing,
+                revision=encoder_revision,
+                cache_dir=kwargs.get("cache_dir"),
+                local_files_only=kwargs.get("local_files_only", False),
+                token=kwargs.get("token"),
+            )
         return model
 
     @classmethod
@@ -579,6 +553,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         model.load_state_dict(
             state_dict, strict=strict and not model._missing_encoder_keys
         )
+        model.eval()
         return model
 
     def forward(
