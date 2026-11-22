@@ -524,12 +524,19 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             return out
         return self.final_layer(pooled)
 
-    @torch.jit.unused
-    @_real_dft.fp32_island
     def _amplitude_real_dft(self, tokens):
         # |rfft(tokens, norm="forward")| on the device for accelerators without
         # complex tensors (Intel Gaudi / HPU), instead of a host FFT. The norm
-        # keeps abs()'s zero gradient at an all-zero bin.
+        # keeps abs()'s zero gradient at an all-zero bin. In at least float32
+        # with autocast disabled, as _real_dft.fp32_island, written out so
+        # that TorchScript compiles it (TorchScript takes no autocast device from a tensor: scripted, the cast only).
+        tokens = _real_dft.at_least_float32(tokens)
+        if torch.jit.is_scripting():
+            return self._magnitude_real_dft(tokens)
+        with torch.autocast(device_type=tokens.device.type, enabled=False):
+            return self._magnitude_real_dft(tokens)
+
+    def _magnitude_real_dft(self, tokens):
         real, imag = _real_dft.real_rfft(tokens)
         magnitude = torch.linalg.vector_norm(torch.stack((real, imag)), dim=0)
         return magnitude / tokens.shape[-1]

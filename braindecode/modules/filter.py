@@ -796,16 +796,21 @@ class GeneralizedGaussianFilter(nn.Module):
 
         return x
 
-    @torch.jit.unused
-    @_real_dft.fp32_island
     def _forward_real_dft(self, x, filters):
         # Real-valued equivalent of the torch.fft path above, for devices
-        # without complex tensors (Intel Gaudi / HPU), in float32 with autocast
-        # disabled. ``filters`` multiplies the real and imaginary parts
-        # element-wise, exactly like ``x * filters`` on the
+        # without complex tensors (Intel Gaudi / HPU), in at least float32
+        # with autocast disabled (as _real_dft.fp32_island, written out so
+        # that TorchScript compiles it). ``filters`` multiplies the real and
+        # imaginary parts element-wise, exactly like ``x * filters`` on the
         # ``view_as_real`` layout above (not a complex multiplication).
-        # ``torch.jit.unused`` keeps this branch out of the scripted graph:
-        # CPU/CUDA never take it, and HPU does not run under torch.jit.script.
+        # TorchScript takes no autocast device from a tensor: scripted, the cast only.
+        x = _real_dft.at_least_float32(x)
+        if torch.jit.is_scripting():
+            return self._filter_real_dft(x, filters)
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            return self._filter_real_dft(x, filters)
+
+    def _filter_real_dft(self, x, filters):
         real, imag = _real_dft.real_rfft(x)
         repeat = self.out_channels // self.in_channels
         real = torch.repeat_interleave(real, repeat, dim=-2)

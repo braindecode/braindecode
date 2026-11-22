@@ -827,7 +827,9 @@ class _ResidualBlock(nn.Module):
             swa_mask = self.generate_local_window_mask(
                 seq_len, self.swa_window_size, x.device, x.dtype
             )
-            h_attn, _ = self.attention(h_attn, h_attn, h_attn, attn_mask=swa_mask)
+            h_attn, _ = self.attention(
+                h_attn, h_attn, h_attn, attn_mask=swa_mask, need_weights=False
+            )
         # (batch, seq_len, 2*res_channels) -> (batch, 2*res_channels, seq_len)
         h_attn = h_attn.transpose(1, 2)
 

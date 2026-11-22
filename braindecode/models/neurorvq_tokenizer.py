@@ -86,6 +86,9 @@ class _EMAVectorQuantizer(nn.Module):
     def _indices(self, vectors: Tensor) -> Tensor:
         self.embedding.initialize(vectors)
         weight = self.embedding.weight
+        # Distances in the codebook dtype: under autocast the encoder hands
+        # bfloat16 vectors to the in-place addmm_, which does not cast.
+        vectors = vectors.to(weight.dtype)
         distances = vectors.square().sum(dim=1, keepdim=True)
         distances = distances + weight.square().sum(dim=1)
         # - 2 * vectors @ weight.T, accumulated in place by the GEMM (one pass less)

@@ -475,6 +475,8 @@ class _AxisAttention(nn.Module):
             .permute(2, 0, 3, 1, 4)
             .unbind(0)
         )
+        # Dense operands: attention kernels may assume contiguous inputs.
+        query, key, value = query.contiguous(), key.contiguous(), value.contiguous()
         drop = self.att_drop_prob if self.training else 0.0
         attended = scaled_dot_product_attention(
             query, key, value, attn_mask=mask, dropout_p=drop

@@ -19,6 +19,7 @@ import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from braindecode.functional import (
     _get_gaussian_kernel1d,
@@ -204,7 +205,7 @@ class FCA(nn.Module):
         )
         self.fc = nn.Sequential(
             nn.Linear(in_channels, in_channels // reduction_rate, bias=False),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(in_channels // reduction_rate, in_channels, bias=False),
             nn.Sigmoid(),
         )
@@ -1074,9 +1075,23 @@ class MultiHeadAttention(nn.Module):
             for float masks the values are **added** to the attention scores
             before softmax.
         """
-        queries = self.rearrange_stack(self.queries(x))
-        keys = self.rearrange_stack(self.keys(x))
-        values = self.rearrange_stack(self.values(x))
+        # One GEMM for the three projections. The weights stay in
+        # ``queries``, ``keys`` and ``values``, so the state_dict keys do not
+        # change.
+        weight = torch.cat([self.queries.weight, self.keys.weight, self.values.weight])
+        bias: Optional[Tensor] = None
+        if (
+            self.queries.bias is not None
+            and self.keys.bias is not None
+            and self.values.bias is not None
+        ):
+            bias = torch.cat([self.queries.bias, self.keys.bias, self.values.bias])
+        # (batch, seq, emb_size) -> 3 x (batch, seq, inner_dim)
+        queries, keys, values = F.linear(x, weight, bias).chunk(3, dim=-1)
+        # (batch, seq, inner_dim) -> (batch, heads, seq, head_dim)
+        queries = self.rearrange_stack(queries)
+        keys = self.rearrange_stack(keys)
+        values = self.rearrange_stack(values)
         if self.q_norm is not None:
             queries = self.q_norm(queries)
         if self.k_norm is not None:

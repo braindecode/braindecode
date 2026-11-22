@@ -500,7 +500,7 @@ class _Conv1dBlock(nn.Module):
                 stride=stride,
                 padding=0,
             ),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Dropout(p=drop_prob),
         )
         self.norm = nn.LayerNorm(normalized_shape=out_channels)

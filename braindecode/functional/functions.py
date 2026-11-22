@@ -110,12 +110,16 @@ def fft_conv1d(
         # without a copy (and without a costly backward).
         w_mat = torch.view_as_real(torch.stack([w_f, w_f * 1j], 1)).flatten(1, 2)
         y_f = torch.view_as_real(x_f).permute(2, 0, 3, 1).flatten(2) @ w_mat.flatten(2)
+        # Back to the FFT dtype: autocast runs the matmul in bfloat16, which
+        # view_as_complex does not take.
+        y_f = y_f.to(xs.dtype)
         y_f = torch.view_as_complex(y_f.unflatten(-1, [-1, 2]))
     else:
         # Forward only with fewer rows than twice the input channels: the
         # doubled weight costs more than combining [Re x; Im x] @ [Re w, Im w].
         x_f = x_f.permute(2, 0, 1)
         p = torch.cat([x_f.real, x_f.imag], 1) @ torch.view_as_real(w_f).flatten(2)
+        p = p.to(xs.dtype)  # bfloat16 under autocast; torch.complex needs float
         p = p.unflatten(1, [2, x.shape[0]]).unflatten(3, [-1, 2])
         y_f = torch.complex(
             p[:, 0, :, :, 0] - p[:, 1, :, :, 1], p[:, 0, :, :, 1] + p[:, 1, :, :, 0]

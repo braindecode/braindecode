@@ -899,7 +899,9 @@ class _ClassificationHeadWithQueries(nn.Module):
         B, num_patches, embed_dim = x.shape
         decoder_queries = self.learned_agg.repeat(x.shape[0], 1, 1)
 
-        x = self.decoder_attn(query=decoder_queries, key=x, value=x)[0]
+        x = self.decoder_attn(
+            query=decoder_queries, key=x, value=x, need_weights=False
+        )[0]
         x = x[:, 0, :]
         x = self.decoder_ffn(x)
         return x

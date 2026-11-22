@@ -12,6 +12,7 @@ never downcast, so callers wrap the numerically sensitive parts with
 #
 # License: BSD (3-clause)
 import functools
+import math
 from typing import Optional
 
 import torch
@@ -21,6 +22,17 @@ from torch import nn
 def needs_real_dft(x: torch.Tensor) -> bool:
     """Whether ``x`` lives on a device without complex-tensor FFT support."""
     return x.device.type == "hpu"
+
+
+def at_least_float32(x: torch.Tensor) -> torch.Tensor:
+    """``x`` in float32 if it is a floating dtype narrower than 32 bits.
+
+    The TorchScript-compatible form of the cast :func:`fp32_island` applies;
+    callers pair it with ``torch.autocast(device_type=..., enabled=False)``.
+    """
+    if x.is_floating_point() and x.element_size() < 4:
+        return x.float()
+    return x
 
 
 def fp32_island(fn):
@@ -48,7 +60,9 @@ def fp32_island(fn):
     return wrapped
 
 
-def real_dft_basis(n, *, device, dtype):
+def real_dft_basis(
+    n: int, *, device: torch.device, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
     """One-sided cosine/sine basis of an ``n``-point DFT, shape ``(n // 2 + 1, n)``.
 
     The phase index is reduced modulo ``n`` in integers before scaling, so the
@@ -63,18 +77,18 @@ def real_dft_basis(n, *, device, dtype):
     freqs = torch.arange(n // 2 + 1, device=device, dtype=torch.int32)
     samples = torch.arange(n, device=device, dtype=torch.int32)
     phase_index = (freqs[:, None] * samples[None, :]) % n
-    angles = 2 * torch.pi * phase_index.to(dtype) / n
+    angles = 2 * math.pi * phase_index.to(dtype) / n
     return angles.cos(), angles.sin()
 
 
-def real_rfft(x):
+def real_rfft(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Real and imaginary parts of ``torch.fft.rfft(x, dim=-1)`` without complex tensors."""
     n = x.shape[-1]
     cosine, sine = real_dft_basis(n, device=x.device, dtype=x.dtype)
     return x @ cosine.transpose(0, 1), -(x @ sine.transpose(0, 1))
 
 
-def real_irfft(real, imag, *, n):
+def real_irfft(real: torch.Tensor, imag: torch.Tensor, *, n: int) -> torch.Tensor:
     """``torch.fft.irfft(torch.complex(real, imag), n=n, dim=-1)`` without complex tensors."""
     if real.shape[-1] != n // 2 + 1:
         raise ValueError(
@@ -82,15 +96,14 @@ def real_irfft(real, imag, *, n):
         )
     cosine, sine = real_dft_basis(n, device=real.device, dtype=real.dtype)
     output = real[..., :1] @ cosine[:1, :]
+    # interior bins 1 .. stop - 1: all but DC and, for even n, Nyquist
+    stop = real.shape[-1]
     if n % 2 == 0:
-        interior = slice(1, -1)
+        stop = stop - 1
         output = output + real[..., -1:] @ cosine[-1:, :]
-    else:
-        interior = slice(1, None)
-    if real.shape[-1] > (2 if n % 2 == 0 else 1):
+    if stop > 1:
         output = output + 2 * (
-            real[..., interior] @ cosine[interior, :]
-            - imag[..., interior] @ sine[interior, :]
+            real[..., 1:stop] @ cosine[1:stop, :] - imag[..., 1:stop] @ sine[1:stop, :]
         )
     return output / n
 

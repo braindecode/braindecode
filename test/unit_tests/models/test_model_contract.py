@@ -763,3 +763,52 @@ def _check_mapping_targets(name, model):
         f"{name}.mapping points at keys that are not in state_dict: {missing}"
     )
     assert len(targets) == len(set(targets)), f"{name}.mapping repeats a target"
+
+
+@pytest.mark.parametrize(
+    "model_name,required_params,signal_params", models_mandatory_parameters
+)
+def test_registered_model_autocast_bfloat16_forward(
+    model_name, required_params, signal_params
+):
+    """A float32 model runs under CPU bfloat16 autocast with finite outputs."""
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+        out = model(x)
+    assert all(torch.isfinite(t).all() for t in _tensor_leaves(out))
+
+
+@pytest.mark.parametrize(
+    "model_name,required_params,signal_params", models_mandatory_parameters
+)
+def test_registered_model_channels_last_matches_contiguous(
+    model_name, required_params, signal_params
+):
+    """``model.to(memory_format=torch.channels_last)`` gives the same outputs."""
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    if any(t.ndim == 5 for t in [*model.parameters(), *model.buffers()]):
+        pytest.skip("5-D weights or buffers: channels_last does not apply")
+    with torch.no_grad():
+        ref = model(x)
+        last = copy.deepcopy(model).to(memory_format=torch.channels_last)
+        torch.testing.assert_close(last(x), ref)
+
+
+def _always_real_dft(x: torch.Tensor) -> bool:
+    return True
+
+
+@pytest.mark.parametrize("model_name", ["ContraWR", "DIVER1", "EEGMiner"])
+def test_real_dft_branch_runs_under_torchscript(model_name, monkeypatch):
+    """The real-valued DFT branch (devices without complex tensors) compiles
+    with TorchScript and gives the eager branch's values bit for bit."""
+    case = next(c for c in models_mandatory_parameters if c[0] == model_name)
+    model, x = _build_case(*case)
+    _materialize(model, x)
+    monkeypatch.setattr(_real_dft, "needs_real_dft", _always_real_dft)
+    with torch.no_grad():
+        eager = model(x)
+        scripted = torch.jit.script(model)(x)
+    torch.testing.assert_close(scripted, eager, rtol=0, atol=0)

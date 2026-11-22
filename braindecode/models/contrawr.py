@@ -326,14 +326,20 @@ class _STFTModule(nn.Module):
 
         return torch.abs(spec).to(x)
 
-    @torch.jit.unused
-    @_real_dft.fp32_island
     def _forward_real_dft(self, x):
         # The magnitude above without complex tensors, on the device (Intel
         # Gaudi / HPU), instead of a host STFT and a host-to-device copy of
         # the whole spectrogram: reflect-padded frames (gathered, not a
-        # strided unfold) times the one-sided DFT basis. No annotations: with
-        # postponed annotations torch.jit.unused cannot resolve them.
+        # strided unfold) times the one-sided DFT basis. In at least float32
+        # with autocast disabled, as _real_dft.fp32_island, written out so
+        # that TorchScript compiles it (TorchScript takes no autocast device from a tensor: scripted, the cast only).
+        x = _real_dft.at_least_float32(x)
+        if torch.jit.is_scripting():
+            return self._magnitude_real_dft(x)
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            return self._magnitude_real_dft(x)
+
+    def _magnitude_real_dft(self, x):
         pad = self.n_fft // 2
         x = nn.functional.pad(x, (pad, pad), mode="reflect")
         n_frames = 1 + (x.shape[-1] - self.n_fft) // self.hop_length
