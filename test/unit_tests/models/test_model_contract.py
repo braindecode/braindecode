@@ -28,7 +28,7 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
-from braindecode.models import LUNA, MAPA
+from braindecode.models import LUNA, MAPA, GCNsNet
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
     _summary_table,
@@ -764,6 +764,8 @@ def _check_mapping_targets(name, model):
 def test_no_lazy_weights_once_the_shape_is_known(
     model_name, required_params, signal_params
 ):
+    if model_name == "GCNsNet":
+        pytest.skip("node counts are only known once the graph is fitted")
     model, _ = _build_case(model_name, required_params, signal_params)
     lazy = [
         n
@@ -771,6 +773,19 @@ def test_no_lazy_weights_once_the_shape_is_known(
         if isinstance(p, nn.UninitializedParameter)
     ]
     assert lazy == []
+
+
+def test_gcnsnet_graph_fit_keeps_the_optimizer_parameters():
+    """An optimizer built before the graph is fitted still trains every weight."""
+    torch.manual_seed(0)
+    x = torch.randn(4, 9, 16)
+    x[:, 4] = 0  # a constant channel has no edges, so Graclus pads more nodes
+    model = GCNsNet(n_chans=9, n_outputs=2, n_times=16)
+    params = list(model.parameters())
+    model.fit_graph(x)
+    model(x).sum().backward()
+    assert [id(p) for p in model.parameters()] == [id(p) for p in params]
+    assert all(p.grad is not None for p in params)
 
 
 # A backbone without a head: its classifiers are separate classes.

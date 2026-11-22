@@ -1421,7 +1421,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "final_layer; override reset_head() to change n_outputs."
             )
         bias = old.bias is not None
-        if isinstance(old, torch.nn.Linear):
+        if isinstance(old, torch.nn.LazyLinear):  # not sized yet (GCNsNet)
+            new = torch.nn.LazyLinear(n_outputs, bias=bias)
+        elif isinstance(old, torch.nn.Linear):
             new = torch.nn.Linear(old.in_features, n_outputs, bias=bias)
         else:
             conv = (

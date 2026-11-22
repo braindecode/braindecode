@@ -110,41 +110,33 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self.graph_initialized = False
         self.register_buffer("permutation", None)
         self.laplacians = nn.ModuleList([_LaplacianModule() for _ in n_features])
+        if adjacency is not None:
+            self._initialize_graph(
+                torch.as_tensor(adjacency, dtype=torch.float32).clone()
+            )
 
         in_features = [1, *n_features[:-1]]  # one scalar per node at the input
         self.graph_convs = nn.ModuleList(
             ChebyshevGraphConv(f_in, f_out, k)
             for f_in, f_out, k in zip(in_features, n_features, cheb_orders)
         )
-        known_n_chans = self._signal_param("n_chans")
-        if adjacency is not None:
-            init_adj = torch.as_tensor(adjacency, dtype=torch.float32).clone()
-            known_n_chans = init_adj.shape[0]
-        else:
-            init_adj = None
-
-        if known_n_chans is not None:
-            node_counts = self._default_node_counts(known_n_chans)
-            self.biases = nn.ModuleList(
-                [_NodeBias(n_nodes, f) for n_nodes, f in zip(node_counts, n_features)]
-            )
-            head_in: int | None = self._head_in_for_nodes(node_counts[-1])
-        else:
-            self.biases = nn.ModuleList([_LazyNodeBias() for _ in n_features])
-            head_in = None
-
+        # A given graph fixes the node counts, so the per-node biases and the
+        # head are built now; otherwise they stay lazy until the graph is fitted.
+        node_counts = [
+            None if m.matrix is None else len(m.matrix) for m in self.laplacians
+        ]
+        self.biases = nn.ModuleList(
+            _NodeBias(n_nodes, f) for n_nodes, f in zip(node_counts, n_features)
+        )
         self.batch_norms = nn.ModuleList([nn.BatchNorm1d(f) for f in n_features])
         self.activation = activation()
         self.dropout = nn.Dropout(drop_prob)
-        self.final_layer: nn.Module = (
-            nn.LazyLinear(self.n_outputs)
-            if head_in is None
-            else nn.Linear(head_in, self.n_outputs)
-        )
+        if node_counts[-1] is None:
+            self.final_layer = nn.LazyLinear(self.n_outputs)
+        else:
+            pooled = -(-node_counts[-1] // pool_sizes[-1])
+            self.final_layer = nn.Linear(pooled * n_features[-1], self.n_outputs)
         self._min_n_times = 1
-
-        if init_adj is not None:
-            self._initialize_graph(init_adj)
 
         self.register_load_state_dict_pre_hook(self._prepare_graph_state)
 
@@ -208,79 +200,31 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             levels.append(levels[-1] + int(log2(pool_size)))
         return levels
 
-    def _default_node_counts(self, n_chans: int) -> list[int]:
-        """Binary-tree node counts per layer for a connected ``n_chans`` graph."""
+    def _initialize_graph(self, adjacency):
         levels = self._compute_pooling_levels(self.pool_sizes)
         n_levels = levels[-1]
-        coarse = max(1, (n_chans + (1 << n_levels) - 1) >> n_levels)
-        return [coarse << (n_levels - level) for level in levels]
-
-    def _head_in_for_nodes(self, last_nodes: int) -> int:
-        pool_last = self.pool_sizes[-1]
-        pooled = (
-            (last_nodes + pool_last - 1) // pool_last if pool_last > 1 else last_nodes
+        adjacencies, permutation = _coarsen(adjacency, n_levels)
+        self.permutation = (
+            torch.tensor(permutation, dtype=torch.long, device=adjacency.device)
+            if n_levels > 0
+            else None
         )
-        return pooled * self.n_features[-1]
-
-    def _sync_graph_shapes(self, node_counts: list[int]) -> None:
-        """Resize pre-allocated node biases and head if a sparse graph padded further."""
-        for bias_mod, n_nodes, f in zip(self.biases, node_counts, self.n_features):
-            if (
-                not isinstance(bias_mod, LazyModuleMixin)
-                and bias_mod.bias.shape[1] != n_nodes
-            ):
-                bias_mod.bias = nn.Parameter(
-                    torch.full(
-                        (1, n_nodes, f),
-                        0.1,
-                        device=bias_mod.bias.device,
-                        dtype=bias_mod.bias.dtype,
-                    )
-                )
-        head_in = self._head_in_for_nodes(node_counts[-1])
-        if (
-            isinstance(self.final_layer, nn.Linear)
-            and not isinstance(self.final_layer, LazyModuleMixin)
-            and self.final_layer.in_features != head_in
-        ):
-            self.final_layer = nn.Linear(
-                head_in,
-                self.final_layer.out_features,
-                bias=self.final_layer.bias is not None,
-                device=self.final_layer.weight.device,
-                dtype=self.final_layer.weight.dtype,
+        for laplacian_module, level in zip(self.laplacians, levels):
+            level_adjacency = adjacencies[level].detach().cpu().numpy()
+            normalized = laplacian(level_adjacency, normed=True)
+            # scipy gives an isolated node (a fake coarsening node) a diagonal of 0;
+            # it must be 1 so that the rescaling below gives 0, as in EEG-DL.
+            isolated = np.flatnonzero(level_adjacency.sum(axis=0) == 0)
+            normalized[isolated, isolated] = 1
+            normalized = torch.as_tensor(
+                normalized, dtype=adjacency.dtype, device=adjacency.device
             )
-
-    def _initialize_graph(self, adjacency):
-        with torch.inference_mode(False), torch.no_grad():
-            adjacency = adjacency.detach().clone()
-            levels = self._compute_pooling_levels(self.pool_sizes)
-            n_levels = levels[-1]
-            adjacencies, permutation = _coarsen(adjacency, n_levels)
-            self.permutation = (
-                torch.tensor(permutation, dtype=torch.long, device=adjacency.device)
-                if n_levels > 0
-                else None
+            # Rescale the spectrum from [0, 2] to [-1, 1] (lmax = 2).
+            identity = torch.eye(
+                len(normalized), dtype=normalized.dtype, device=normalized.device
             )
-            node_counts: list[int] = []
-            for laplacian_module, level in zip(self.laplacians, levels):
-                level_adjacency = adjacencies[level].detach().cpu().numpy()
-                normalized = laplacian(level_adjacency, normed=True)
-                # scipy gives an isolated node (a fake coarsening node) a diagonal of 0;
-                # it must be 1 so that the rescaling below gives 0, as in EEG-DL.
-                isolated = np.flatnonzero(level_adjacency.sum(axis=0) == 0)
-                normalized[isolated, isolated] = 1
-                normalized = torch.as_tensor(
-                    normalized, dtype=adjacency.dtype, device=adjacency.device
-                )
-                # Rescale the spectrum from [0, 2] to [-1, 1] (lmax = 2).
-                identity = torch.eye(
-                    len(normalized), dtype=normalized.dtype, device=normalized.device
-                )
-                laplacian_module.matrix = normalized - identity
-                node_counts.append(len(normalized))
-            self._sync_graph_shapes(node_counts)
-            self.graph_initialized = True
+            laplacian_module.matrix = normalized - identity
+        self.graph_initialized = True
 
     def _prepare_graph_state(self, module, state_dict, prefix, *_):
         """Allocate the graph buffers a checkpoint holds before loading it."""
@@ -294,17 +238,14 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             raise RuntimeError("Incomplete GCNsNet graph state in checkpoint.")
         if not all(present):
             return
-        node_counts: list[int] = []
         for laplacian_module, key in zip(self.laplacians, keys):
             laplacian_module.matrix = torch.empty_like(
                 state_dict[key], device=reference.device, dtype=reference.dtype
             )
-            node_counts.append(state_dict[key].shape[0])
         if has_pooling:
             self.permutation = torch.empty_like(
                 state_dict[f"{prefix}permutation"], device=reference.device
             )
-        self._sync_graph_shapes(node_counts)
         self.graph_initialized = True
 
     def forward(self, x, return_features: bool = False):
@@ -365,23 +306,17 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         return x.reshape(batch_size, n_times, self.n_outputs).mean(dim=1)
 
 
-class _NodeBias(nn.Module):
-    """One bias per node per filter (EEG-DL ``b2relu``), sized at construction."""
+class _NodeBias(LazyModuleMixin, nn.Module):
+    """One bias per node per filter (EEG-DL ``b2relu``), sized at first call
+    unless ``n_nodes`` is given."""
 
-    def __init__(self, n_nodes: int, n_features: int):
+    def __init__(self, n_nodes: int | None, n_features: int):
         super().__init__()
-        self.bias = nn.Parameter(torch.full((1, n_nodes, n_features), 0.1))
-
-    def forward(self, x):
-        return x + self.bias
-
-
-class _LazyNodeBias(LazyModuleMixin, nn.Module):
-    """One bias per node per filter (EEG-DL ``b2relu``), sized at first call."""
-
-    def __init__(self):
-        super().__init__()
-        self.bias = nn.UninitializedParameter()
+        self.bias = (
+            nn.UninitializedParameter()
+            if n_nodes is None
+            else nn.Parameter(torch.full((1, n_nodes, n_features), 0.1))
+        )
 
     def initialize_parameters(self, x):
         if self.has_uninitialized_params():

@@ -445,9 +445,7 @@ def test_model_exported(model):
         n_times = default_signal_params["n_times"]
     example_input = torch.randn(1, n_chans, n_times)
 
-    if any(
-        isinstance(p, nn.UninitializedParameter) for p in model.parameters()
-    ) or not getattr(model, "graph_initialized", True):
+    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
         with torch.no_grad():
             _ = model(example_input)
 
