@@ -20,6 +20,7 @@ from braindecode.functional import (
     spectral_input,
 )
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -231,10 +232,13 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
         self._patch_size = patch_size
+        _warn_constructor_feature_flag(
+            self, "return_encoder_output", return_encoder_output
+        )
         self._encoder_output = return_encoder_output
         self._init_parameters()
 
-        if return_encoder_output:
+        if return_encoder_output and self._signal_param("n_outputs") is None:
             self.final_layer = nn.Identity()
         elif self._knows_geometry():
             n_patch = self._n_patch()
@@ -346,6 +350,14 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 "tokens": out,
             }
             return features
+        if self._encoder_output:
+            if not torch.jit.is_scripting():
+                if any(
+                    isinstance(p, nn.UninitializedParameter)
+                    for p in self.final_layer.parameters()
+                ):
+                    self.final_layer(out)
+            return out
         return self.final_layer(out)
 
 

@@ -4,13 +4,14 @@
 #
 # License: BSD (3-clause)
 
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class SSTDPN(EEGModuleMixin, nn.Module):
@@ -264,6 +265,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self.mvp_kernel_sizes = (
             mvp_kernel_sizes if mvp_kernel_sizes is not None else [50, 100, 200]
         )
+        _warn_constructor_feature_flag(self, "return_features", return_features)
         self.return_features = return_features
         self.proto_sep_maxnorm = proto_sep_maxnorm
         self.proto_cpt_std = proto_cpt_std
@@ -311,8 +313,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         nn.init.normal_(self.proto_cpt, mean=0.0, std=self.proto_cpt_std)
 
     def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[
+        torch.Tensor,
+        Tuple[torch.Tensor, torch.Tensor],
+        Dict[str, Optional[torch.Tensor]],
+    ]:
         """
         Classification is based on the dot product similarity with
         Inter-class Separation Prototypes (:attr:`SSTDPN.proto_sep`).
@@ -323,10 +329,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             Input tensor. Supported shapes:
               - (batch, n_chans, n_times)
+        return_features : bool, default=False
+            If True, return ``{"features": features, "cls_token": None, "logits": logits}``.
 
         Returns
         -------
-        logits : torch.Tensor
+        logits : torch.Tensor or dict or tuple
             If input was 3D: (batch, n_outputs)
         Or if self.return_features is True:
             (features, logits) where features shape is (batch, feat_dim)
@@ -343,6 +351,14 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
+
+        if return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": features,
+                "cls_token": None,
+                "logits": logits,
+            }
+            return out
 
         if self.return_features:
             return features, logits

@@ -53,7 +53,12 @@ from braindecode.models.util import (
     models_dict,
     models_mandatory_parameters,
 )
-from test.unit_tests.models._fixtures import _architecture_kwargs, _get_signal_params
+from test.unit_tests.models._fixtures import (
+    _architecture_kwargs,
+    _get_signal_params,
+    _materialize,
+    _tensor_leaves,
+)
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
 # Window length per model, from the registry.
@@ -179,8 +184,13 @@ _MODELS = [
     pytest.param(
         CORTEG,
         N_CHANS,
-        {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 2,
-         "n_merge_blocks": 1},
+        {
+            "chs_info": _chs(),
+            "embed_dim": 64,
+            "depth": 2,
+            "num_heads": 2,
+            "n_merge_blocks": 1,
+        },
         True,
         id="CORTEG",
     ),
@@ -344,6 +354,52 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
     with torch.no_grad():
         out = model(torch.randn(BATCH, nc, N_TIMES), **fwd_kw)
     assert check(out)
+
+
+LEGACY_FLAGS: list[tuple[str, str]] = [
+    ("AttnSleep", "return_feats"),
+    ("DeepSleepNet", "return_feats"),
+    ("SleepStagerBlanco2020", "return_feats"),
+    ("SleepStagerChambon2018", "return_feats"),
+    ("BIOT", "return_feature"),
+    ("EEGSimpleConv", "return_feature"),
+    ("EMG2QwertyNet", "return_feature"),
+    ("CBraMod", "return_encoder_output"),
+    ("CSBrain", "return_encoder_output"),
+    ("EEGDINO", "return_encoder_output"),
+    ("EEGPT", "return_encoder_output"),
+    ("EEGConformer", "return_features"),
+    ("EEGDINO", "return_features"),
+    ("FBMSNet", "return_features"),
+    ("MEGGPT", "return_features"),
+    ("MIRepNet", "return_features"),
+    ("MSVTNet", "return_features"),
+    ("SSTDPN", "return_features"),
+]
+
+_MANDATORY_BY_NAME = {name: (req, sp) for name, req, sp in models_mandatory_parameters}
+
+
+@pytest.mark.parametrize(
+    "model_name,flag",
+    LEGACY_FLAGS,
+    ids=[f"{m}-{f}" for m, f in LEGACY_FLAGS],
+)
+def test_constructor_flag_warns_and_matches_forward_flag(model_name, flag):
+    req, sp = _MANDATORY_BY_NAME[model_name]
+    signal = _get_signal_params(sp)
+    kw = _get_signal_params(sp, req)
+    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+    with pytest.warns(FutureWarning, match=rf"{flag}=True\) is deprecated"):
+        legacy = models_dict[model_name](**kw, **{flag: True}).eval()
+    plain = models_dict[model_name](**kw).eval()
+    _materialize(legacy, x)
+    _materialize(plain, x)
+    plain.load_state_dict(legacy.state_dict())
+    with torch.no_grad():
+        old = list(_tensor_leaves(legacy(x)))
+        new = list(_tensor_leaves(plain(x, return_features=True)))
+    assert all(any(torch.equal(o, n) for n in new) for o in old)
 
 
 # -- reset_head --

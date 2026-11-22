@@ -2,12 +2,17 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
+from typing import Dict, Optional, Union
+
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
+from braindecode.models.util import (
+    _disable_batch_norm_training_if_batch_size_one,
+    _warn_constructor_feature_flag,
+)
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
@@ -216,6 +221,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        _warn_constructor_feature_flag(self, "return_feats", return_feats)
         self.return_feats = return_feats
         self.cnn1 = _CNNPath(
             n_filters_1=small_n_filters_1,
@@ -289,7 +295,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         self.len_last_layer = fc_out_features
         self.final_layer = (
             nn.Identity()
-            if return_feats
+            if return_feats and self._signal_param("n_outputs") is None
             else nn.Linear(fc_out_features, self.n_outputs)
         )
 
@@ -299,7 +305,9 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         return super()._input_chans_and_times(x)
 
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(self, x):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         if x.ndim == 3:
             x = x.unsqueeze(1)
 
@@ -311,8 +319,17 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         x, _ = self.bilstm(self.add_seq_dim(x))
         x = self.remove_seq_dim(x)
         x = self.dropout(x + residual)
+        feats = self.features_extractor(x)
+        if return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": feats,
+                "cls_token": None,
+            }
+            return out
+        if self.return_feats:
+            return feats
 
-        return self.final_layer(self.features_extractor(x))
+        return self.final_layer(feats)
 
 
 def _conv_out(width, kernel_stride_padding):

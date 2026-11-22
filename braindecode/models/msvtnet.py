@@ -1,7 +1,7 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-from typing import Tuple, Type, Union
+from typing import Dict, Optional, Tuple, Type, Union
 
 import torch
 import torch.nn as nn
@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
@@ -105,6 +106,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        _warn_constructor_feature_flag(self, "return_features", return_features)
         self.return_features = return_features
         assert len(n_filters_list) == len(conv1_kernels_size), (
             "The length of n_filters_list and conv1_kernel_sizes should be equal."
@@ -160,8 +162,12 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(linear_in, self.n_outputs)
 
     def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[
+        torch.Tensor,
+        Tuple[torch.Tensor, torch.Tensor],
+        Dict[str, Optional[torch.Tensor]],
+    ]:
         # x with shape: (batch, n_chans, n_times)
         x = self.ensure_dim(x)
         # x with shape: (batch, 1, n_chans, n_times)
@@ -169,22 +175,33 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         # x_list contains 4 tensors, each of shape: [batch_size, seq_len, embed_dim]
         x = torch.cat(x_list, dim=2)
         # x shape after concatenation: [batch_size, seq_len, total_embed_dim]
-        x = self.transformer(x)
-        # x shape after transformer: [batch_size, embed_dim]
+        feat = self.transformer(x)
+        # feat shape after transformer: [batch_size, embed_dim]
 
-        x = self.final_layer(x)
+        logits = self.final_layer(feat)
+        if return_features:
+            branch_preds = [
+                branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
+            ]
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": feat,
+                "cls_token": feat,
+                "logits": logits,
+                "branch_logits": torch.stack(branch_preds),
+            }
+            return out
         if self.return_features:
             # Return BOTH the main-head logits and the stacked branch logits, as
             # in the authors' implementation (``return x, bx``). This is required
             # for the paper's joint deep-supervision loss
             # ``lambda * CE(main) + (1 - lambda) * sum_i CE(branch_i)`` and lets
             # callers score on the main head.
-            # x: [batch_size, n_classes]; branches: [n_branches, batch_size, n_classes]
+            # logits: [batch_size, n_classes]; branches: [n_branches, batch_size, n_classes]
             branch_preds = [
                 branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
             ]
-            return x, torch.stack(branch_preds)
-        return x
+            return logits, torch.stack(branch_preds)
+        return logits
 
 
 class _TSConv(nn.Sequential):

@@ -3,11 +3,13 @@
 # License: BSD (3-clause)
 
 import math
+from typing import Dict, Optional, Union
 
 import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
@@ -114,6 +116,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             activation(),
             nn.MaxPool2d((1, max_pool_size)),
         )
+        _warn_constructor_feature_flag(self, "return_feats", return_feats)
         self.return_feats = return_feats
 
         dim_conv_1 = (
@@ -129,8 +132,9 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             1, min_after_pool1 * max_pool_size + time_conv_size - 1 - 2 * pad_size
         )
 
-        # TODO: Add new way to handle return_features == True
-        if not return_feats:
+        if return_feats and self._signal_param("n_outputs") is None:
+            self.final_layer = nn.Identity()
+        else:
             self.final_layer = nn.Sequential(
                 nn.Dropout(p=drop_prob),
                 nn.Linear(in_features=self.len_last_layer, out_features=self.n_outputs),
@@ -141,14 +145,18 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             return x.shape[2], x.shape[3], True
         return super()._input_chans_and_times(x)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Forward pass.
 
         Parameters
         ----------
-        x: torch.Tensor
+        x : torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        return_features : bool, default=False
+            If True, return ``{"features": feats, "cls_token": None}``.
         """
         if x.ndim == 3:
             x = x.unsqueeze(1)
@@ -158,6 +166,13 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             x = x.transpose(1, 2)
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
+
+        if return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": feats,
+                "cls_token": None,
+            }
+            return out
 
         if self.return_feats:
             return feats

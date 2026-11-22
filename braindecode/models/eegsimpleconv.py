@@ -11,11 +11,14 @@ The model offers competitive performances, with a low latency and is mainly comp
 #
 # License: BSD-3
 
+from typing import Dict, Optional, Union
+
 import torch
 from torch import nn
 from torchaudio.transforms import Resample
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
@@ -129,6 +132,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
+        _warn_constructor_feature_flag(self, "return_feature", return_feature)
         self.return_feature = return_feature
         self.resample = (
             Resample(orig_freq=int(self.sfreq), new_freq=int(resampling_freq))
@@ -189,26 +193,35 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
                 1, int((min_rs - 1) * self.sfreq / resampling_freq) + 1
             )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Forward pass of the model.
 
         Parameters
         ----------
-        x: PyTorch Tensor
+        x : PyTorch Tensor
             Input tensor of shape (batch_size, n_channels, n_times)
+        return_features : bool, default=False
+            If True, return ``{"features": feat, "cls_token": None}``.
 
         Returns
         -------
-        PyTorch Tensor (optional)
-            Output tensor of shape (batch_size, n_outputs)
+        PyTorch Tensor or dict
+            Output tensor of shape (batch_size, n_outputs) or feature dict.
         """
         x_rs = self.resample(x.contiguous())
         feat = torch.relu(self.bn(self.conv(x_rs)))
         for seq in self.blocks:
             feat = seq(feat)
         feat = feat.mean(dim=2)
+        if return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": feat,
+                "cls_token": None,
+            }
+            return out
         if self.return_feature:
             return feat
-        else:
-            return self.final_layer(feat)
+        return self.final_layer(feat)

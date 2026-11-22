@@ -13,7 +13,10 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
+from braindecode.models.util import (
+    _disable_batch_norm_training_if_batch_size_one,
+    _warn_constructor_feature_flag,
+)
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -229,6 +232,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError("attention_scale must be positive or None.")
 
         self.embed_dim = embed_dim
+        _warn_constructor_feature_flag(self, "return_features", return_features)
         self.return_features = return_features
         self.mapping = {
             "embedding.projection.0.weight": "embedding.projection.weight",

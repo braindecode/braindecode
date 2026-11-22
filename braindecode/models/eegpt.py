@@ -12,6 +12,7 @@ from torch import nn
 
 from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
@@ -275,6 +276,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         # model parameters
+        _warn_constructor_feature_flag(
+            self, "return_encoder_output", return_encoder_output
+        )
         self.return_encoder_output = return_encoder_output
         self.patch_size = patch_size
         self.patch_stride = patch_stride
@@ -369,7 +373,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         )
 
         # Build final layer (classification head)
-        if return_encoder_output:
+        if return_encoder_output and self._signal_param("n_outputs") is None:
             self.final_layer = nn.Identity()
         elif final_layer is not None:
             # Use provided final_layer
@@ -449,6 +453,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": z.flatten(2),
                 "cls_token": None,
+                "tokens": z,
             }
             return out
 

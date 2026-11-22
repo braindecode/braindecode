@@ -3,10 +3,13 @@
 # License: BSD (3-clause)
 
 import math
+from typing import Dict, Optional, Union
 
+import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
@@ -137,10 +140,12 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         self.len_last_layer = self._len_last_layer(
             n_conv_chans, self.n_times, max_pool_size
         )
+        _warn_constructor_feature_flag(self, "return_feats", return_feats)
         self.return_feats = return_feats
 
-        # TODO: Add new way to handle return_features == True
-        if not return_feats:
+        if return_feats and self._signal_param("n_outputs") is None:
+            self.final_layer = nn.Identity()
+        else:
             self.final_layer = nn.Sequential(
                 nn.Dropout(drop_prob),
                 nn.Linear(self.len_last_layer, self.n_outputs),
@@ -160,18 +165,28 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
                 )
         return n_conv_chans * n_time
 
-    def forward(self, x):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Forward pass.
+
         Parameters
         ----------
-        x: torch.Tensor
+        x : torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        return_features : bool, default=False
+            If True, return ``{"features": feats, "cls_token": None}``.
         """
         if x.ndim == 3:
             x = x.unsqueeze(2)
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
+        if return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": feats,
+                "cls_token": None,
+            }
+            return out
         if self.return_feats:
             return feats
-        else:
-            return self.final_layer(feats)
+        return self.final_layer(feats)

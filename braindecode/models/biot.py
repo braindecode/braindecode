@@ -6,7 +6,10 @@ import torch.nn as nn
 
 from braindecode.functional import check_ch_mask, masked_mean, spectral_input
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import warn_if_sfreq_differs
+from braindecode.models.util import (
+    _warn_constructor_feature_flag,
+    warn_if_sfreq_differs,
+)
 from braindecode.modules import SinusoidalPositionalEncoding
 from braindecode.modules.linear_attention import LinearAttentionTransformer
 
@@ -182,6 +185,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         self.hop_length = hop_length
         self.num_heads = num_heads
         self.num_layers = num_layers
+        _warn_constructor_feature_flag(self, "return_feature", return_feature)
         self.return_feature = return_feature
         warn_if_sfreq_differs("BIOT", self.sfreq, 200)
         if self.n_chans > embed_dim:
@@ -298,6 +302,7 @@ class BIOT(EEGModuleMixin, nn.Module):
                 "features": emb,
                 "cls_token": None,
                 "tokens": tokens,
+                "logits": self.final_layer(emb),
             }
             return out
 

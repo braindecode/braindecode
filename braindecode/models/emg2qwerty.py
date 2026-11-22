@@ -19,6 +19,7 @@ from torch import nn
 
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import TDSConvEncoder
 
 
@@ -311,6 +312,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         self.hop_length = hop_length
         self.kernel_width = kernel_width
         self.log_softmax = log_softmax
+        _warn_constructor_feature_flag(self, "return_feature", return_feature)
         self.return_feature = return_feature
 
         n_freq_bins = n_fft // 2 + 1
@@ -429,15 +431,16 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         # batch-first features tensor in the branches that actually return
         # it, so the default emissions-only path skips the extra transpose
         # + contiguous copy on every forward.
-        if return_features:
-            return {
-                "features": encoded.transpose(0, 1).contiguous(),
-                "cls_token": None,
-            }
         emissions = self.final_layer(encoded)
         if self.log_softmax:
             emissions = F.log_softmax(emissions, dim=-1)
         emissions = emissions.transpose(0, 1).contiguous()
+        if return_features:
+            return {
+                "features": encoded.transpose(0, 1).contiguous(),
+                "cls_token": None,
+                "logits": emissions,
+            }
         if self.return_feature:
             return emissions, encoded.transpose(0, 1).contiguous()
         return emissions

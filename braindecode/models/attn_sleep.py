@@ -30,12 +30,14 @@
 import warnings
 from copy import deepcopy
 from numbers import Integral
+from typing import Dict, Optional, Union
 
 import torch
 from torch import nn
 
 from braindecode.functional import scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import CausalConv1d
 
 
@@ -216,12 +218,12 @@ class AttnSleep(EEGModuleMixin, nn.Module):
 
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = feature_length * after_reduced_cnn_size
+        _warn_constructor_feature_flag(self, "return_feats", return_feats)
         self.return_feats = return_feats
 
-        # TODO: Add new way to handle return features
-        """if return_feats:
-            raise ValueError("return_feat == True is not accepted anymore")"""
-        if not return_feats:
+        if return_feats and self._signal_param("n_outputs") is None:
+            self.final_layer = nn.Identity()
+        else:
             self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
     @classmethod
@@ -244,7 +246,9 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         # Concatenation along time, preserved by AFR: (batch, after_reduced_cnn_size, fine_len + coarse_len)
         return fine_len + coarse_len
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Forward pass.
 
@@ -252,6 +256,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        return_features : bool, default=False
+            If True, return ``{"features": encoded_features, "cls_token": None}``.
         """
         # MRCNN + TCE feature extraction: (batch, 1, n_times) -> (batch, after_reduced_cnn_size, d_model)
         encoded_features = self.feature_extractor(x)
@@ -259,6 +265,13 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         encoded_features = encoded_features.contiguous().view(
             encoded_features.shape[0], -1
         )
+
+        if return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": encoded_features,
+                "cls_token": None,
+            }
+            return out
 
         if self.return_feats:
             return encoded_features

@@ -302,6 +302,22 @@ def resolve_type_kwargs(cls, kwargs):
     return kwargs
 
 
+def _warn_constructor_feature_flag(model: object, flag: str, enabled: object) -> None:
+    """Emit FutureWarning when a deprecated constructor feature flag is truthy."""
+    if (
+        bool(enabled)
+        and not torch.jit.is_scripting()
+        and not torch.compiler.is_compiling()
+    ):
+        name = type(model).__name__
+        warnings.warn(
+            f"{name}({flag}=True) is deprecated and will be removed in the "
+            "next minor release; call model(x, return_features=True) instead.",
+            FutureWarning,
+            stacklevel=4,
+        )
+
+
 # For the models inside the init model, go through all the models
 # check those have the EEGMixin class inherited. If they are, add them to the
 # list.

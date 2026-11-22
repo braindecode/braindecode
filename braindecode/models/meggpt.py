@@ -23,6 +23,7 @@ from braindecode.functional import (
 )
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import FeedForwardBlock
 
 
@@ -246,6 +247,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         _check_on_non_divisible(on_non_divisible)
         self.segment_len = n_patches[0] * patch_lens[0]
         self.on_non_divisible = on_non_divisible
+        _warn_constructor_feature_flag(self, "return_features", return_features)
         self.return_features = return_features
         self.n_last_steps = n_last_steps
         # Read again by reset_parameters, through _init_parameters.

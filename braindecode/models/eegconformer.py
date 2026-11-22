@@ -2,6 +2,7 @@
 #
 # License: BSD (3-clause)
 import warnings
+from typing import Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -10,6 +11,7 @@ from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -249,6 +251,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
 
+        _warn_constructor_feature_flag(self, "return_features", return_features)
         self.return_features = return_features
         self.activation_checkpointing = activation_checkpointing
 
@@ -299,7 +302,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             raise RuntimeError("activation_checkpointing requires eager execution")
         return super().compile(*args, **kwargs)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(
+        self, x: Tensor, return_features: bool = False
+    ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         if self.activation_checkpointing:
             if torch.jit.is_scripting():
                 raise RuntimeError("activation_checkpointing requires eager execution")
@@ -310,6 +315,13 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             feature = self._checkpoint_transformer(x)
         else:
             feature = self.transformer(x)
+
+        if return_features:
+            out: Dict[str, Optional[Tensor]] = {
+                "features": feature,
+                "cls_token": None,
+            }
+            return out
 
         if self.return_features:
             return feature

@@ -9,6 +9,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.fbcnet import _valid_layers
+from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import (
     Conv2dWithConstraint,
     FilterBankLayer,
@@ -145,6 +146,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self.kernels_weights = kernels_weights
         self.filter_parameters = filter_parameters or {}
         self.out_channels_spatial = self.n_filters_spat * self.dilatability
+        _warn_constructor_feature_flag(self, "return_features", return_features)
         self.return_features = return_features
 
         # Checkers
@@ -227,7 +229,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             2 if temporal_layer in ("VarLayer", "StdLayer", "LogVarLayer") else 1
         ) * self.stride_factor
 
-    def forward(self, x):
+    def forward(self, x, return_features: bool = False):
         """
         Forward pass of the FBMSNet model.
 
@@ -235,14 +237,15 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             Input tensor with shape (batch_size, n_chans, n_times).
+        return_features : bool, default=False
+            If True, return ``{"features": features, "cls_token": None, "logits": logits}``.
 
         Returns
         -------
-        torch.Tensor or tuple[torch.Tensor, torch.Tensor]
-            Output tensor with shape (batch_size, n_outputs). If
-            ``return_features`` is True, a tuple containing the output tensor
-            and flattened features with shape
-            (batch_size, out_channels_spatial * stride_factor) is returned.
+        torch.Tensor or dict or tuple[torch.Tensor, torch.Tensor]
+            Output tensor with shape (batch_size, n_outputs), feature dict when
+            ``return_features=True`` in forward, or ``(logits, features)`` when
+            initialized with ``return_features=True``.
             In TorchScript mode, only the output tensor is returned.
         """
         batch, _, _ = x.shape
@@ -281,6 +284,8 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         # shape: (batch, n_outputs)
         if torch.jit.is_scripting() or torch.jit.is_tracing():
             return logits
+        if return_features:
+            return {"features": features, "cls_token": None, "logits": logits}
         if self.return_features:
             return logits, features
         return logits

@@ -21,6 +21,7 @@ from torch import Tensor, nn
 from braindecode.functional import init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
+from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import FeedForwardBlock
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -412,10 +413,13 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._d_model = d_model
         self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
+        _warn_constructor_feature_flag(
+            self, "return_encoder_output", return_encoder_output
+        )
         self._encoder_output = return_encoder_output
         self._init_parameters()
 
-        if return_encoder_output:
+        if return_encoder_output and self._signal_param("n_outputs") is None:
             self.final_layer = nn.Identity()
         else:
             self.final_layer = self._make_task_head()
@@ -520,6 +524,14 @@ class CSBrain(EEGModuleMixin, nn.Module):
         if return_features:
             features: Dict[str, Optional[Tensor]] = {"features": out, "cls_token": None}
             return features
+        if self._encoder_output:
+            if not torch.jit.is_scripting():
+                if any(
+                    isinstance(p, nn.UninitializedParameter)
+                    for p in self.final_layer.parameters()
+                ):
+                    self.final_layer(out)
+            return out
         return self.final_layer(out)
 
 

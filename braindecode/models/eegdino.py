@@ -12,7 +12,10 @@ from torch import nn
 
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import warn_if_sfreq_differs
+from braindecode.models.util import (
+    _warn_constructor_feature_flag,
+    warn_if_sfreq_differs,
+)
 from braindecode.modules import PatchTokenizer, PreNormBlock, TimmAttention
 
 
@@ -227,6 +230,10 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.n_global_tokens = n_global_tokens
         self.global_token_layer = global_token_layer
         self.activation = activation
+        _warn_constructor_feature_flag(self, "return_features", return_features)
+        _warn_constructor_feature_flag(
+            self, "return_encoder_output", return_encoder_output
+        )
         self.return_features = return_features
         self.return_encoder_output = return_encoder_output
 
@@ -271,7 +278,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
     def _make_head(self):
-        if self.return_encoder_output:
+        if self.return_encoder_output and self._signal_param("n_outputs") is None:
             return nn.Identity()  # ``n_outputs`` not needed for linear probing
         return _ClassificationHead(self.emb_dim, self.n_outputs, self.activation)
 
@@ -326,7 +333,11 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         patch_out = tokens[:, self.n_global_tokens :]
 
         if return_features:
-            return {"features": patch_out, "cls_token": global_out.mean(dim=1)}
+            return {
+                "features": patch_out,
+                "embedding": patch_out.mean(dim=1),
+                "cls_token": global_out.mean(dim=1),
+            }
 
         if self.return_encoder_output:
             return patch_out.mean(dim=1)  # pooled encoder features (linear probing)
