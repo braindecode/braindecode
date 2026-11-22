@@ -807,9 +807,9 @@ class GeneralizedGaussianFilter(nn.Module):
         repeat = self.out_channels // self.in_channels
         real = torch.repeat_interleave(real, repeat, dim=-2)
         imag = torch.repeat_interleave(imag, repeat, dim=-2)
-        filt = _real_dft._upcast_low_precision(filters).to(real.dtype)
-        out_real = real * filt[..., 0]
-        out_imag = imag * filt[..., 1]
+        filters = filters.to(real.dtype)
+        out_real = real * filters[..., 0]
+        out_imag = imag * filters[..., 1]
         if self.inverse_fourier:
             return _real_dft.real_irfft(out_real, out_imag, n=self.sequence_length)
         return torch.stack((out_real, out_imag), dim=-1)

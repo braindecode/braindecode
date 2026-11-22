@@ -336,7 +336,7 @@ class _STFTModule(nn.Module):
         n_frames = 1 + (work.shape[-1] - self.n_fft) // self.hop_length
         starts = torch.arange(n_frames, device=work.device) * self.hop_length
         index = (
-            starts.unsqueeze(1) + torch.arange(self.n_fft, device=work.device)
+            starts[:, None] + torch.arange(self.n_fft, device=work.device)
         ).flatten()
         frames = work.index_select(-1, index).unflatten(-1, (n_frames, self.n_fft))
         real, imag = _real_dft.real_rfft(frames)
