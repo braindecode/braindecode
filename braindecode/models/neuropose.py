@@ -200,7 +200,7 @@ class NeuroPose(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
-    _channel_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: final_layer.weight is sized by n_chans
 
     def __init__(
         self,

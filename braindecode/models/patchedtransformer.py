@@ -206,8 +206,8 @@ class PBT(EEGModuleMixin, nn.Module):
         impacting performance. arXiv preprint arXiv:2107.02027.
     """
 
-    _time_axis = "free"
-    _channel_axis = "fixed"  # fixed: pos_embedding.weight
+    _time_axis = "fixed"  # fixed: pos_embedding.weight is sized by n_times
+    _channel_axis = "fixed"  # fixed: pos_embedding.weight is sized by n_chans
 
     def __init__(
         self,

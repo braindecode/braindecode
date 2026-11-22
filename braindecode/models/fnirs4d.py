@@ -199,8 +199,8 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     .. footbibliography::
     """
 
-    _time_axis = "fixed"  # fixed: knowledge_embedding.0.weight
-    _channel_axis = "fixed"  # fixed: final_layer.weight
+    _time_axis = "fixed"  # fixed: knowledge_embedding.0.weight is sized by n_times
+    _channel_axis = "fixed"  # fixed: final_layer.weight is sized by n_chans
 
     def __init__(
         self,

@@ -187,8 +187,12 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
        doi:10.52202/079017-1145.
     """
 
-    _time_axis = "fixed"  # fixed: enc_embedding.channel_embedding.pe
-    _channel_axis = "fixed"  # fixed: enc_embedding.channel_embedding.pe
+    _time_axis = (
+        "fixed"  # fixed: enc_embedding.channel_embedding.pe is sized by n_times
+    )
+    _channel_axis = (
+        "fixed"  # fixed: enc_embedding.channel_embedding.pe is sized by n_chans
+    )
 
     def __init__(
         self,
