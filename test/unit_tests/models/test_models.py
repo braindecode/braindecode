@@ -1004,8 +1004,9 @@ def test_caresleepnet_gives_one_prediction_per_epoch():
         n_chans=3, n_outputs=5, n_times=3 * 300, n_epochs=3, n_eog_chans=1
     ).eval()
     assert model(torch.randn(2, 3, 900)).shape == (2, 5, 3)
-    with pytest.raises(ValueError, match="built for n_times=900 and got 600 samples"):
-        model(torch.randn(2, 3, 600))
+    assert model(torch.randn(2, 3, 600)).shape == (2, 5, 3)
+    with pytest.raises(ValueError, match="needs at least 507 time samples"):
+        model(torch.randn(2, 3, 506))
 
 
 @pytest.mark.parametrize(

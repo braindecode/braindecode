@@ -161,8 +161,10 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/wjq-learning/CareSleepNet/tree/386e149f7eac8d93207972268f8bc82ea37361c1
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: eeg_encoder.0.branches.0.0.weight
+    _time_axis = "free"
+    _channel_axis = (
+        "fixed"  # fixed: eeg_encoder.0.branches.0.0.weight is sized by n_chans
+    )
 
     def __init__(
         self,
@@ -283,7 +285,6 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         self.epochs_to_batch = Rearrange(
             "batch chans (epoch time) -> (batch epoch) chans time",
             epoch=n_epochs,
-            time=self.n_times // n_epochs,
         )
         self.batch_to_epochs = Rearrange(
             "(batch epoch) dim -> batch epoch dim", epoch=n_epochs
@@ -330,6 +331,9 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         self.sequence_norm = nn.LayerNorm(dim, eps=norm_eps)
         self.final_layer = nn.Linear(dim, self.n_outputs)
         self._init_parameters()
+        self.on_non_divisible = "pad"
+        self._min_n_times = self.n_epochs * min_epoch_samples
+        self._n_times_step = self.n_epochs
 
     def _init_parameters(self) -> None:
         """Initialization of the reference: BERT in the epoch encoders,
