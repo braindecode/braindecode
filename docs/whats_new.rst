@@ -31,6 +31,11 @@ Enhancements
 - Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
   with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
   DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).
+- Linearize the landing-page architecture and modality bar charts, add live
+  dark/light theme synchronization to the Plotly models visualization, align and
+  format the interactive models summary DataTable, and resolve WCAG 2.2 AA
+  contrast, keyboard focus, layout-shift, and print-stylesheet gaps across the
+  documentation (:gh:`1772` by `Bruno Aristimunha`_).
 - Redesign the documentation landing page, unify the top navigation bar and
   sub-page palette, add a one-click Zenodo software citation hub
   (``10.5281/zenodo.8214376``), and pre-render the native-CSS model zoo explorer
@@ -271,6 +276,9 @@ Requirements
 Bug fixes
 ==========
 
+- A refit or ``clone`` of a fitted :class:`braindecode.EEGClassifier` or :class:`braindecode.EEGRegressor` infers
+  ``n_outputs``, ``n_chans``, ``n_times`` and ``chs_info`` from its own data instead of reusing the first fit's, which could
+  predict classes the new data does not have; ``get_params`` no longer lists inferred values (:gh:`1770` by `Raghav Rathi`_).
 - Fix mobile navigation drawer visibility on the landing page, prevent narrow-viewport
   clipping across the numbers split, citation export hub, API headings, and ``320px``
   navbar, and expand mobile touch targets and search input sizing (:gh:`1769` by `Bruno Aristimunha`_).
@@ -644,6 +652,9 @@ Bug fixes
   8-13 Hz band at 250 Hz) and depended on future samples only. These phases are
   now applied causally, as in :func:`mne.filter.filter_data`; the other phases
   are unchanged (:gh:`1686` by `Axel Coiffard-Donaty`_).
+- :meth:`braindecode.datasets.BaseConcatDataset.split` raises a ``ValueError`` when the
+  description column given as ``by`` has missing values, instead of silently leaving these
+  recordings out of every split (:gh:`1762` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============

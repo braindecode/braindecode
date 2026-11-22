@@ -483,6 +483,45 @@ def test_set_signal_params_numpy(eegneuralnet_cls, preds, Xy):
 
 
 @pytest.mark.filterwarnings("ignore:The training set has")
+def test_refit_and_clone_infer_signal_params_from_new_data(eegneuralnet_cls, preds, Xy):
+    """A fitted net refit on other data, or a clone of it, reads the signal
+    parameters of that data instead of keeping the first fit's."""
+    X, y = Xy  # 3 channels, 10 samples; 4 classes or 1 target
+    net = eegneuralnet_cls(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(X, y=y)
+    # 2 channels, 8 samples; 2 classes or 2 targets
+    X2 = X[:, :2, :8]
+    y2 = np.stack([y, y], axis=1) if isinstance(net, EEGRegressor) else y % 2
+    for refit in (clone(net), net):
+        refit.fit(X2, y=y2)
+        module = refit.module_
+        assert (module.n_chans, module.n_times, module.n_outputs) == (2, 8, 2)
+
+
+@pytest.mark.filterwarnings("ignore:The training set has")
+def test_refit_with_initialized_module_uses_it(eegneuralnet_cls, Xy):
+    """A module given as an instance after a fit is used as is: the values
+    inferred at that fit are not passed to it, which makes skorch rebuild it."""
+    X, y = Xy
+    net = eegneuralnet_cls(
+        MockModuleCroppedPreds, cropped=False, train_split=None, max_epochs=1
+    )
+    net.fit(X, y=y)
+    module = MockModuleCroppedPreds(n_outputs=4, n_chans=3, n_times=10)
+    net.set_params(module=module)
+    net.fit(X, y=y)
+    assert net.module_ is module
+
+
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_epochs(eegneuralnet_cls, preds, epochs):
     y = epochs.metadata.target.values
     net = eegneuralnet_cls(

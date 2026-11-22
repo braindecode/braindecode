@@ -174,3 +174,9 @@ function handleCiteClick(event) {
 }
 
 document.addEventListener("click", handleCiteClick);
+
+for (const btn of document.querySelectorAll(".bd-header .search-button-field")) {
+  btn.removeAttribute("data-bs-toggle");
+  btn.removeAttribute("data-bs-original-title");
+  btn.removeAttribute("title");
+}

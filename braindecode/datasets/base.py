@@ -1673,6 +1673,16 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             )
             by = property if property is not None else split_ids
         if isinstance(by, str):
+            # groupby drops the rows whose key is missing: these recordings
+            # would silently end up in no split at all.
+            missing = self.description[by].isna()
+            if missing.any():
+                raise ValueError(
+                    f"Cannot split by '{by}': the description has no value "
+                    f"for the datasets at positions "
+                    f"{np.flatnonzero(missing).tolist()}. Fill in the missing "
+                    f"values, or pass the indices of each split explicitly."
+                )
             split_ids = {
                 k: list(v) for k, v in self.description.groupby(by).groups.items()
             }
