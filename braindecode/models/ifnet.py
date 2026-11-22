@@ -197,6 +197,7 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         self.on_non_divisible = "pad"
         self._min_n_times = self.stride_factor
         self._n_times_step = self.stride_factor
+        self._defer_step_snap = True
 
     # Reference ``initParms``: truncated normal (std 0.01) linears and
     # convolutions, zero biases, unit/zero normalization layers. The max-norm
@@ -239,7 +240,7 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         # x is now of shape (batch_size, n_bands * n_chans, n_times)
 
         # Pass through the feature block
-        x = self.feature_block(x)
+        x = self.feature_block(x, self.on_non_divisible)
 
         # Flatten and pass through the final layer
         x = self.flatten(x)
@@ -297,6 +298,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         drop_prob: float = 0.5,
         activation: type[nn.Module] = nn.GELU,
         dim: int = 3,
+        on_non_divisible: str = "pad",
     ):
         """
         Parameters
@@ -328,6 +330,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         self.dim = dim
         self.n_times = n_times
         self.kernel_sizes = kernel_sizes
+        self.on_non_divisible = on_non_divisible
 
         if self.n_bands != len(self.kernel_sizes):
             warn(
@@ -396,7 +399,9 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         # Dropout
         self.dropout_layer = nn.Dropout(self.drop_prob)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, on_non_divisible: Optional[str] = None
+    ) -> torch.Tensor:
         """Forward pass.
 
         Parameters
@@ -427,10 +432,13 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         x = self.inter_frequency(x_t)
 
         # Reshape for temporal segmentation
-        if x.shape[-1] % self.stride_factor != 0:
-            x = nn.functional.pad(
-                x, (0, self.stride_factor - x.shape[-1] % self.stride_factor)
-            )
+        mode = self.on_non_divisible if on_non_divisible is None else on_non_divisible
+        rem = x.shape[-1] % self.stride_factor
+        if rem != 0:
+            if mode == "crop":
+                x = x[..., : x.shape[-1] - rem]
+            else:
+                x = nn.functional.pad(x, (0, self.stride_factor - rem))
 
         # Reshape for log-power computation
         x = x.view(

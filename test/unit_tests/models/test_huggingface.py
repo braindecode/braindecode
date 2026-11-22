@@ -533,6 +533,42 @@ def test_local_binary_fallback_replaces_previous_weights(tmp_path):
         torch.testing.assert_close(restored(x), model(x))
 
 
+class _SlicedStorageModel(EEGModuleMixin, nn.Module):
+    def __init__(self, n_chans=2, n_outputs=2, n_times=8, disjoint=False):
+        super().__init__(n_chans=n_chans, n_outputs=n_outputs, n_times=n_times)
+        self.disjoint = disjoint
+        base = torch.arange(10, dtype=torch.float32)
+        self.slice_a = nn.Parameter(base[:4])
+        if disjoint:
+            self.slice_b = nn.Parameter(base[5:])
+        self.linear = nn.Linear(n_times, n_outputs)
+
+    def forward(self, x):
+        out = self.linear(x.mean(dim=1)) + self.slice_a.sum() * 0.0
+        if self.disjoint:
+            out = out + self.slice_b.sum() * 0.0
+        return out
+
+
+@pytest.mark.parametrize("disjoint", [False, True])
+def test_local_binary_fallback_for_partial_storage_slices(tmp_path, disjoint):
+    model = _SlicedStorageModel(disjoint=disjoint).eval()
+    with pytest.warns(UserWarning, match="pytorch_model.bin"):
+        model.save_pretrained(tmp_path)
+    assert (tmp_path / "pytorch_model.bin").is_file()
+    assert not (tmp_path / "model.safetensors").exists()
+    x = torch.randn(2, 2, 8)
+    for name in (None, "pytorch_model.bin"):
+        restored = _SlicedStorageModel.from_pretrained(
+            tmp_path, filename=name, local_files_only=True, strict=True
+        ).eval()
+        torch.testing.assert_close(restored(x), model(x), rtol=0, atol=0)
+        for key, value in model.state_dict().items():
+            torch.testing.assert_close(
+                restored.state_dict()[key], value, rtol=0, atol=0
+            )
+
+
 @pytest.mark.parametrize(
     "geometry, override, expected",
     [

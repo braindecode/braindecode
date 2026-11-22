@@ -1038,19 +1038,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     args, kwargs = self._set_time_input(
                         idx, inp_name, snapped, args, kwargs
                     )
-                if (
-                    not self._warned_length_snap
-                    and not self._explicit_on_non_divisible
-                    and (idx > 0 or t_len != build_n_times)
-                ):
-                    self._warned_length_snap = True
-                    warnings.warn(
-                        f"{name} snapped input length from {t_len} to {target} "
-                        f"samples (step {step}, "
-                        f"on_non_divisible={self.on_non_divisible!r}).",
-                        UserWarning,
-                        stacklevel=3,
-                    )
+                    if (
+                        not self._warned_length_snap
+                        and not self._explicit_on_non_divisible
+                        and (idx > 0 or t_len != build_n_times)
+                    ):
+                        self._warned_length_snap = True
+                        warnings.warn(
+                            f"{name} snapped input length from {t_len} to {target} "
+                            f"samples (step {step}, "
+                            f"on_non_divisible={self.on_non_divisible!r}).",
+                            UserWarning,
+                            stacklevel=3,
+                        )
         return args, kwargs
 
     def __call__(self, *args, **kwargs):
@@ -1683,33 +1683,38 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         for (_, storage_ptr, storage_nbytes), tensors in groups.items():
             if len(tensors) < 2:
-                continue
-            areas = []
-            for tensor in tensors:
-                if not cls._can_view_flat(tensor):
-                    return "shared non-contiguous tensor cannot be flattened by safetensors"
-                start = tensor.data_ptr()
-                if tensor.nelement() > 0:
-                    span = sum(
-                        (size - 1) * stride
-                        for size, stride in zip(tensor.shape, tensor.stride())
-                    )
-                    stop = start + (span + 1) * tensor.element_size()
-                else:
-                    stop = start
-                areas.append((start, stop, tensor))
-            areas.sort(key=lambda item: (item[0], item[1]))
-            clusters: list[list[tuple[int, int, torch.Tensor]]] = [[areas[0]]]
-            last_stop = areas[0][1]
-            for item in areas[1:]:
-                if item[0] >= last_stop:
-                    clusters.append([item])
-                else:
-                    clusters[-1].append(item)
-                last_stop = item[1]
+                clusters: list[list[tuple[int, int, torch.Tensor]]] = [
+                    [(0, 0, tensors[0])]
+                ]
+            else:
+                areas: list[tuple[int, int, torch.Tensor]] = []
+                for tensor in tensors:
+                    if tensor.nelement() > 0 and not cls._can_view_flat(tensor):
+                        return (
+                            "shared non-contiguous tensor cannot be flattened by "
+                            "safetensors"
+                        )
+                    start = tensor.data_ptr()
+                    if tensor.nelement() > 0:
+                        span = sum(
+                            (size - 1) * stride
+                            for size, stride in zip(tensor.shape, tensor.stride())
+                        )
+                        stop = start + (span + 1) * tensor.element_size()
+                    else:
+                        stop = start
+                    areas.append((start, stop, tensor))
+                areas.sort(key=lambda item: (item[0], item[1]))
+                clusters = [[areas[0]]]
+                last_stop = areas[0][1]
+                for item in areas[1:]:
+                    if item[0] >= last_stop:
+                        clusters.append([item])
+                    else:
+                        clusters[-1].append(item)
+                    # Mirror safetensors.torch._filter_shared_not_shared's stop update.
+                    last_stop = item[1]
             for cluster in clusters:
-                if len(cluster) < 2:
-                    continue
                 has_complete = any(
                     t.data_ptr() == storage_ptr
                     and t.nelement() * t.element_size() == storage_nbytes

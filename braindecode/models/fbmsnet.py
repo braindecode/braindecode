@@ -219,6 +219,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self._min_n_times = min_segments * self.stride_factor
         self.on_non_divisible = "pad"
         self._n_times_step = self.stride_factor
+        self._defer_step_snap = True
 
     def forward(self, x):
         """
@@ -252,11 +253,13 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         x = self.spatial_conv(x)
         # shape: (batch, self.out_channels_spatial, 1, n_times)
 
-        # Apply some padding to the input to make it divisible by the stride factor
-        if x.shape[-1] % self.stride_factor != 0:
-            x = nn.functional.pad(
-                x, (0, self.stride_factor - x.shape[-1] % self.stride_factor)
-            )
+        # Apply padding or cropping so the time dimension is divisible by stride_factor
+        rem = x.shape[-1] % self.stride_factor
+        if rem != 0:
+            if self.on_non_divisible == "crop":
+                x = x[..., : x.shape[-1] - rem]
+            else:
+                x = nn.functional.pad(x, (0, self.stride_factor - rem))
         # shape: (batch, self.out_channels_spatial, 1, n_times_padded)
 
         # Reshape for temporal layer

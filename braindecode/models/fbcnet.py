@@ -184,6 +184,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self._min_n_times = min_segments * self.stride_factor
         self.on_non_divisible = "pad"
         self._n_times_step = self.stride_factor
+        self._defer_step_snap = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -207,10 +208,12 @@ class FBCNet(EEGModuleMixin, nn.Module):
         batch_size, channels, _, _ = x.shape
 
         # shape: (batch_size, n_filters_spat * n_bands, 1, n_times)
-        if x.shape[-1] % self.stride_factor != 0:
-            x = nn.functional.pad(
-                x, (0, self.stride_factor - x.shape[-1] % self.stride_factor)
-            )
+        rem = x.shape[-1] % self.stride_factor
+        if rem != 0:
+            if self.on_non_divisible == "crop":
+                x = x[..., : x.shape[-1] - rem]
+            else:
+                x = nn.functional.pad(x, (0, self.stride_factor - rem))
 
         # shape: (batch_size, n_filters_spat * n_bands, 1, n_times_padded)
         x = x.view(

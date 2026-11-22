@@ -17,6 +17,11 @@ from braindecode.models import (
     LUNA,
     EEGConformer,
     EEGNet,
+    EEGSimpleConv,
+    FBCNet,
+    FBLightConvNet,
+    FBMSNet,
+    IFNet,
     MVPFormer,
     SensingDynamics,
 )
@@ -451,3 +456,61 @@ def test_summary_csv_check_and_incremental_files_update(tmp_path):
     )
     assert check_summary_csv(csv_copy) == []
     assert main(["--check", "--csv", str(csv_copy)]) == 0
+
+
+@pytest.mark.parametrize("cls", [FBCNet, FBMSNet, IFNet])
+def test_filterbank_stride_models_defer_snap_until_after_filtering(cls):
+    torch.manual_seed(0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model = cls(n_chans=3, n_outputs=2, n_times=1002, sfreq=250.0).eval()
+    x = torch.randn(2, 3, 1002)
+    with torch.no_grad():
+        eager = model(x)
+        direct = model.forward(x)
+        scripted = torch.jit.script(model)(x)
+    assert torch.equal(eager, direct)
+    assert torch.equal(eager, scripted)
+
+    x_scaled = 100.0 * x
+    with torch.no_grad():
+        pad_scaled = model(x_scaled)
+    model.on_non_divisible = "crop"
+    with torch.no_grad():
+        crop_eager = model(x_scaled)
+        crop_direct = model.forward(x_scaled)
+        crop_scripted = torch.jit.script(model)(x_scaled)
+    assert torch.equal(crop_eager, crop_direct)
+    assert torch.equal(crop_eager, crop_scripted)
+    assert not torch.equal(crop_eager, pad_scaled)
+
+
+def test_fblightconvnet_fixed_time_axis_and_non_divisible_build():
+    torch.manual_seed(0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model = FBLightConvNet(
+            n_chans=3, n_outputs=2, n_times=1010, sfreq=250.0, win_len=250
+        ).eval()
+    assert model._time_axis == "fixed"
+    x1010 = torch.randn(2, 3, 1010)
+    with torch.no_grad():
+        eager = model(x1010)
+        direct = model.forward(x1010)
+        scripted = torch.jit.script(model)(x1010)
+    assert torch.equal(eager, direct)
+    assert torch.equal(eager, scripted)
+    with pytest.raises(
+        ValueError, match=r"built for n_times=1010 and got 2020 samples"
+    ):
+        model(torch.randn(2, 3, 2 * 1010))
+
+
+def test_eegsimpleconv_short_input_emits_no_snap_warning():
+    model = EEGSimpleConv(n_chans=3, n_outputs=2, sfreq=250.0).eval()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with torch.no_grad():
+            out = model(torch.randn(2, 3, 1))
+    assert out.shape == (2, 2)
+    assert not [w for w in caught if "snapped" in str(w.message)]
