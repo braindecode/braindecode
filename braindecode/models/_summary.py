@@ -42,6 +42,9 @@ SUMMARY_COLUMNS: tuple[str, ...] = (
     "return_features",
 )
 
+# Hand-written columns, kept from the existing CSV. The code has no reliable
+# source for Application, Type or Modality. An empty Sampling Frequency cell is
+# filled from the constructor default of ``sfreq`` when the model has one.
 EDITORIAL_COLUMNS: tuple[str, ...] = (
     "Application",
     "Type",
@@ -159,6 +162,15 @@ def _parse_categorization(model_name: str, cls: type) -> str:
     if not categories:
         raise ValueError(f"{model_name} has no categorization badges in its docstring.")
     return ",".join(categories)
+
+
+def _default_sfreq(cls: type) -> str:
+    """Return the constructor default of ``sfreq`` as text, or ``""`` if none."""
+    param = inspect.signature(cls.__init__).parameters.get("sfreq")
+    default = None if param is None else param.default
+    if isinstance(default, bool) or not isinstance(default, (int, float)):
+        return ""
+    return f"{default:g}"
 
 
 def _summary_model_kwargs(
@@ -404,7 +416,9 @@ def generate_summary_rows(
                 "Model": name,
                 "Application": editorial.get("Application", ""),
                 "Type": editorial.get("Type", ""),
-                "Sampling Frequency (Hz)": editorial.get("Sampling Frequency (Hz)", ""),
+                # A hand-written value wins; the constructor default fills empty cells.
+                "Sampling Frequency (Hz)": editorial.get("Sampling Frequency (Hz)")
+                or _default_sfreq(cls),
                 "Hyperparameters": ", ".join(required_params),
                 "#Parameters": str(n_params),
                 "get_#Parameters": get_params_expr,

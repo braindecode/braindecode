@@ -458,6 +458,22 @@ def test_summary_csv_check_and_incremental_files_update(tmp_path):
     assert main(["--check", "--csv", str(csv_copy)]) == 0
 
 
+def test_summary_csv_fills_empty_sfreq_from_constructor_default(tmp_path):
+    from braindecode.models._summary import generate_summary_rows
+
+    src_csv = Path(_models_util.__file__).resolve().with_name("summary.csv")
+    csv_copy = tmp_path / "summary.csv"
+    lines = src_csv.read_text(encoding="utf-8").splitlines()
+    # Blank the hand-written 200 Hz of TFMTokenizer (constructor sfreq=200).
+    lines = [
+        line.replace(",200,", ",,", 1) if line.startswith("TFMTokenizer,") else line
+        for line in lines
+    ]
+    csv_copy.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (row,) = generate_summary_rows(["TFMTokenizer"], csv_path=csv_copy)
+    assert row["Sampling Frequency (Hz)"] == "200"
+
+
 @pytest.mark.parametrize("cls", [FBCNet, FBMSNet, IFNet])
 def test_filterbank_stride_models_defer_snap_until_after_filtering(cls):
     torch.manual_seed(0)
