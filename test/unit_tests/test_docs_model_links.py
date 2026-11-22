@@ -7,13 +7,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_landing_model_cards_open_filterable_models_table():
-    landing_js = (REPO_ROOT / "docs/_static/landing.js").read_text(encoding="utf-8")
+    zoo_gen = (REPO_ROOT / "docs/sphinxext/zoo_data_gen.py").read_text(encoding="utf-8")
     models_table = (REPO_ROOT / "docs/models/models_table.rst").read_text(
         encoding="utf-8"
     )
 
-    assert "models/models_table.html?model=" in landing_js
-    assert 'Open " + m.name + " in the models table' in landing_js
+    assert 'href = f"generated/braindecode.models.{quote(name)}.html"' in zoo_gen
+    assert 'href="models/models_table.html"' in zoo_gen
     assert "new URLSearchParams(window.location.search).get('model')" in models_table
     assert "table.search(model).draw()" in models_table
 
