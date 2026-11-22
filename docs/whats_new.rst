@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Restyle the applied-examples gallery figures after :gh:`1761` and run the ECoG trialwise and
+  fixed-length-window examples in the gallery as ``plot_bcic_iv_4_ecog_trial`` and
+  ``plot_create_fixed_window_length``, with redirects from the old pages (:gh:`1789` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
   with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
   DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).
