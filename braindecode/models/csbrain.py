@@ -17,7 +17,6 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-from torch.nn.modules.lazy import LazyModuleMixin
 
 from braindecode.functional import init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
@@ -456,18 +455,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # to 4 * emb_dim, the reference value for 4 s windows.
         n_chans = self._n_chans_or_none()
         n_patch = self._n_patch()
-        prev = getattr(self, "final_layer", None)
         if n_patch is not None and n_chans is not None:
             in_features: int | None = n_chans * n_patch * self._d_model
             hidden = self._head_hidden_dim or n_patch * self._emb_dim
-        elif (
-            isinstance(prev, nn.Sequential)
-            and len(prev) > 1
-            and isinstance(prev[1], nn.Linear)
-            and not isinstance(prev[1], LazyModuleMixin)
-        ):
-            in_features = prev[1].in_features
-            hidden = self._head_hidden_dim or prev[1].out_features
         else:
             in_features = None
             hidden = self._head_hidden_dim or 4 * self._emb_dim

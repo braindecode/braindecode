@@ -12,7 +12,6 @@ from typing import Dict, Optional, Sequence, Union
 
 import torch
 from torch import Tensor, nn
-from torch.nn.modules.lazy import LazyModuleMixin
 
 from braindecode.functional import (
     check_ch_mask,
@@ -273,22 +272,12 @@ class CBraMod(EEGModuleMixin, nn.Module):
         # A head implies a classifier, also when built with return_encoder_output.
         self._update_init_kwargs(return_encoder_output=False)
         self._encoder_output = False
-        prev = getattr(self, "final_layer", None)
         if self._knows_geometry():
             n_patch = self._n_patch()
             # proj_out reads the encoder output, whose size is d_model.
             flat_dim = self.n_chans * n_patch * self.proj_out[0].in_features
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, n_outputs)
-            )
-        elif (
-            isinstance(prev, nn.Sequential)
-            and len(prev) > 1
-            and isinstance(prev[1], nn.Linear)
-            and not isinstance(prev[1], LazyModuleMixin)
-        ):
-            self.final_layer = nn.Sequential(
-                nn.Flatten(), nn.Linear(prev[1].in_features, n_outputs)
             )
         else:
             self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(n_outputs))
