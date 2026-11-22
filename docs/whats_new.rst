@@ -39,6 +39,9 @@ Enhancements
   attaches one. ``reset_head`` works on every model with a head: by default it
   replaces the last linear or convolutional layer of ``final_layer``
   (by `Bruno Aristimunha`_).
+- Add :func:`braindecode.training.info_nce`, the InfoNCE (NT-Xent) contrastive
+  loss, and the example :ref:`contrastive-pretraining-eeg`, which pretrains a
+  headless model and then probes and fine-tunes it (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.CareSleepNet`,
   :class:`~braindecode.models.EEGInceptionMI`, :class:`~braindecode.models.FBCNet`,
   :class:`~braindecode.models.FBMSNet`, :class:`~braindecode.models.IFNet`,
