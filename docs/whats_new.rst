@@ -652,6 +652,9 @@ Bug fixes
 - :meth:`braindecode.datasets.BaseConcatDataset.split` raises a ``ValueError`` when the
   description column given as ``by`` has missing values, instead of silently leaving these
   recordings out of every split (:gh:`1762` by `Axel Coiffard-Donaty`_).
+- :func:`braindecode.preprocessing.create_fixed_length_windows` raises a ``ValueError`` when
+  the window does not fit between ``start_offset_samples`` and ``stop_offset_samples``,
+  instead of an ``IndexError`` or an empty dataset (:gh:`1763` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============

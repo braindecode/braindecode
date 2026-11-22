@@ -1021,6 +1021,15 @@ def _create_fixed_length_windows(
         window_stride_samples = window_size_samples
 
     last_potential_start = stop - window_size_samples
+    # The caller only compares the window size with the whole recording. A
+    # window that does not fit between the offsets leaves no valid start.
+    if last_potential_start < start_offset_samples:
+        raise ValueError(
+            f"Window size {window_size_samples} exceeds the "
+            f"{stop - start_offset_samples} samples between "
+            f"start_offset_samples ({start_offset_samples}) and "
+            f"stop_offset_samples ({stop})."
+        )
 
     # get targets from dataset description if they exist
     target = -1 if ds.target_name is None else ds.description[ds.target_name]
