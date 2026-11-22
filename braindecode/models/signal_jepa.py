@@ -316,6 +316,10 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
                 conv_bias=feature_encoder__conv_bias,
                 activation=activation,
             )
+            min_time = 1
+            for _, k, s in reversed(feature_encoder__conv_layers_spec):
+                min_time = (min_time - 1) * s + k
+            self._min_n_times = min_time
 
         if _init_transformer:
             assert channel_locations is not None  # narrowing for type checker
@@ -479,6 +483,9 @@ class SignalJEPA(_BaseSignalJEPA):
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
+
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: pos_encoder.pos_encoder_spat.weight
 
     def __init__(
         self,
@@ -645,6 +652,9 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.linear.weight
+    _channel_axis = "fixed"  # fixed: final_layer.spat_conv.weight
 
     def __init__(
         self,
@@ -905,6 +915,9 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.linear.weight
+    _channel_axis = "fixed"  # fixed: final_layer.spat_conv.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -1141,6 +1154,9 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: spatial_conv.1.weight
 
     _feature_encoder_channels: str = "n_spat_filters"
 

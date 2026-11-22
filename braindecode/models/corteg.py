@@ -23,6 +23,7 @@ from braindecode.functional import (
     masked_mean,
     sinusoidal_positional_encoding,
 )
+from braindecode.functional.patches import pad_or_crop_to_patches
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.steegformer import STEEGFORMER_CHANNEL_ORDER
 from braindecode.models.util import chs_info_positions
@@ -235,6 +236,10 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
        (NeurIPS 2026). https://arxiv.org/abs/2605.10337
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: default_pos
+    _time_inputs = ("x", "x_hi")
+
     def __init__(
         self,
         # braindecode parameters
@@ -385,8 +390,23 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
             else None
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self.patch_size = patch_size
+        self.hi_patch_size = hi_patch_size
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
         self._init_parameters()
+
+    def _snap_grid_tensor(self, name: str, x: torch.Tensor) -> torch.Tensor:
+        patch = self.hi_patch_size if name == "x_hi" else self.patch_size
+        return pad_or_crop_to_patches(x, patch, self.on_non_divisible)
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        pos = args[2] if len(args) > 2 else kwargs.get("pos")
+        return pos is not None
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

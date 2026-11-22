@@ -76,6 +76,9 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
        Online: http://dx.doi.org/10.1002/hbm.23730
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: conv_time_spat.conv_spat.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -215,6 +218,13 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
+        self._min_n_times = (
+            (self.final_conv_length - 1) * self.pool_time_stride
+            + self.pool_time_length
+            + self.filter_time_length
+            - 1
+        )
+        self._has_ensure4d = True
 
         # Initialization, xavier is same as in paper...
         self._init_parameters()

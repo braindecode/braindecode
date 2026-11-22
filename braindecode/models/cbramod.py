@@ -15,7 +15,6 @@ from torch import Tensor, nn
 
 from braindecode.functional import (
     check_ch_mask,
-    check_n_chans,
     init_weights_,
     masked_group_norm,
     spectral_input,
@@ -162,6 +161,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
        https://arxiv.org/abs/2412.07236
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -246,6 +248,19 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.LazyLinear(self.n_outputs)
             )
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
+        return bool(self._encoder_output or ret_feat)
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
+        return bool(self._encoder_output or ret_feat)
 
     def __setstate__(self, state):
         super().__setstate__(state)
@@ -308,11 +323,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
         :func:`~braindecode.datasets.pad_channels_collate` pads: the
         positional convolution reads neighbouring channels."""
         ch_mask = check_ch_mask(ch_mask, x)
-        # The encoder takes any number of channels, the flattened head does not.
-        if self._n_chans_for_jit is not None and not (
-            return_features or self._encoder_output
-        ):
-            check_n_chans(x, self._n_chans_for_jit, "CBraMod")
         key_padding_mask: Optional[Tensor] = None
         if ch_mask is not None:
             if not return_features and not self._encoder_output:

@@ -236,6 +236,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         Proc. Interspeech, 2613-2617.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: model.0.batch_norm.weight
+
     mapping = {
         "model.4.weight": "final_layer.weight",
         "model.4.bias": "final_layer.bias",
@@ -363,8 +366,10 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         )
 
         self.final_layer = nn.Linear(num_features, self.n_outputs)
-
         self._n_conv_blocks = len(block_channels)
+        self._min_n_times = (
+            self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
+        )
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
@@ -413,21 +418,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
             configuration-driven feature extraction (e.g. neuroai's
             ``model_output_key=1``).
         """
-        if x.ndim != 3 or x.shape[-2] != self.n_chans:
+        if x.ndim != 3:
             raise ValueError(
                 f"expected (batch, {self.n_chans}, T) input; got shape {x.shape}."
-            )
-        min_n_times = (
-            self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
-        )
-        if x.shape[-1] < min_n_times:
-            raise ValueError(
-                f"n_times={x.shape[-1]} is shorter than the encoder's "
-                f"receptive field ({min_n_times} samples = n_fft + "
-                f"n_conv_blocks * (kernel_width - 1) * hop_length, with "
-                f"n_fft={self.n_fft}, hop_length={self.hop_length}, "
-                f"n_conv_blocks={self._n_conv_blocks}, "
-                f"kernel_width={self.kernel_width})."
             )
         spectrogram = self.spectrogram(x)
         spectrogram = self.spec_augment(spectrogram)

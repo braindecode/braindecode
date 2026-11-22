@@ -268,6 +268,9 @@ class REVE(EEGModuleMixin, nn.Module):
     requiring matched layouts between pretraining and downstream tasks.
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.bias
+    _channel_axis = "fixed"  # fixed: final_layer.1.bias
+
     # Constant, so TorchScript compiles only the head in use (``cls_query_token``
     # exists only with attention pooling).
     __constants__ = ["use_attention_pooling"]
@@ -408,6 +411,27 @@ class REVE(EEGModuleMixin, nn.Module):
 
         if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
+        self._n_times_step = self.patch_size - self.patch_overlap
+        self._n_times_offset = self.patch_size
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
+        if self.use_attention_pooling:
+            self._time_axis = "free"
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        pos = args[1] if len(args) > 1 else kwargs.get("pos")
+        ret_out = args[2] if len(args) > 2 else kwargs.get("return_output", False)
+        ret_feat = args[3] if len(args) > 3 else kwargs.get("return_features", False)
+        return pos is not None and bool(
+            self.use_attention_pooling or ret_out or ret_feat
+        )
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        ret_out = args[2] if len(args) > 2 else kwargs.get("return_output", False)
+        ret_feat = args[3] if len(args) > 3 else kwargs.get("return_features", False)
+        return bool(self.use_attention_pooling or ret_out or ret_feat)
 
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""

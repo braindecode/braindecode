@@ -196,6 +196,9 @@ class VEMG2Pose(
        Time-Depth Separable Convolutions. arXiv:1904.01619.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: encoder.0.conv.0.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -375,6 +378,12 @@ class VEMG2Pose(
             in_features=head_in,
             out_features=self._head_multiplier * self.n_outputs,
         )
+        min_time = self.left_context + 1
+        while (
+            round((min_time - self.left_context) / self.sfreq * self.rollout_rate) < 1
+        ):
+            min_time += 1
+        self._min_n_times = min_time
         self._init_parameters()
 
     def _init_parameters(self) -> None:
@@ -415,12 +424,6 @@ class VEMG2Pose(
             ``regression`` checkpoint was trained.
         """
         batch_size, _, n_times = x.shape
-        if n_times <= self.left_context:
-            raise ValueError(
-                f"VEMG2Pose consumes a left context of {self.left_context} "
-                f"samples before its first prediction; got n_times={n_times}. "
-                "Use a longer window."
-            )
         features = self.encoder(x)
 
         # Predictions span the input past the left context, unrolled at

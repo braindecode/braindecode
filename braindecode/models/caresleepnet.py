@@ -161,6 +161,9 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/wjq-learning/CareSleepNet/tree/386e149f7eac8d93207972268f8bc82ea37361c1
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: eeg_encoder.0.branches.0.0.weight
+
     def __init__(
         self,
         # Signal-related parameters.

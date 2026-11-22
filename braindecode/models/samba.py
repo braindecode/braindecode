@@ -12,7 +12,6 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import MLP
@@ -224,6 +223,9 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        ICML. arXiv:2405.21060.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: encoder.cdse.target_positions
+
     def __init__(
         self,
         # Braindecode parameters
@@ -348,6 +350,7 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         # Head on the mean and the standard deviation of the encoder output
         self.final_layer = nn.Linear(2 * bottleneck_channels, self.n_outputs)
+        self._min_n_times = self.min_n_times
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
@@ -371,13 +374,6 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             None}`` with the ``(batch, 2 * bottleneck_channels)`` input of
             ``final_layer``.
         """
-        check_n_chans(x, self.n_chans, "SAMBA")
-        if x.shape[-1] < self.min_n_times:
-            raise ValueError(
-                f"SAMBA needs at least {self.min_n_times} samples, one for each "
-                f"step it keeps after its max-poolings; got {x.shape[-1]}."
-            )
-
         # Encoder: n_steps = n_times // pool_size ** 3 steps of bottleneck_channels
         # features
         # (batch, n_chans, n_times) -> (batch, n_steps, bottleneck_channels)

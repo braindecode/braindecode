@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import check_n_chans, init_weights_, patch_count
+from braindecode.functional import init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
@@ -297,6 +297,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
        https://github.com/yuchen2199/CSBrain
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -418,6 +421,19 @@ class CSBrain(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Identity()
         else:
             self.final_layer = self._make_task_head()
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
+        return self.sorted_indices is None and bool(self._encoder_output or ret_feat)
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
+        return bool(self._encoder_output or ret_feat)
 
     def _n_chans_or_none(self) -> int | None:
         try:
@@ -498,13 +514,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         mask: Optional[Tensor] = None,
         return_features: bool = False,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
-        # The region order and the flattened head are tied to the channels, the
-        # encoder alone is not.
-        if self._n_chans_for_jit is not None and (
-            self.sorted_indices is not None
-            or not (return_features or self._encoder_output)
-        ):
-            check_n_chans(x, self._n_chans_for_jit, "CSBrain")
         x = self.rearrange(x)
         if self.sorted_indices is not None:
             x = x[:, self.sorted_indices, :, :]

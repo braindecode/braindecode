@@ -82,6 +82,9 @@ class FBCNet(EEGModuleMixin, nn.Module):
         https://github.com/ravikiran-mane/FBCNet
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
+
     def __init__(
         self,
         # Braindecode parameters

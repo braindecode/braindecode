@@ -398,6 +398,9 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        Tokenization for Generative Foundation Models. https://arxiv.org/abs/2510.13068
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: spatial_embedding_ix
+
     def __init__(
         self,
         n_outputs: int | None = None,

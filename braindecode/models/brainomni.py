@@ -139,6 +139,9 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
        NeurIPS 2025. https://arxiv.org/abs/2505.18185
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: pos
+
     def __init__(
         self,
         n_outputs=None,
@@ -224,6 +227,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             last_kernel_size,
             drop_prob,
         )
+        self._min_n_times = 1
         self._init_parameters()
 
     def _init_parameters(self) -> None:
@@ -410,6 +414,9 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
        NeurIPS 2025. https://arxiv.org/abs/2505.18185
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: tokenizer.pos
+
     def __init__(
         self,
         n_outputs=None,
@@ -496,6 +503,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
         self.final_layer = self._make_head(self.n_outputs)  # default init, as released
         self.tokenizer.requires_grad_(False)
+        self._min_n_times = 1
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

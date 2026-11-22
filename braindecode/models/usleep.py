@@ -171,6 +171,9 @@ class USleep(EEGModuleMixin, nn.Module):
        https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: encoder_blocks.0.block_prepool.0.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -276,6 +279,7 @@ class USleep(EEGModuleMixin, nn.Module):
             nn.Tanh(),
             nn.AvgPool1d(self.n_times),  # output is (B, C, S)
         )
+        self._min_n_times = self.n_times
 
         self.final_layer = nn.Sequential(
             nn.Conv1d(
@@ -296,6 +300,13 @@ class USleep(EEGModuleMixin, nn.Module):
             nn.Identity(),
             # output is (B, n_classes, S)
         )
+
+    def _check_input_shape(
+        self, x: torch.Tensor, args: tuple, kwargs: dict
+    ) -> str | None:
+        if x.ndim == 4:
+            x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
+        return super()._check_input_shape(x, args, kwargs)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:

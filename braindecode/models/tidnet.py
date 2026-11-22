@@ -68,6 +68,9 @@ class TIDNet(EEGModuleMixin, nn.Module):
         doi: 10.1088/1741-2552/abb7a7.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: dscnn.spatial.channel_collapse.conv.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -113,6 +116,8 @@ class TIDNet(EEGModuleMixin, nn.Module):
             summary=summary,
             activation=activation,
         )
+        self._min_n_times = max(1, pooling)
+        self._has_ensure4d = True
 
         self._num_features = self.dscnn.num_features
 

@@ -64,6 +64,9 @@ class TSception(EEGModuleMixin, nn.Module):
         https://github.com/deepBrains/TSception/blob/master/Models.py
     """
 
+    _time_axis = "fixed"  # fixed: dense_layer.0.weight
+    _channel_axis = "fixed"  # fixed: dense_layer.0.weight
+
     def __init__(
         self,
         # Braindecode parameters

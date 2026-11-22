@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
-from braindecode.functional import _real_dft, check_n_chans, spectral_input
+from braindecode.functional import _real_dft, spectral_input
 from braindecode.functional.functions import _next_fast_len
 from braindecode.models.base import EEGModuleMixin
 
@@ -120,6 +120,9 @@ class CodeBrain(EEGModuleMixin, nn.Module):
        CodeBrain: Scalable Code EEG Pre-Training for Unified Downstream BCI Tasks.
        https://arxiv.org/abs/2506.09110
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
 
     _channel_target = (
         "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
@@ -233,6 +236,19 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             nn.Dropout(drop_prob),
             nn.Linear(out_channels, self.n_outputs),
         )
+        self._n_times_step = self.patch_size
+        self._min_n_times = self.patch_size
+        self._snaps_in_prepare_inputs = False
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
+        return bool(self.pretrain_mode or ret_feat)
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
+        return bool(self.pretrain_mode or ret_feat)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Remap upstream checkpoint keys to braindecode attribute names.
@@ -272,9 +288,6 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Dict[str, Optional[torch.Tensor]],
         Tuple[torch.Tensor, torch.Tensor],
     ]:
-        # The backbone takes any number of channels, the flattened head does not.
-        if not (return_features or self.pretrain_mode):
-            check_n_chans(inputs, self.n_chans, "CodeBrain")
         # inputs: (batch, n_chans, n_times)
         batch, n_chans, n_times = inputs.shape
         patch_size = self.patch_size

@@ -125,6 +125,9 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
 
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: conv_spatial.parametrizations.weight.original
+
     def __init__(
         self,
         # signal's parameters
@@ -332,6 +335,14 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
                     "The convolutions and poolings leave no time sample: too small "
                     f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
                 )
+
+        delta2 = (
+            2 * (self.depthwise_kernel_length // 2) - self.depthwise_kernel_length + 1
+        )
+        n_pool1_min = max(1, self.final_conv_length * self.pool2_kernel_size - delta2)
+        delta1 = 2 * (self.kernel_length // 2) - self.kernel_length + 1
+        self._min_n_times = max(1, n_pool1_min * self.pool1_kernel_size - delta1)
+        self._has_ensure4d = True
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()

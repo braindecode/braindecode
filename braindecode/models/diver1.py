@@ -192,6 +192,9 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2512.19097
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -353,6 +356,14 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             self.n_chans * self.n_patches * d_model if pooling == "flatten" else d_model
         )
         self.final_layer = nn.Linear(head_in_features, self.n_outputs)
+        self._n_times_step = self.patch_size
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        meta = args[1] if len(args) > 1 else kwargs.get("chan_metadata")
+        ret_feat = args[3] if len(args) > 3 else kwargs.get("return_features", False)
+        return meta is not None and (self.pooling == "mean" or bool(ret_feat))
 
     def reset_head(self, n_outputs):
         """Replace the linear classification head for a new ``n_outputs``."""

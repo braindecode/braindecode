@@ -230,6 +230,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
        https://openreview.net/forum?id=5Xwm8e6vbh
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_indices
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -377,6 +380,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.norm = nn.LayerNorm(embed_dim, eps=1e-6)
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
         self.head_drop = nn.Dropout(drop_prob)
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
         # Upstream MAE init (xavier-uniform Linears, unit/zero LayerNorm) on every
         # submodule, then the faithful-port specials: a normal(std=0.02) CLS token

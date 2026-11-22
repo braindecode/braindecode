@@ -72,6 +72,9 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         Journal of Neural Engineering, 18(4), 046014.
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: initial_inception_module.bottleneck.weight
+
     def __init__(
         self,
         n_chans=None,

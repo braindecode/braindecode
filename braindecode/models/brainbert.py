@@ -155,6 +155,9 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
        Code: https://github.com/czlwang/BrainBERT
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         # --- BrainBERT hyper-parameters (modest defaults; "large" in docstring) ---
@@ -266,6 +269,11 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         # Upstream's downstream probe is a bare linear layer
         # (``models/linear_wav_baseline.py``), with no normalisation in front.
         self.final_layer = nn.Linear(hidden_dim, self.n_outputs)
+        self._min_n_times = (
+            1
+            if self.on_non_divisible == "pad"
+            else self.spectrogram.min_n_times(self.min_frames)
+        )
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""

@@ -124,6 +124,9 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://doi.org/10.1038/s41591-025-04133-4
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -191,6 +194,8 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             embed_dim, pooling_heads, drop_prob
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self._n_times_step = self.patch_size
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
@@ -403,6 +408,9 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://doi.org/10.1038/s41591-025-04133-4
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: _channel_order
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -497,6 +505,8 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             max_seq_length,
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self._n_times_step = self.patch_size
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
 
     @classmethod
     def from_pretrained(

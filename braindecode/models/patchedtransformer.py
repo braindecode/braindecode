@@ -13,7 +13,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.functional import (
-    check_n_chans,
     init_weights_,
     scaled_dot_product_attention,
 )
@@ -207,6 +206,9 @@ class PBT(EEGModuleMixin, nn.Module):
         impacting performance. arXiv preprint arXiv:2107.02027.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: pos_embedding.weight
+
     def __init__(
         self,
         # Signal related parameters
@@ -295,6 +297,7 @@ class PBT(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=embed_dim, out_features=self.n_outputs, bias=True
         )
+        self._min_n_times = (self.n_times // self.d_input) * self.d_input
 
         # initialize weights
         self._init_parameters()
@@ -317,7 +320,6 @@ class PBT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
-        check_n_chans(X, self.n_chans, "PBT")
         X, int_pos = self.patch_signal(X)
 
         tokens = self.patching_projection(X)

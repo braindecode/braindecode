@@ -224,6 +224,9 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        sample-efficient neural interfaces. https://arxiv.org/abs/2609.13507
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: default_sensor_indices
+
     # TorchScript reads no module globals, so forward reads these constants.
     __constants__ = ("_band_strides", "_n_bins", "_n_regions")
     _band_strides = _BAND_STRIDES
@@ -373,6 +376,23 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             else feature_dim * self.n_chans * self.k_full
         )
         self.final_layer = nn.Linear(n_features, self.n_outputs)
+        quantum = max(_BAND_STRIDES)
+        if normalization == "session":
+            self._min_n_times = quantum
+        else:
+            raw_min = (quantum - 1) * 64
+            if sfreq_known and float(self.sfreq) != 2048:
+                self._min_n_times = ((raw_min - 1) * int(self.sfreq)) // 2048 + 1
+            else:
+                self._min_n_times = raw_min
+        if pooling == "flatten":
+            self._time_axis = "fixed"
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        sensor_indices = args[1] if len(args) > 1 else kwargs.get("sensor_indices")
+        return sensor_indices is not None and self.pooling == "mean"
 
     @property
     @torch.jit.unused

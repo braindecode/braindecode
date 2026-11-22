@@ -179,6 +179,9 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
        picking. Nature Communications, 11, 3952.
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: encoder.0.conv.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -277,6 +280,11 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Conv1d(
             n_filters[0], self.n_outputs, final_kernel_size, padding="same"
         )
+        self._min_n_times = 1
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        x = self._first_input(args, kwargs)
+        return x is not None and x.shape[-1] <= self.max_n_times
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the output convolution for a new number of outputs."""
@@ -302,11 +310,6 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
         torch.Tensor
             Logits of shape ``(batch, n_outputs, n_times)``.
         """
-        if x.shape[-1] > self.max_n_times:
-            raise ValueError(
-                f"SeizureTransformer was built for at most {self.max_n_times} "
-                f"time samples (n_times), but received {x.shape[-1]}."
-            )
         skips: list[torch.Tensor] = []
         for block in self.encoder:
             x = block(x)

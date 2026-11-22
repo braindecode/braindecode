@@ -105,6 +105,9 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
         https://github.com/snailpt/CTNet
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: cnn.eegnet_module.2.weight
+
     def __init__(
         self,
         # Base arguments
@@ -178,6 +181,7 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
             n_chans=self.n_chans,
             activation=self.activation_patch,
         )
+        self._min_n_times = max(1, self.pool_size_1 * self.pool_size_2)
 
         length = 100
         needed = max(

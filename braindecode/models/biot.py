@@ -137,6 +137,9 @@ class BIOT(EEGModuleMixin, nn.Module):
        GitHub https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: encoder.channel_tokens.weight
+
     _channel_target = BIOT_CHANNEL_ORDER
 
     def __init__(
@@ -228,6 +231,13 @@ class BIOT(EEGModuleMixin, nn.Module):
             n_outputs=self.n_outputs,
             activation=activation,
         )
+        self._min_n_times = max(1, self.n_fft)
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        x = self._first_input(args, kwargs)
+        return x is not None and x.ndim >= 2 and 1 <= x.shape[1] <= self.n_chans
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs

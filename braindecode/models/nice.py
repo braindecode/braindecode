@@ -108,6 +108,9 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         https://arxiv.org/abs/2308.13234
     """
 
+    _time_axis = "fixed"  # fixed: projector.0.weight
+    _channel_axis = "fixed"  # fixed: tsconv.4.weight
+
     def __init__(
         self,
         # braindecode parameters

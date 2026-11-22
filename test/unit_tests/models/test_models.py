@@ -5209,7 +5209,7 @@ def test_seizure_transformer_predicts_every_input_sample(n_times, input_times):
 
 def test_seizure_transformer_rejects_inputs_longer_than_n_times():
     model = _small_seizure_transformer(256)
-    with pytest.raises(ValueError, match="at most 256"):
+    with pytest.raises(ValueError, match="built for n_times=256"):
         model(torch.randn(1, 4, 512))
 
 

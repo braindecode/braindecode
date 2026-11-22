@@ -708,12 +708,7 @@ _FOUNDATION_MODELS = set(
         _summary_table["Categorization"].str.contains("Foundation", na=False)
     ]
 )
-# Clear errors that predate check_n_chans and word the mismatch otherwise.
-_N_CHANS_ERRORS = {
-    "GeoNIRS": r"channel counts",
-    "NeuroRVQ": r"Expected input shape",
-    "NeuroRVQTokenizer": r"Expected input shape",
-}
+_N_CHANS_ERRORS: dict[str, str] = {}
 
 
 @pytest.mark.parametrize(

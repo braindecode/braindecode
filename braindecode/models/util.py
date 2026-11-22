@@ -195,6 +195,7 @@ def track_model_init_kwargs(cls) -> None:
                     "natively (see the channel strategies page of the models documentation)."
                 ) from None
             raise TypeError(f"{name}: {error}") from None
+        explicit_keys = frozenset(bound.arguments.keys() - {"self"})
         bound.apply_defaults()
 
         captured_kwargs = {}
@@ -206,6 +207,7 @@ def track_model_init_kwargs(cls) -> None:
                 captured_kwargs.update(value)
             elif param.kind != param.VAR_POSITIONAL:
                 captured_kwargs[name] = value
+        self._braindecode_explicit_init_keys = explicit_keys
         self._braindecode_init_kwargs = captured_kwargs
         return init(self, *args, **kwargs)
 

@@ -490,6 +490,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     .. [neurorvqcode] https://github.com/KonstantinosBarmpas/NeuroRVQ
     """
 
+    _time_axis = "fixed"  # fixed: fc_norm.bias
+    _channel_axis = "fixed"  # fixed: fc_norm.bias
+
     def __init__(
         self,
         n_outputs: int | None = None,

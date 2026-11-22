@@ -15,7 +15,7 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import check_n_chans, scaled_dot_product_attention
+from braindecode.functional import scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -219,6 +219,9 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2607.27308
     """
 
+    _time_axis = "fixed"  # fixed: encoder.rotary_cosine
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -360,7 +363,6 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         input_tensor: torch.Tensor,
         return_features: bool = False,
     ):
-        check_n_chans(input_tensor, self.num_channels, "ZUNA")
         patch_tokens = self.patch_embedding(input_tensor)
         token_latents = self.encoder(patch_tokens)
         structured_latents = token_latents.reshape(

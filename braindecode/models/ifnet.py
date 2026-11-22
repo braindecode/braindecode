@@ -106,6 +106,9 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         https://github.com/Jiaheng-Wang/IFNet
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: feature_block.spatial_conv.weight
+
     def __init__(
         self,
         # Braindecode parameters

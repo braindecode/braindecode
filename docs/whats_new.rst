@@ -189,6 +189,15 @@ Enhancements
 API and behavior changes
 ========================
 
+- Every registered model declares ``_time_axis`` (``"fixed"``, ``"free"`` or
+  ``"dense"``), ``_channel_axis`` (``"fixed"`` or ``"free"``) and, on ``"free"``
+  and ``"dense"`` models, ``_min_n_times``; :class:`braindecode.models.EEGModuleMixin`
+  checks channel counts, minimum lengths and fixed window lengths before ``forward``
+  runs instead of catching and re-wording PyTorch ``RuntimeError``s. Off-by-one
+  window lengths within 1% of ``n_times`` (and at most one step) snap to
+  ``n_times`` with a one-time ``UserWarning`` unless ``on_non_divisible="error"``;
+  larger mismatches on fixed models raise ``ValueError`` before ``forward`` runs
+  (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).

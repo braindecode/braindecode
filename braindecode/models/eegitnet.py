@@ -73,6 +73,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         doi: 10.1109/ACCESS.2022.3161489.
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.parametrizations.weight.original
+    _channel_axis = (
+        "fixed"  # fixed: inception_block.branches.0.2.parametrizations.weight.original
+    )
+
     def __init__(
         self,
         # Braindecode parameters

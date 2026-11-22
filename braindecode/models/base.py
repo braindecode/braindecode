@@ -14,14 +14,26 @@ import sys
 import warnings
 from collections import OrderedDict
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import TYPE_CHECKING, Dict, Iterable, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    Iterable,
+    Optional,
+    Union,
+)
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
+from torch.nn.parameter import UninitializedParameter
 from torchinfo import ModelStatistics, summary
 
+from braindecode.functional.patches import pad_or_crop_to_patches, patch_count
 from braindecode.models.util import (
     _EEG_PARAMS,
     build_model_config,
@@ -129,21 +141,14 @@ def _local_weights_path(model_id, filename):
     return path
 
 
-def _too_short_input_error(exc: RuntimeError, input_shape) -> Optional[ValueError]:
-    """ValueError for a layer that found the input too short, else None."""
-    if not str(exc).endswith(
-        (
-            "Output size is too small",
-            "Kernel size can't be greater than actual input size",
-        )
-    ):
-        return None
-    return ValueError(
-        "During model prediction RuntimeError was thrown showing that at some "
-        f"layer `{str(exc).split('.')[-1]}` (see above in the stacktrace). This "
-        "could be caused by providing too small `n_times`/`input_window_seconds`. "
-        "Model may require longer chunks of signal in the input than "
-        f"{input_shape}."
+@functools.lru_cache(maxsize=None)
+def _forward_param_names(cls: type) -> tuple[str, ...]:
+    """Ordered input parameter names of ``cls.forward`` (excluding ``self``)."""
+    params = list(inspect.signature(cls.forward).parameters.values())
+    return tuple(
+        p.name
+        for p in params[1:]
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
     )
 
 
@@ -222,6 +227,8 @@ def _new_head_follows_model(reset_head):
         # Hold the old tensors until the end, so that their ids cannot be
         # reused by the new ones.
         old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
+        self._materialized_n_chans = None
+        self._materialized_n_times = None
         out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
@@ -381,6 +388,17 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "_chs_info",
         "input_shape",
         "mapping",
+        "_time_axis",
+        "_channel_axis",
+        "_time_inputs",
+        "_min_n_times",
+        "_n_times_step",
+        "_n_times_offset",
+        "_warned_length_snap",
+        "_on_non_divisible_explicit",
+        "_snaps_in_prepare_inputs",
+        "_materialized_n_chans",
+        "_materialized_n_times",
     ]
     #: Rich MNE channel dictionaries are intentionally unavailable in scripted
     #: forwards; they remain unchanged on eager models and in saved configs.
@@ -536,6 +554,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             if not hasattr(self, key):
                 setattr(self, key, val)
 
+        self._min_n_times: int | None = None
+        self._n_times_step: int = 1
+        self._n_times_offset: int = 0
+        self._warned_length_snap: bool = False
+        self._snaps_in_prepare_inputs: bool = True
+        self._materialized_n_chans: int | None = None
+        self._materialized_n_times: int | None = None
+        self._on_non_divisible_explicit: bool = "on_non_divisible" in getattr(
+            self, "_braindecode_explicit_init_keys", ()
+        )
+        if not hasattr(self, "on_non_divisible"):
+            self.on_non_divisible = "crop"
+
         super().__init__()
         if layer is not None:
             self.channel_layer = layer
@@ -658,17 +689,288 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         # Called by torch.jit.script before compiling the model.
         return make_parametrizations_scriptable(self)
 
+    def _signal_param(self, name: str) -> Any | None:
+        """Return signal parameter ``name`` or ``None`` if unset and not inferable."""
+        if name == "n_outputs":
+            return getattr(self, "_n_outputs", None)
+        if name == "chs_info":
+            return getattr(self, "_chs_info", None)
+        if name == "n_chans":
+            n_chans = getattr(self, "_n_chans", None)
+            if n_chans is not None:
+                return n_chans
+            chs_info = getattr(self, "_chs_info", None)
+            if chs_info is not None:
+                return len(chs_info)
+            return getattr(self, "_materialized_n_chans", None)
+        if name == "n_times":
+            n_times = getattr(self, "_n_times", None)
+            if n_times is not None:
+                return n_times
+            win = getattr(self, "_input_window_seconds", None)
+            sfreq = getattr(self, "_sfreq", None)
+            if win is not None and sfreq is not None:
+                return int(round(win * sfreq))
+            return getattr(self, "_materialized_n_times", None)
+        if name == "input_window_seconds":
+            win = getattr(self, "_input_window_seconds", None)
+            if win is not None:
+                return win
+            n_times = getattr(self, "_n_times", None)
+            sfreq = getattr(self, "_sfreq", None)
+            if n_times is not None and sfreq is not None:
+                return float(n_times / sfreq)
+            return None
+        if name == "sfreq":
+            sfreq = getattr(self, "_sfreq", None)
+            if sfreq is not None:
+                return sfreq
+            win = getattr(self, "_input_window_seconds", None)
+            n_times = getattr(self, "_n_times", None)
+            if win is not None and n_times is not None:
+                return float(n_times / win)
+            return None
+        raise KeyError(f"Unknown signal parameter {name!r}.")
+
+    def _first_input(self, args: tuple, kwargs: dict) -> torch.Tensor | None:
+        """Extract the primary signal tensor from positional or keyword call args."""
+        if args:
+            first = args[0]
+            return first if isinstance(first, torch.Tensor) else None
+        names = _forward_param_names(type(self))
+        if names and names[0] in kwargs:
+            first = kwargs[names[0]]
+            return first if isinstance(first, torch.Tensor) else None
+        return None
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        """Whether this call accepts an input channel count other than ``n_chans``."""
+        return getattr(self, "channel_layer", None) is not None
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        """Whether this call accepts a window length other than ``n_times``."""
+        return False
+
+    @staticmethod
+    def _snap_to_length(x: torch.Tensor, target: int) -> torch.Tensor:
+        cur = x.shape[-1]
+        if cur == target:
+            return x
+        if cur > target:
+            return x[..., :target]
+        return F.pad(x, (0, target - cur))
+
+    def _snap_grid_target(self, got_times: int) -> int:
+        step = getattr(self, "_n_times_step", 1)
+        offset = getattr(self, "_n_times_offset", 0)
+        patch = offset if offset > 0 else step
+        grid_step = step if offset > 0 else patch
+        n_patches = patch_count(
+            got_times,
+            patch,
+            getattr(self, "on_non_divisible", "crop"),
+            step=0 if offset == 0 else step,
+        )
+        return patch + (n_patches - 1) * grid_step
+
+    def _snap_grid_tensor(self, name: str, x: torch.Tensor) -> torch.Tensor:
+        step = getattr(self, "_n_times_step", 1)
+        offset = getattr(self, "_n_times_offset", 0)
+        patch = offset if offset > 0 else step
+        grid_step = 0 if offset == 0 else step
+        return pad_or_crop_to_patches(
+            x,
+            patch,
+            getattr(self, "on_non_divisible", "crop"),
+            step=grid_step,
+        )
+
+    def _replace_time_inputs(
+        self,
+        args: tuple,
+        kwargs: dict,
+        fn: Callable[[str, torch.Tensor], torch.Tensor],
+    ) -> tuple[tuple, dict]:
+        time_inputs = getattr(self, "_time_inputs", ("x",))
+        names = _forward_param_names(type(self))
+        new_args = list(args)
+        args_changed = False
+        for idx, val in enumerate(new_args):
+            if (
+                idx < len(names)
+                and names[idx] in time_inputs
+                and isinstance(val, torch.Tensor)
+            ):
+                snapped = fn(names[idx], val)
+                if snapped is not val:
+                    new_args[idx] = snapped
+                    args_changed = True
+        new_kwargs = kwargs
+        for key in time_inputs:
+            if key in kwargs and isinstance(kwargs[key], torch.Tensor):
+                snapped = fn(key, kwargs[key])
+                if snapped is not kwargs[key]:
+                    if new_kwargs is kwargs:
+                        new_kwargs = dict(kwargs)
+                    new_kwargs[key] = snapped
+        return (tuple(new_args) if args_changed else args), new_kwargs
+
+    def _check_input_shape(
+        self, x: torch.Tensor, args: tuple, kwargs: dict
+    ) -> str | None:
+        """Validate ``x`` against declared channel/time contracts.
+
+        Returns ``"fixed_snap"`` or ``"grid_snap"`` when trailing samples
+        should be snapped in :meth:`_prepare_inputs`, or ``None`` when no
+        snapping is needed.
+        """
+        time_axis = getattr(self, "_time_axis", None)
+        channel_axis = getattr(self, "_channel_axis", None)
+        if (time_axis is None and channel_axis is None) or x.ndim < 2:
+            return None
+        name = type(self).__name__
+
+        if channel_axis == "fixed" and not self._accepts_any_n_chans(args, kwargs):
+            n_chans = self._signal_param("n_chans")
+            if n_chans is not None and x.shape[1] != n_chans:
+                raise ValueError(
+                    f"{name} was built for n_chans={n_chans} and got {x.shape[1]} "
+                    f"channels (input shape {tuple(x.shape)}). Rebuild it with "
+                    f"n_chans={x.shape[1]}, or map the montage with "
+                    "model.adapt_input(chs_info=...)."
+                )
+
+        if x.ndim < 3:
+            return None
+
+        time_dim = (
+            2
+            if x.ndim == 4 and x.shape[3] == 1 and getattr(self, "_has_ensure4d", False)
+            else -1
+        )
+        got_times = x.shape[time_dim]
+
+        min_n_times = getattr(self, "_min_n_times", None)
+        if min_n_times is not None and got_times < min_n_times:
+            raise ValueError(
+                f"{name} needs at least {min_n_times} time samples and got "
+                f"{got_times} (input shape {tuple(x.shape)})."
+            )
+
+        on_non_divisible = getattr(self, "on_non_divisible", "crop")
+        step = getattr(self, "_n_times_step", 1)
+        offset = getattr(self, "_n_times_offset", 0)
+
+        if time_axis == "fixed" and not self._accepts_any_n_times(args, kwargs):
+            n_times = self._signal_param("n_times")
+            if n_times is not None and got_times != n_times:
+                diff = abs(got_times - n_times)
+                if (
+                    on_non_divisible != "error"
+                    and diff <= max(1, n_times // 100)
+                    and diff <= max(1, step)
+                    and time_dim == -1
+                ):
+                    return "fixed_snap"
+                raise ValueError(
+                    f"{name} was built for n_times={n_times} and got {got_times} "
+                    f"samples (input shape {tuple(x.shape)}). Rebuild it with "
+                    f"n_times={got_times}, cut the signal into windows of "
+                    f"{n_times} samples, or call model.adapt_input(sfreq=...) / "
+                    "model.adapt_input(n_times=...)."
+                )
+            return None
+
+        if step > 1 and time_dim == -1:
+            rem = (got_times - offset) % step if got_times >= offset else -1
+            if rem != 0:
+                if on_non_divisible == "error":
+                    patch = offset if offset > 0 else step
+                    raise ValueError(
+                        f"Time dimension ({got_times}) is not divisible by "
+                        f"patch_size ({patch})"
+                        + ("." if step == patch else f" with patch step {step}.")
+                    )
+                return "grid_snap"
+        return None
+
+    def _prepare_inputs(self, args: tuple, kwargs: dict) -> tuple[tuple, dict]:
+        """Validate input axes and apply configured length snapping before forward."""
+        if (
+            getattr(self, "_time_axis", None) is None
+            and getattr(self, "_channel_axis", None) is None
+        ):
+            return args, kwargs
+        x = self._first_input(args, kwargs)
+        if x is None:
+            return args, kwargs
+        action = self._check_input_shape(x, args, kwargs)
+        if action is None:
+            return args, kwargs
+        name = type(self).__name__
+        got_times = x.shape[-1]
+        explicit_policy = getattr(self, "_on_non_divisible_explicit", False)
+        if action == "fixed_snap":
+            n_times = self._signal_param("n_times")
+            assert n_times is not None
+            args, kwargs = self._replace_time_inputs(
+                args, kwargs, lambda _k, t: self._snap_to_length(t, n_times)
+            )
+            if not explicit_policy and not getattr(self, "_warned_length_snap", False):
+                self._warned_length_snap = True
+                warnings.warn(
+                    f"{name} snapped input length {got_times} to n_times={n_times}.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+            return args, kwargs
+
+        nominal = self._signal_param("n_times")
+        snapped_len = self._snap_grid_target(got_times)
+        if getattr(self, "_snaps_in_prepare_inputs", True):
+            args, kwargs = self._replace_time_inputs(
+                args, kwargs, lambda key, t: self._snap_grid_tensor(key, t)
+            )
+        if (
+            not explicit_policy
+            and got_times != nominal
+            and snapped_len != got_times
+            and not getattr(self, "_warned_length_snap", False)
+        ):
+            self._warned_length_snap = True
+            warnings.warn(
+                f"{name} snapped input length {got_times} to {snapped_len} "
+                f"(step={getattr(self, '_n_times_step', 1)}, "
+                f"on_non_divisible={getattr(self, 'on_non_divisible', 'crop')!r}).",
+                UserWarning,
+                stacklevel=3,
+            )
+        return args, kwargs
+
     def __call__(self, *args, **kwargs):
-        # An input shorter than the layers need raises ValueError, not a torch
-        # RuntimeError from deep inside forward.
-        try:
-            return super().__call__(*args, **kwargs)
-        except RuntimeError as exc:
-            shape = tuple(args[0].shape) if args and hasattr(args[0], "shape") else None
-            error = _too_short_input_error(exc, shape)
-            if error is None:
-                raise
-            raise error from exc
+        args, kwargs = self._prepare_inputs(args, kwargs)
+        need_chans = (
+            getattr(self, "_channel_axis", None) == "fixed"
+            and self._signal_param("n_chans") is None
+        )
+        need_times = (
+            getattr(self, "_time_axis", None) == "fixed"
+            and self._signal_param("n_times") is None
+        )
+        had_lazy = (need_chans or need_times) and any(
+            isinstance(p, UninitializedParameter) for p in self.parameters()
+        )
+        out = super().__call__(*args, **kwargs)
+        if had_lazy and not any(
+            isinstance(p, UninitializedParameter) for p in self.parameters()
+        ):
+            x = self._first_input(args, kwargs)
+            if x is not None and x.ndim >= 3:
+                if need_chans and not self._accepts_any_n_chans(args, kwargs):
+                    self._materialized_n_chans = x.shape[1]
+                if need_times and not self._accepts_any_n_times(args, kwargs):
+                    self._materialized_n_times = x.shape[-1]
+        return out
 
     def get_output_shape(self) -> tuple[int, ...]:
         """Returns shape of neural network output for batch size equal 1.
@@ -685,23 +987,25 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self.eval()
         with torch.inference_mode():
             try:
+                first_param = next(self.parameters(), None)
+                probe = torch.zeros(
+                    self.input_shape,
+                    dtype=first_param.dtype
+                    if first_param is not None
+                    else torch.float32,
+                    device=first_param.device
+                    if first_param is not None
+                    else torch.device("cpu"),
+                )
+                self._check_input_shape(probe, (probe,), {})
                 return tuple(
                     type(self)
                     .forward(  # the backbone, on its own channels
                         self,
-                        torch.zeros(
-                            self.input_shape,
-                            dtype=next(self.parameters()).dtype,  # type: ignore
-                            device=next(self.parameters()).device,  # type: ignore
-                        ),
+                        probe,
                     )
                     .shape
                 )
-            except RuntimeError as exc:
-                error = _too_short_input_error(exc, self.input_shape)
-                if error is None:
-                    raise
-                raise error from exc
             finally:
                 for module, training in modes.items():
                     module.training = training
@@ -919,6 +1223,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     #: Channels the backbone consumes under a ``channel_strategy`` (names or
     #: ``chs_info``); ``None``: the model's own ``chs_info``.
     _channel_target: Optional[list] = None
+    _time_axis: str | None = None
+    _channel_axis: str | None = None
+    _time_inputs: ClassVar[tuple[str, ...]] = ("x",)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         own = super().state_dict()

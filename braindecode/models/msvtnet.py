@@ -68,6 +68,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
        Source Code: https://github.com/SheepTAO/MSVTNet
     """
 
+    _time_axis = "fixed"  # fixed: branch_head.0.1.weight
+    _channel_axis = "fixed"  # fixed: mstsconv.0.0.2.weight
+
     def __init__(
         self,
         # braindecode parameters

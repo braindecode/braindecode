@@ -103,6 +103,9 @@ class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
     """
 
+    _time_axis = "fixed"  # fixed: filter.n_range
+    _channel_axis = "fixed"  # fixed: batch_layer.running_mean
+
     def __init__(
         self,  # Signal related parameters
         method: str = "plv",
