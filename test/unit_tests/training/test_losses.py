@@ -72,11 +72,7 @@ def test_dance_loss_trains_every_head(dtype):
         model.decoder.start_head,
         model.decoder.end_head,
     )
-    for grad in (
-        x.grad,
-        model.decoder.query_embed.grad,
-        *(h.weight.grad for h in heads),
-    ):
+    for grad in (x.grad, model.decoder.query_embed.grad, *(h.weight.grad for h in heads)):
         assert torch.isfinite(grad).all() and torch.count_nonzero(grad)
 
 

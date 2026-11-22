@@ -98,9 +98,9 @@ def get_epochs_y(signal_params=None, n_epochs=10):
 def test_completeness__models_test_cases():
     models_tested = set(x[0] for x in models_mandatory_parameters)
     all_models = set(all_models_dict.keys())
-    assert all_models == models_tested, (
-        f"Models missing from models_test_cases: {all_models - models_tested}"
-    )
+    assert (
+        all_models == models_tested
+    ), f"Models missing from models_test_cases: {all_models - models_tested}"
 
 
 @pytest.mark.parametrize(
@@ -289,6 +289,7 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
         if "activation" in key.lower() and key != "activation_checkpointing"
     ]
     for activation in activation_list:
+
         assert issubclass(activation.default, nn.Module), (
             f"In class {model_class.__name__}, parameter has a default value "
             f"that is an initialized nn.Module instance. Default values should be nn.Module "
@@ -488,9 +489,7 @@ def _drop_torchscript_types():
         and hasattr(torch.jit._state, "_clear_class_state")
     ):
         torch._C._jit_clear_class_registry()
-        torch.jit._recursive.concrete_type_store = (
-            torch.jit._recursive.ConcreteTypeStore()
-        )
+        torch.jit._recursive.concrete_type_store = torch.jit._recursive.ConcreteTypeStore()
         torch.jit._state._clear_class_state()
 
 
@@ -550,7 +549,9 @@ def test_torch_script_with_chs_info(n_chans):
         n_times=default_signal_params["n_times"],
         sfreq=default_signal_params["sfreq"],
     ).eval()
-    input_tensor = torch.randn(2, len(chs_info), default_signal_params["n_times"])
+    input_tensor = torch.randn(
+        2, len(chs_info), default_signal_params["n_times"]
+    )
     assert model._n_chans == n_chans
     assert model.chs_info is chs_info
     expected = model(input_tensor)
@@ -616,6 +617,7 @@ def test_eegminer_torch_script_methods(method):
 
 @pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_completeness_summary_table(model_class):
+
     assert model_class.__name__ in _summary_table.index, (
         f"{model_class.__name__} is not in the summary table. "
         f"Please add it to the summary table."

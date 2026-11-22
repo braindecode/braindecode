@@ -64,7 +64,9 @@ def _batched_tensor_leaves(value, batch_size):
     "model_name,required_params,signal_params",
     models_mandatory_parameters,
 )
-def test_registered_model_runtime_contract(model_name, required_params, signal_params):
+def test_registered_model_runtime_contract(
+    model_name, required_params, signal_params
+):
     """Registered models preserve inputs and emit finite batched tensors."""
     model, x = _build_case(model_name, required_params, signal_params)
     x_before = x.clone()
@@ -81,7 +83,8 @@ def test_registered_model_runtime_contract(model_name, required_params, signal_p
 
     batched = _batched_tensor_leaves(output, x.shape[0])
     assert batched, (
-        f"{model_name} returned no tensor leaf preserving batch dimension {x.shape[0]}"
+        f"{model_name} returned no tensor leaf preserving batch dimension "
+        f"{x.shape[0]}"
     )
 
     for leaf in leaves:
@@ -122,7 +125,8 @@ def test_registered_model_runtime_contract(model_name, required_params, signal_p
             actual_leaf,
             expected_leaf.index_select(0, permutation),
             msg=lambda msg: (
-                f"{model_name} is not batch-permutation equivariant in eval mode: {msg}"
+                f"{model_name} is not batch-permutation equivariant in eval "
+                f"mode: {msg}"
             ),
         )
     # Permutation equivariance alone cannot detect all cross-sample mixing: a
@@ -209,7 +213,9 @@ _UNUSED_IN_FORWARD = {
     "model_name,required_params,signal_params",
     models_mandatory_parameters,
 )
-def test_registered_model_training_contract(model_name, required_params, signal_params):
+def test_registered_model_training_contract(
+    model_name, required_params, signal_params
+):
     """A model used under ``torch.inference_mode`` still trains, then evaluates."""
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
@@ -605,8 +611,7 @@ _CH_MASK_EXTRAS = {
     "Labram": ("ch_names", lambda i, n: LABRAM_CHANNEL_ORDER[:n]),
     "CORTEG": (
         "pos",
-        lambda i, n: 0.1
-        * torch.rand((n, 3), generator=torch.Generator().manual_seed(i)),
+        lambda i, n: 0.1 * torch.rand((n, 3), generator=torch.Generator().manual_seed(i)),
     ),
     "MAPA": (
         "sensor_indices",
@@ -633,10 +638,7 @@ def _ch_mask_case(model_name, required_params, signal_params):
     zero-padded to ``C`` in the batch, which shares any other value built for
     ``C`` channels.
     """
-    if (
-        "ch_mask"
-        not in inspect.signature(all_models_dict[model_name].forward).parameters
-    ):
+    if "ch_mask" not in inspect.signature(all_models_dict[model_name].forward).parameters:
         pytest.skip("forward takes no ch_mask")
     if model_name in _CH_MASK_SLOTS:
         pytest.skip(_CH_MASK_SLOTS[model_name])
@@ -701,7 +703,6 @@ def test_registered_model_ch_mask_contract(model_name, required_params, signal_p
             if isinstance(features, Mapping) and "tokens" in features:
                 padded = features["tokens"][~mask]
                 assert torch.equal(padded, torch.zeros_like(padded))
-
 
 # One checkpoint of a foundation model serves many recordings, so a recording
 # whose channels do not match the model must be told so.
