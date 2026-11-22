@@ -3647,6 +3647,18 @@ def test_labram_warns_when_tokenizer_overrides_embed_dim():
         Labram(n_chans=4, n_outputs=2, n_times=1000)  # defaults agree
 
 
+def test_labram_free_window_length_and_temporal_embedding_limit():
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    model = Labram(
+        n_chans=3, n_outputs=2, n_times=600, num_layers=1, num_heads=4
+    ).eval()
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, 200), ch_names=names).shape == (2, 2)
+        assert model(torch.randn(2, 3, 1200), ch_names=names).shape == (2, 2)
+    with pytest.raises(ValueError, match="exceeding temporal_embedding capacity"):
+        model(torch.randn(2, 3, 17 * 200), ch_names=names)
+
+
 # Frozen pre-reuse expression from 3991b3e6. Never call candidate rotary helpers.
 class _LunaRotaryBeforeReuse(_RotarySelfAttentionBlock):
     def _rotate_queries_or_keys(self, tensor: torch.Tensor) -> torch.Tensor:
