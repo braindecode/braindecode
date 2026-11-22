@@ -69,7 +69,12 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         If the module is already initialized and no parameter was changed, it
         will be left as is.
         """
-        kwargs = self.get_params_for("module")
+        # The module parameters the user passes take precedence over the ones
+        # inferred from the data at the last fit.
+        kwargs = {
+            **getattr(self, "_inferred_module_kwargs_", {}),
+            **self.get_params_for("module"),
+        }
         module = _get_model(self.module)
         module = self.initialized_instance(module, kwargs)
         # pylint: disable=attribute-defined-outside-init
@@ -261,6 +266,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         pass
 
     def _set_signal_args(self, X, y, classes):
+        self._inferred_module_kwargs_ = {}
         is_init = isinstance(self.module, torch.nn.Module)
         if is_init:
             self.log.info(
@@ -294,24 +300,22 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 self.log.warning(f"Module {self.module!r} is missing parameter {k!r}.")
 
         # kick out inferred signal kwargs if user specifies kwargs:
-        user_specified_kwargs = self.get_params_for("module").items()
+        user_specified_kwargs = self.get_params_for("module")
         if len(user_specified_kwargs) > 0:
             self.log.info(
                 f"Overriding inferred parameters with user "
-                f"specified parameters{user_specified_kwargs!r}."
+                f"specified parameters{user_specified_kwargs.items()!r}."
             )
-            for k, v in self.get_params_for("module").items():
-                if k in module_kwargs:
-                    module_kwargs.pop(k)
-                    module_kwargs[k] = v
+            for k in user_specified_kwargs:
+                module_kwargs.pop(k, None)
 
-        # save kwargs to self:
+        # Inferred values are fitted state, not estimator parameters. They stay out
+        # of get_params, so clone() and the next fit infer them from their own data.
         self.log.info(
             f"Passing additional parameters {module_kwargs!r} "
             f"to module {self.module!r}."
         )
-        module_kwargs = {f"module__{k}": v for k, v in module_kwargs.items()}
-        self.set_params(**module_kwargs)
+        self._inferred_module_kwargs_ = module_kwargs
 
     def get_dataset(self, X, y=None):
         """Get a dataset that contains the input data and is passed to.
@@ -452,7 +456,9 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         If the module was already initialized, by calling fit, the
         module will be re-initialized (unless ``warm_start`` is True).
         If possible, signal-related parameters are inferred from the
-        data and passed to the module at initialisation.
+        data and passed to the module at initialisation. They are inferred
+        again at every fit that re-initializes the module, and they are not
+        estimator parameters: ``get_params`` and ``clone`` leave them out.
         Depending on the type of input passed, the following parameters
         are inferred:
 
@@ -494,7 +500,9 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         """
         # this needs to be executed before the net is initialized:
         self._warned_drop_last_ = False  # re-check on every fresh fit
-        if not self.signal_args_set_:
+        # skorch re-initializes the module unless it warm-starts an initialized
+        # one, so the signal parameters are inferred again from this data.
+        if not self.signal_args_set_ or not (self.warm_start and self.initialized_):
             self._set_signal_args(X, y, classes=None)
             self.signal_args_set_ = True
         return super().fit(X=X, y=y, **fit_params)

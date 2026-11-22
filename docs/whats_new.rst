@@ -268,6 +268,9 @@ Requirements
 Bug fixes
 ==========
 
+- A refit or ``clone`` of a fitted :class:`braindecode.EEGClassifier` or :class:`braindecode.EEGRegressor` infers
+  ``n_outputs``, ``n_chans``, ``n_times`` and ``chs_info`` from its own data instead of reusing the first fit's, which could
+  predict classes the new data does not have; ``get_params`` no longer lists inferred values (:gh:`1770` by `Raghav Rathi`_).
 - Fix mobile navigation drawer visibility on the landing page, prevent narrow-viewport
   clipping across the numbers split, citation export hub, API headings, and ``320px``
   navbar, and expand mobile touch targets and search input sizing (:gh:`1769` by `Bruno Aristimunha`_).
