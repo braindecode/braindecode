@@ -613,12 +613,10 @@ def _cropped_capability(
     return "yes" if name in _INITIAL_CROPPED_MODELS else "no"
 
 
-def _adapt_capability(cls: type[EEGModuleMixin]) -> str:
-    if hasattr(cls, "adapt_input"):
-        return "yes"
-    if "channel_strategy" in inspect.signature(cls.__init__).parameters:
-        return "yes"
-    return "no"
+def _adapt_capability(cls: type[EEGModuleMixin], model: Any) -> str:
+    if hasattr(model, "_can_adapt_input"):
+        return "yes" if model._can_adapt_input() else "no"
+    return "yes" if hasattr(cls, "adapt_input") else "no"
 
 
 def _reset_head_capability(
@@ -654,7 +652,7 @@ def _instantiate_and_measure(
     base_cls: type[EEGModuleMixin],
     init_kwargs: dict[str, Any],
     probe_shape: tuple[int, int],
-) -> tuple[int, str, str]:
+) -> tuple[int, str, str, str]:
     import torch
     from torch import nn
 
@@ -674,8 +672,9 @@ def _instantiate_and_measure(
                     model.eval()(torch.zeros(1, n_chans, n_times, device=device))
         n_params = sum(p.numel() for p in model.parameters())
         cropped = _cropped_capability(name, cls, model, base_cls)
+        adapt_input = _adapt_capability(cls, model)
         reset_head = _reset_head_capability(name, cls, model, base_cls)
-    return n_params, cropped, reset_head
+    return n_params, cropped, adapt_input, reset_head
 
 
 def _read_existing_csv(csv_path: Path) -> tuple[list[str], list[dict[str, str]]]:
@@ -748,7 +747,7 @@ def generate_summary_rows(
         req, sp = mandatory_by_name[name]
         editorial = existing_by_name.get(name, {})
         init_kwargs, expr, probe_shape = _resolve_kwargs(name, req, sp)
-        n_params, cropped, reset_head = _instantiate_and_measure(
+        n_params, cropped, adapt_input, reset_head = _instantiate_and_measure(
             name, cls, EEGModuleMixin, init_kwargs, probe_shape
         )
         time_axis = cls._time_axis
@@ -758,19 +757,19 @@ def generate_summary_rows(
 
         row: dict[str, str] = {
             "Model": name,
-            "Application": editorial.get("Application", "General"),
-            "Type": editorial.get("Type", "Prediction"),
-            "Sampling Frequency (Hz)": editorial.get("Sampling Frequency (Hz)", "250"),
+            "Application": editorial.get("Application", ""),
+            "Type": editorial.get("Type", ""),
+            "Sampling Frequency (Hz)": editorial.get("Sampling Frequency (Hz)", ""),
             "Hyperparameters": ", ".join(req),
             "#Parameters": str(n_params),
             "get_#Parameters": expr,
             "Categorization": _parse_categorization(name, cls),
-            "Modality": editorial.get("Modality", "EEG"),
+            "Modality": editorial.get("Modality", ""),
             "Time axis": time_axis,
             "Channel axis": channel_axis,
             "Output": _output_kind(name),
             "Cropped decoding": cropped,
-            "adapt_input": _adapt_capability(cls),
+            "adapt_input": adapt_input,
             "reset_head": reset_head,
             "return_features": _return_features_capability(name, cls, EEGModuleMixin),
         }

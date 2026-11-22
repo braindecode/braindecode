@@ -87,6 +87,7 @@ UTIL_CORE_SYMBOLS = frozenset(
 CROSS_MODEL_TEST_FILES = frozenset(
     {
         "test/unit_tests/models/test_integration.py",
+        "test/unit_tests/models/test_input_contract.py",
         "test/unit_tests/models/test_model_contract.py",
         "test/unit_tests/models/test_pretrained_compat.py",
         "test/unit_tests/models/test_config.py",
@@ -309,9 +310,7 @@ def parse_barrel_exports(
                     if isinstance(sub_node, ast.Constant) and isinstance(
                         sub_node.value, str
                     ):
-                        sym_to_mod[sub_node.value] = (
-                            f"{barrel_module}.{sub_node.value}"
-                        )
+                        sym_to_mod[sub_node.value] = f"{barrel_module}.{sub_node.value}"
                 continue
         if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
             if stmt.target.id == "_LAZY" and stmt.value is None:
@@ -456,9 +455,7 @@ def diff_summary_csv(
         r["Model"].strip(): {k: (v or "").strip() for k, v in r.items()}
         for r in h_reader
     }
-    changed = {
-        m for m in (set(b_rows) | set(h_rows)) if b_rows.get(m) != h_rows.get(m)
-    }
+    changed = {m for m in (set(b_rows) | set(h_rows)) if b_rows.get(m) != h_rows.get(m)}
     return False, changed
 
 
@@ -943,6 +940,7 @@ def compute_plan(
                 impacted_models.update(csv_models)
             impacted_tests.update(
                 {
+                    "test/unit_tests/models/test_input_contract.py",
                     "test/unit_tests/models/test_model_categorization.py",
                     "test/unit_tests/models/test_model_modality.py",
                     "test/unit_tests/models/test_integration.py",

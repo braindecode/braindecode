@@ -106,3 +106,4 @@ repos:
         entry: python -m braindecode.models._summary --files
         language: system
         files: ^braindecode/models/.*\.py$
+        require_serial: true

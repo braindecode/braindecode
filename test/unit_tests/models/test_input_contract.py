@@ -460,10 +460,7 @@ def test_summary_generator_subset_and_cli(tmp_path):
     assert main(["--check", "--csv", str(temp_csv)]) == 0
 
     text = temp_csv.read_text(encoding="utf-8")
-    corrupted = text.replace(
-        f"EEGNet,{rows[0]['Application']}",
-        f"EEGNet,{rows[0]['Application']}",
-    ).replace(f",{rows[0]['#Parameters']},", ",999999,", 1)
+    corrupted = text.replace(f",{rows[0]['#Parameters']},", ",999999,", 1)
     temp_csv.write_text(corrupted, encoding="utf-8")
 
     diffs = check_summary_csv(temp_csv)
@@ -473,3 +470,18 @@ def test_summary_generator_subset_and_cli(tmp_path):
         main(["--files", "braindecode/models/eegnet.py", "--csv", str(temp_csv)]) == 0
     )
     assert check_summary_csv(temp_csv) == []
+
+    missing_editorial_csv = tmp_path / "missing_editorial.csv"
+    missing_editorial_csv.write_text(
+        "\n".join(
+            line
+            for line in temp_csv.read_text(encoding="utf-8").splitlines()
+            if not line.startswith("EEGNet,")
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError, match="EEGNet is missing editorial column 'Application'"
+    ):
+        generate_summary_rows(names=["EEGNet"], csv_path=missing_editorial_csv)
