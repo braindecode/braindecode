@@ -184,13 +184,8 @@ _MODELS = [
     pytest.param(
         CORTEG,
         N_CHANS,
-        {
-            "chs_info": _chs(),
-            "embed_dim": 64,
-            "depth": 2,
-            "num_heads": 2,
-            "n_merge_blocks": 1,
-        },
+        {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 2,
+         "n_merge_blocks": 1},
         True,
         id="CORTEG",
     ),
