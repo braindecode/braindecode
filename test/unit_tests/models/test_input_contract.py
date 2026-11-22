@@ -504,7 +504,7 @@ def test_summary_generator_subset_and_cli(tmp_path):
     temp_csv.write_text(corrupted, encoding="utf-8")
 
     diffs = check_summary_csv(temp_csv)
-    assert any("EEGNet" in d and "#Parameters" in d for d in diffs)
+    assert any(d.startswith("-EEGNet,") and "999999" in d for d in diffs)
     assert main(["--check", "--csv", str(temp_csv)]) == 1
     assert (
         main(["--files", "braindecode/models/eegnet.py", "--csv", str(temp_csv)]) == 0
