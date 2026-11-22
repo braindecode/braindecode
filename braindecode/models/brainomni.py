@@ -37,6 +37,15 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
+    .. figure:: ../_static/model/braintokenizer_arch.png
+       :align: center
+       :alt: BrainTokenizer architecture
+       :width: 1000px
+
+       BrainTokenizer training as an autoencoder, with its encoder,
+       reconstructor and sensor encoder, reproduced from [brainomni]_
+       (CC BY 4.0).
+
     .. rubric:: Architecture Overview
 
     A VQ-VAE over raw EEG/MEG conditioned on sensor geometry::
@@ -299,6 +308,15 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
     r"""BrainOmni from Xiao et al. (2025) [brainomni]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+
+    .. figure:: ../_static/model/brainomni_arch.png
+       :align: center
+       :alt: BrainOmni architecture
+       :width: 1000px
+
+       BrainOmni pretraining: masked BrainTokenizer tokens are predicted by
+       stacked criss-cross Transformer blocks, reproduced from [brainomni]_
+       (CC BY 4.0).
 
     .. rubric:: Architecture Overview
 

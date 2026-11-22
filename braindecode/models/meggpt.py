@@ -33,6 +33,15 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
     :bdg-secondary:`Recurrent`
 
+    .. figure:: ../_static/model/meggpt_arch.png
+       :align: center
+       :alt: MEG-GPT architecture
+       :width: 1000px
+
+       MEG-GPT predicting the next token from token, channel, position and
+       optional extra embeddings through a Transformer decoder, reproduced from
+       [huang2026meggpt]_ (CC BY 4.0).
+
     .. versionadded:: 2.1
 
     .. rubric:: Architecture Overview

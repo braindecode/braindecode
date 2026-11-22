@@ -39,6 +39,14 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-danger:`Foundation Model` :bdg-success:`Convolution`
     :bdg-info:`Attention/Transformer`
 
+    .. figure:: ../_static/model/duin_arch.png
+       :align: center
+       :alt: Du-IN architecture
+       :width: 1000px
+
+       Du-IN VQ-VAE training (a) and Du-IN MAE training (b), reproduced from
+       Fig. 3 of [DuIN2024]_ as shipped in the authors' code repository (MIT).
+
     .. rubric:: Architecture Overview
 
     Du-IN decodes speech from intracranial (sEEG) signals with **region-level**
