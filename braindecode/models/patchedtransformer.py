@@ -297,7 +297,7 @@ class PBT(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=embed_dim, out_features=self.n_outputs, bias=True
         )
-        self._min_n_times = (self.n_times // self.d_input) * self.d_input
+        self._min_n_times = self.d_input
 
         # initialize weights
         self._init_parameters()
@@ -665,7 +665,7 @@ class _Patcher(nn.Module):
         # Old pickles store floor(C*T/D) in num_tokens. Integer division by C
         # gives floor(T/D) for both that count and the current C*floor(T/D).
         n_chans = X.size(1)
-        n_patches = self.num_tokens // n_chans
+        n_patches = min(X.size(-1) // self.d_input, self.num_tokens // n_chans)
         if n_patches == 0:
             raise ValueError("PBT requires at least one complete patch per channel.")
         x_patched = X[..., : n_patches * self.d_input].reshape(

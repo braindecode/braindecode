@@ -97,7 +97,10 @@ def test_time_axis_matches_forward(model_name, required_params, signal_params):
                 model(torch.randn(2, C, 2 * T))
             assert calls == []
         elif model._time_axis == "free":
-            for t in (2 * T, T + max(1, model._n_times_step)):
+            lengths = [2 * T, T + max(1, model._n_times_step)]
+            if model._min_n_times is not None and T // 2 >= model._min_n_times:
+                lengths.append(T // 2)
+            for t in lengths:
                 out = model(torch.randn(2, C, t))
                 if model_name in non_classification_models:
                     assert _matches_free_time(out, ref, longer=(t == 2 * T))
