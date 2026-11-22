@@ -4,9 +4,9 @@
 
 .. _models:
 
-##########################
- The brain decode problem
-##########################
+#######################
+ Brain decoding models
+#######################
 
 All models in Braindecode address a shared supervised or self-supervised problem: given
 multichannel time-series recordings :math:`X \in \mathbb{R}^{C \times T}` and targets

@@ -6,6 +6,8 @@
    Typography: Geist + Geist Mono across header, sidebars, prose, API & code.
    ========================================================================= */
 
+/* stylelint-disable no-descending-specificity */
+
 :root {
   --text-align: left;
   --pst-font-size-base: 16px;
@@ -15,11 +17,17 @@
   --pst-font-family-monospace: "Geist Mono", "Source Code Pro", var(--pst-font-family-monospace-system);
   --pst-header-height: 4.25rem;
   --bd-ctrl-border: rgba(18, 33, 51, 0.18);
-  --bd-ctrl-bg: rgba(255, 255, 255, 0.78);
+  --bd-ctrl-bg: #fff;
 }
 
 html {
   scrollbar-gutter: stable;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
 }
 
 .sr-only {
@@ -43,9 +51,9 @@ html[data-theme="light"] {
   --pst-color-primary-text: #fff;
   --pst-color-primary-highlight: #0f243a;
   --pst-color-primary-bg: #e6eef7;
-  --pst-color-secondary: #b46a2c;
+  --pst-color-secondary: #93501c;
   --pst-color-secondary-text: #fff;
-  --pst-color-secondary-highlight: #8f511e;
+  --pst-color-secondary-highlight: #7a4014;
   --pst-color-secondary-bg: #f8ede2;
   --pst-color-accent: #2a527a;
   --pst-color-accent-bg: #e8f0f8;
@@ -64,7 +72,7 @@ html[data-theme="light"] {
   --pst-color-shadow: rgba(18, 33, 51, 0.06);
   --pst-color-info: #2a527a;
   --pst-color-info-bg: #eaf1f8;
-  --pst-color-warning: #b46a2c;
+  --pst-color-warning: #93501c;
   --pst-color-warning-bg: #f8ede2;
   --pst-color-success: #356643;
   --pst-color-success-bg: #e3f0e7;
@@ -79,13 +87,14 @@ html[data-theme="light"] {
   --sd-color-primary-text: #fff;
   --sd-color-primary-highlight: #0f243a;
   --sd-color-primary-bg: #e6eef7;
-  --sd-color-secondary: #b46a2c;
+  --sd-color-secondary: #93501c;
   --sd-color-secondary-text: #fff;
-  --sd-color-secondary-highlight: #8f511e;
+  --sd-color-secondary-highlight: #7a4014;
   --sd-color-secondary-bg: #f8ede2;
   --sd-color-info: #2a527a;
   --sd-color-info-bg: #eaf1f8;
-  --sd-color-warning: #b46a2c;
+  --sd-color-warning: #93501c;
+  --sd-color-warning-text: #fff;
   --sd-color-warning-bg: #f8ede2;
   --sd-color-success: #356643;
   --sd-color-success-bg: #e3f0e7;
@@ -164,8 +173,8 @@ html[data-theme="dark"] {
   --sd-color-card-border: #253041;
   --sd-color-card-background: #141a23;
   --sd-color-shadow: rgba(0, 0, 0, 0.2);
-  --bd-ctrl-border: rgba(241, 236, 225, 0.18);
-  --bd-ctrl-bg: rgba(255, 255, 255, 0.05);
+  --bd-ctrl-border: rgba(241, 236, 225, 0.22);
+  --bd-ctrl-bg: #161e29;
   --braindecode-color-github: #fff;
   --braindecode-color-discourse: #fff9ae;
   --braindecode-color-discord: #fff;
@@ -351,6 +360,33 @@ button.copybtn {
 .plot-caption {
   font-size: 0.9em;
   color: var(--pst-color-text-muted, #515e70);
+}
+
+.text-muted {
+  color: var(--pst-color-text-muted) !important;
+}
+
+div.math {
+  min-height: 3.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+img.heading-icon {
+  border-radius: 10px;
+  background-color: #f7f8fa !important;
+  padding: 4px;
+  border: 1px solid var(--pst-color-border);
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+
+.skip-link a,
+#pst-skip-link a {
+  background-color: #163350 !important;
+  color: #fff !important;
 }
 
 .sphx-glr-download a.download {
@@ -701,6 +737,7 @@ html[data-theme="dark"] .bd-header {
   height: 36px !important;
   width: auto !important;
   max-height: 36px !important;
+  aspect-ratio: 620.78 / 100;
   display: block;
 }
 
@@ -836,6 +873,23 @@ html[data-theme="dark"] .bd-header ul.navbar-nav > li.nav-item > .nav-link.activ
 .bd-header .theme-switch-button:hover,
 .bd-header .version-switcher__button:hover {
   border-color: var(--pst-color-primary) !important;
+}
+
+.bd-header .search-button-field:focus-visible,
+.bd-header .theme-switch-button:focus-visible,
+.bd-header .version-switcher__button:focus-visible {
+  outline: 2px solid var(--pst-color-primary) !important;
+  outline-offset: 2px !important;
+  border-color: var(--pst-color-primary) !important;
+}
+
+.bd-header .search-button-field .search-button__default-text,
+.bd-header .search-button-field .search-button__kbd-shortcut,
+.bd-header .search-button-field kbd.kbd-shortcut__modifier {
+  color: var(--pst-color-text-base) !important;
+  background: transparent !important;
+  border-color: var(--bd-ctrl-border) !important;
+  box-shadow: none !important;
 }
 
 /* -------------------------------------------------------------------------
@@ -1227,6 +1281,11 @@ html:not(:has(.bd-landing)) .prev-next-area a p.prev-next-title {
 
 /* Override PyData Sphinx Theme purple back-to-top button across all pages */
 #pst-back-to-top {
+  top: auto !important;
+  bottom: 1.25rem !important;
+  left: auto !important;
+  right: 1.25rem !important;
+  transform: none !important;
   background-color: #163350 !important;
   color: #fff !important;
   border: 1px solid rgba(255, 255, 255, 0.22) !important;
@@ -1241,4 +1300,106 @@ html:not(:has(.bd-landing)) .prev-next-area a p.prev-next-title {
 html[data-theme="dark"] #pst-back-to-top {
   background-color: #215380 !important;
   border-color: rgba(125, 180, 230, 0.35) !important;
+}
+
+/* -------------------------------------------------------------------------
+   8. Accessible Sphinx-Design Badges, Category Icons, Modals & Print Media
+   ------------------------------------------------------------------------- */
+.sd-card figure img[src*="model_cat/"] {
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  border-radius: 8px;
+  background-color: #f7f8fa !important;
+  padding: 6px;
+}
+
+.sd-badge.sd-bg-warning {
+  background-color: #f8ede2 !important;
+  color: #7d4214 !important;
+  border: 1px solid #e6c6a8 !important;
+}
+
+.sd-badge.sd-bg-secondary {
+  background-color: #eef1f6 !important;
+  color: #253243 !important;
+  border: 1px solid #cfd8e3 !important;
+}
+
+.sd-badge.sd-bg-danger,
+.sd-badge.sd-outline-danger {
+  background-color: #f9efe6 !important;
+  color: #824516 !important;
+  border: 1px solid #e5c4a3 !important;
+}
+
+.sd-badge.sd-bg-dark,
+.sd-badge.sd-outline-dark {
+  background-color: #e8eef5 !important;
+  color: #163350 !important;
+  border: 1px solid #bdcde0 !important;
+}
+
+.sd-badge.sd-bg-light {
+  background-color: #e7f2ea !important;
+  color: #285936 !important;
+  border: 1px solid #bfdccc !important;
+}
+
+html[data-theme="dark"] .sd-badge.sd-bg-warning {
+  background-color: #2f2115 !important;
+  color: #f5ba84 !important;
+  border-color: #5c4025 !important;
+}
+
+html[data-theme="dark"] .sd-badge.sd-bg-secondary {
+  background-color: #202836 !important;
+  color: #dce4f0 !important;
+  border-color: #364357 !important;
+}
+
+html[data-theme="dark"] .sd-badge.sd-bg-danger,
+html[data-theme="dark"] .sd-badge.sd-outline-danger {
+  background-color: #362516 !important;
+  color: #f6be8a !important;
+  border-color: #634427 !important;
+}
+
+html[data-theme="dark"] .sd-badge.sd-bg-dark,
+html[data-theme="dark"] .sd-badge.sd-outline-dark {
+  background-color: #1b2a3b !important;
+  color: #b8d8f8 !important;
+  border-color: #355273 !important;
+}
+
+html[data-theme="dark"] .sd-badge.sd-bg-light {
+  background-color: #192e21 !important;
+  color: #9ee0ac !important;
+  border-color: #2d543b !important;
+}
+
+#pst-search-dialog,
+#pst-primary-sidebar-modal,
+#pst-secondary-sidebar-modal {
+  background-color: var(--pst-color-surface) !important;
+  color: var(--pst-color-text-base) !important;
+  border-color: var(--pst-color-border) !important;
+}
+
+#pst-search-dialog .bd-search-container {
+  background-color: var(--pst-color-surface) !important;
+  border: 1px solid var(--pst-color-border) !important;
+  border-radius: 10px !important;
+}
+
+@media print {
+  html body .bd-header,
+  html body .bd-header-announcement,
+  html body .bd-sidebar-primary,
+  html body .bd-sidebar-secondary,
+  html body .bd-cite-hub__toolbar,
+  html body .bd-cite-inline-actions,
+  html body .prev-next-area,
+  html body #pst-back-to-top {
+    display: none !important;
+  }
 }

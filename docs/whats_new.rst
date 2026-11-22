@@ -28,6 +28,11 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Linearize the landing-page architecture and modality bar charts, add live
+  dark/light theme synchronization to the Plotly models visualization, align and
+  format the interactive models summary DataTable, and resolve WCAG 2.2 AA
+  contrast, keyboard focus, layout-shift, and print-stylesheet gaps across the
+  documentation (:gh:`1772` by `Bruno Aristimunha`_).
 - Redesign the documentation landing page, unify the top navigation bar and
   sub-page palette, add a one-click Zenodo software citation hub
   (``10.5281/zenodo.8214376``), and pre-render the native-CSS model zoo explorer

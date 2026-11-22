@@ -23,7 +23,7 @@
     <https://app.litmaps.com/shared/1c0f18a3-beaa-4222-ae8a-8b7fddd7d5cd>`__ **with
     Recurrent-layer core components for EEG architectures, last updated 26/08/2025.**
     Each node is a paper; rightward means more recently published, upward more cited,
-    and links show amount of citation with logaritm scale.
+    and links show amount of citation on a logarithmic scale.
 
 .. include:: ../../links.inc
 
