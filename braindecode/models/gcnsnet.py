@@ -359,11 +359,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         x = self.dropout(x.flatten(1))
         if not torch.jit.is_scripting() and return_features:
             features = x.reshape(batch_size, n_times, -1)
-            return {
-                "features": features,
-                "embedding": features.mean(dim=1),
-                "cls_token": None,
-            }
+            return {"features": features, "cls_token": None}
         x = self.final_layer(x)
         # Average the per-sample logits over time.
         return x.reshape(batch_size, n_times, self.n_outputs).mean(dim=1)

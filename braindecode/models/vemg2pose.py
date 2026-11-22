@@ -434,12 +434,7 @@ class VEMG2Pose(
         batch_size, _, n_times = x.shape
         features = self.encoder(x)
         if not torch.jit.is_scripting() and return_features:
-            seq = features.transpose(1, 2)
-            return {
-                "features": seq,
-                "embedding": seq.mean(dim=1),
-                "cls_token": None,
-            }
+            return {"features": features.transpose(1, 2), "cls_token": None}
 
         # Predictions span the input past the left context, unrolled at
         # ``rollout_rate``.

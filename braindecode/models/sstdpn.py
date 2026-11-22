@@ -344,7 +344,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         if not torch.jit.is_scripting() and return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": features,
-                "embedding": features,
                 "cls_token": None,
             }
             return out

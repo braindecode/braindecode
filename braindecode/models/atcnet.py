@@ -469,12 +469,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             sw_concat.append(tcn_feat)
 
         if not torch.jit.is_scripting() and return_features:
-            features = torch.stack(sw_concat, dim=1)
-            return {
-                "features": features,
-                "embedding": features.mean(dim=1),
-                "cls_token": None,
-            }
+            return {"features": torch.stack(sw_concat, dim=1), "cls_token": None}
 
         # Outputs of sliding window can be either averaged after being
         # mapped by dense layer or concatenated then mapped by a dense

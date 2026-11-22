@@ -101,7 +101,6 @@ class BDTCN(EEGModuleMixin, nn.Module):
             )
             return {
                 "features": features,
-                "embedding": features.mean(dim=-1),
                 "cls_token": None,
             }
         x = self.base_tcn(x)

@@ -315,7 +315,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             pooled = self.fc(feature)
             return {
                 "features": pooled,
-                "embedding": pooled,
                 "cls_token": None,
                 "tokens": feature,
             }
