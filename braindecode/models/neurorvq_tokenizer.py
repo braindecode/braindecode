@@ -256,6 +256,15 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/neurorvq_tokenizer_arch.png
+       :align: center
+       :alt: NeuroRVQTokenizer architecture
+       :width: 1000px
+
+       The NeuroRVQ tokenizer: multi-scale temporal encoder, Transformer encoder,
+       one RVQ codebook per temporal branch and the Fourier-based decoder,
+       reproduced from [neurorvq]_ (CC BY 4.0).
+
     The tokenizer encodes EEG, ECG, EMG or PPG patches through four temporal
     scales, quantizes each scale with a separate residual vector quantizer,
     and reconstructs the signal from amplitude and phase components. The

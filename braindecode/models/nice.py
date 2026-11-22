@@ -20,6 +20,16 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-success:`Convolution`
 
+    .. figure:: ../_static/model/nice_arch.png
+       :align: center
+       :alt: NICE architecture
+       :width: 1000px
+
+       (A) The NICE contrastive EEG-image framework and (B) its EEG encoder,
+       whose optional self/graph attention this class does not include,
+       reproduced from [song2024nice]_ (MIT, ``draw_pic/Fig1.png`` of the
+       authors' NICE-EEG repository).
+
     .. versionadded:: 2.1
 
     .. rubric:: Architecture Overview
