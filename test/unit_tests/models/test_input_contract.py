@@ -957,7 +957,9 @@ def test_identity_mapping_matches_native(model_name):
 
 # Free or dense models whose export pins the time axis: model name to the first
 # line of its export error (T is the input length). Shrink-only: fix the forward
-# and remove the entry.
+# and remove the entry. With torch 2.15, export specializes the output length of
+# nn.MaxPool1d alone: CareSleepNet and SeizureTransformer specialize at their
+# MaxPool1d call; FNIRSCNN1D and USleep pool with it too.
 _EXPORT_STATIC_TIME: dict[str, str] = {
     "ATCNet": "unprovable guard (2 % ((-8) + 2*(T // 56))) != 0",
     "AXON": "unprovable guard T != (180 + 180*(((-200) + T) // 180))",
@@ -971,6 +973,8 @@ _EXPORT_STATIC_TIME: dict[str, str] = {
     "ContraWR": "unprovable guard 1000 <= T and T <= 1279",
     "DANCE": "time specialized to 200",
     "DeepSOZ": "AssertionError: Guard failed: T // 256 == 20",
+    # avg_pool2d over the whole time axis reads its kernel from the shape;
+    # adaptive pooling exports but changes outputs by 1e-7.
     "EEGInceptionMI": "time specialized to 1000",
     "EEGSimpleConv": "AssertionError: Guard failed: 8 * T / 25 == 320.32",
     "EMG2QwertyNet": "unprovable guard (((-3) + (T // 16)) % ((-18) + 6*(T // 16))) != 0",
@@ -996,6 +1000,8 @@ _EXPORT_STATIC_TIME: dict[str, str] = {
     "SPARCNet": "NotImplementedError: Eq(63*(((x/4)//128)) - 63, 0) cannot be solved",
     "TCFormer": "unprovable guard (2 % (2*(T // 56))) != 0",
     "TFMTokenizer": "unprovable guard (6 % ((-6) + 6*(T // 100))) != 0",
+    # Also nn.MaxPool1d; with a branch-free odd-length pad instead of the
+    # `if x.shape[-1] % 2` branch, export of the 12 levels ran past 15 minutes.
     "USleep": "time specialized to 2000",
     "VEMG2Pose": "unprovable guard (2 % ((-14) + 2*(((-18) + (((-11) + T) // 10)) // 4))) != 0",
 }
