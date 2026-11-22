@@ -828,9 +828,7 @@ class FourierEmb4D(nn.Module):
         input_shape = positions.shape
         batch_dims = list(input_shape[:-1])
 
-        freqs_w = torch.arange(
-            self.freqs, device=positions.device, dtype=positions.dtype
-        )
+        freqs_w = torch.arange(self.freqs, device=positions.device).to(positions)
         freqs_z = freqs_w[:, None]
         freqs_y = freqs_z[:, None]
         freqs_x = freqs_y[:, None]
