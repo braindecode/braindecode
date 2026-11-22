@@ -3103,6 +3103,7 @@ html[data-theme="dark"] .bd-landing .inst-logos .inst-freiburg {
 
   .bd-landing .venue-brand-head {
     flex-wrap: wrap;
+    row-gap: 8px;
   }
 
   .bd-landing .venue-quote {
