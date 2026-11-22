@@ -44,9 +44,7 @@ from braindecode.models.util import (
 from braindecode.modules.channels import ChannelLayer
 from braindecode.modules.layers import Ensure4d
 from braindecode.modules.parametrization import make_parametrizations_scriptable
-from braindecode.modules.util import (
-    _has_strided_layer,
-)
+from braindecode.modules.util import _has_strided_layer
 from braindecode.modules.util import (
     to_dense_prediction_model as _to_dense_prediction_model,
 )
@@ -1375,33 +1373,22 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             the whole window, is already converted, or has no strided layer to
             convert.
         """
-        name = type(self).__name__
-        if getattr(self, "_time_axis", None) == "fixed":
+        reason = None
+        if self._time_axis == "fixed":
+            reason = "its head needs a fixed window length"
+        elif not self._dense_conversion:
+            reason = "it pools or tokenizes over the whole window"
+        elif getattr(self, "_is_dense_converted", False):  # absent on v2.0 pickles
+            reason = "it is already converted"
+        elif self._time_axis != "dense" and not _has_strided_layer(self):
+            reason = "it has no strided layer to convert"
+        if reason is not None:
             raise ValueError(
-                f"{name} cannot give dense predictions: "
-                "its head needs a fixed window length."
-            )
-        if getattr(self, "_dense_conversion", True) is False:
-            raise ValueError(
-                f"{name} cannot give dense predictions: "
-                "it pools or tokenizes over the whole window."
-            )
-        if getattr(self, "_is_dense_converted", False):
-            raise ValueError(
-                f"{name} cannot give dense predictions: it is already converted."
-            )
-        if (
-            not _has_strided_layer(self)
-            and getattr(self, "_time_axis", None) != "dense"
-        ):
-            raise ValueError(
-                f"{name} cannot give dense predictions: "
-                "it has no strided layer to convert."
+                f"{type(self).__name__} cannot give dense predictions: {reason}."
             )
         _to_dense_prediction_model(self, axis=axis)
         self._is_dense_converted = True
-        if getattr(self, "_n_times_step", 1) > 1:
-            self._n_times_step = 1
+        self._n_times_step = 1
 
     def get_torchinfo_statistics(
         self,

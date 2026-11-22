@@ -588,16 +588,6 @@ def _output_kind(name: str) -> str:
     return "(batch, outputs)"
 
 
-def _has_strided_layer(model: Any) -> bool:
-    for module in model.modules():
-        stride = getattr(module, "stride", None)
-        if isinstance(stride, int) and stride > 1:
-            return True
-        if isinstance(stride, tuple) and any(s > 1 for s in stride):
-            return True
-    return False
-
-
 def _cropped_capability(
     name: str,
     cls: type[EEGModuleMixin],
@@ -605,6 +595,8 @@ def _cropped_capability(
     base_cls: type[EEGModuleMixin],
 ) -> str:
     if hasattr(base_cls, "_dense_conversion"):
+        from braindecode.modules.util import _has_strided_layer
+
         ok = (
             cls._time_axis != "fixed"
             and bool(getattr(cls, "_dense_conversion", True))
