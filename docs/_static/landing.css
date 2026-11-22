@@ -1745,6 +1745,17 @@ html[data-theme="dark"] .bd-landing .inst-logos .inst-freiburg {
   height: 30px;
 }
 
+/* Text wordmark for venues without a usable official logo file. */
+.bd-landing .venue-wordmark {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: #fff;
+  white-space: nowrap;
+}
+
 .bd-landing .venue-subtag {
   font-size: 0.75rem;
   font-weight: 500;
@@ -3092,5 +3103,12 @@ html[data-theme="dark"] .bd-landing .inst-logos .inst-freiburg {
     flex: 0 0 min(320px, calc(100vw - 44px));
     min-height: 368px;
     padding: 24px 22px;
+  }
+
+  /* Long subtags drop below the logo instead of running past the card edge. */
+  .bd-landing .venue-brand-head {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    row-gap: 8px;
   }
 }
