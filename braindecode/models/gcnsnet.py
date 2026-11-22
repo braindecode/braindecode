@@ -158,8 +158,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         """
         if self.graph_initialized:
             return
-        known_n_chans = self._signal_param("n_chans")
-        n_chans = X.shape[1] if known_n_chans is None else known_n_chans
+        n_chans = self._signal_param("n_chans") or X.shape[1]
         if X.ndim != 3 or X.shape[1] != n_chans:
             raise ValueError(
                 f"fit_graph expects windows of shape (n_windows, {n_chans}, n_times), "

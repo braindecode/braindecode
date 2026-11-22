@@ -401,7 +401,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        sensor_indices = args[1] if len(args) > 1 else kwargs.get("sensor_indices")
+        sensor_indices = self._call_arg(args, kwargs, "sensor_indices")
         return sensor_indices is not None and self.pooling == "mean"
 
     @property

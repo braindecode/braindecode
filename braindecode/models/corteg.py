@@ -405,7 +405,7 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        pos = args[2] if len(args) > 2 else kwargs.get("pos")
+        pos = self._call_arg(args, kwargs, "pos")
         return pos is not None
 
     def _init_parameters(self) -> None:
