@@ -37,7 +37,7 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
               <span>Tutorials</span>
             </a>
-            <a class="btn" href="models/models_table.html">Explore 103 models</a>
+            <a class="btn" href="#model-zoo">Explore 103 models</a>
             <a class="btn" href="https://github.com/braindecode/braindecode" target="_blank" rel="noopener">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.38-3.88-1.38-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.26 5.67.42.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
               <span>GitHub</span>
@@ -1185,6 +1185,67 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section zoo-section" id="model-zoo">
+      <div class="container">
+        <div class="zoo-head-center">
+          <span class="section-eyebrow">MODEL ZOO · <span data-count-to="103">103</span> ARCHITECTURES</span>
+          <h2 class="section-title is-center">Explore <span class="zoo-count-num" data-count-to="103">103</span> published architectures</h2>
+          <p class="zoo-sub">Every model is reproduced from its original paper and ships with a consistent constructor. The shared <code class="bd-mono">EEGModuleMixin</code> takes any of <code class="bd-mono">n_chans</code>, <code class="bd-mono">n_outputs</code>, <code class="bd-mono">n_times</code>, <code class="bd-mono">chs_info</code>, <code class="bd-mono">input_window_seconds</code>, or <code class="bd-mono">sfreq</code>; the missing ones are derived for you. Hover any pill or card to preview its Python API.</p>
+        </div>
+
+.. raw:: html
+    :file: generated/zoo_browser.html
+
+.. raw:: html
+
+      </div>
+    </section>
+
+    <section class="section tut-section">
+      <div class="container">
+        <div class="tut-head">
+          <div>
+            <span class="section-eyebrow">EXECUTED GALLERY</span>
+            <h2 class="section-title is-left">Runnable tutorials from executed notebooks</h2>
+          </div>
+          <a class="btn" href="auto_examples/index.html">Browse all tutorials <span aria-hidden="true">→</span></a>
+        </div>
+
+        <div class="tut-grid">
+          <a class="tut-card" href="auto_examples/model_building/plot_bcic_iv_2a_moabb_trial.html">
+            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_bcic_iv_2a_moabb_trial_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
+            <span class="tut-tag bd-mono">Motor Imagery · EEG</span>
+            <h3 class="tut-title">Trialwise decoding on BCI Competition IV-2a</h3>
+          </a>
+          <a class="tut-card" href="auto_examples/model_building/plot_load_pretrained_models.html">
+            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_load_pretrained_models_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
+            <span class="tut-tag bd-mono">Hugging Face Hub</span>
+            <h3 class="tut-title">Load, adapt, and audit pretrained foundation models</h3>
+          </a>
+          <a class="tut-card" href="auto_examples/model_building/plot_channel_interpolation.html">
+            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_channel_interpolation_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
+            <span class="tut-tag bd-mono">Montage · ChannelLayer</span>
+            <h3 class="tut-title">Exact, spherical-spline, and source montage interpolation</h3>
+          </a>
+          <a class="tut-card" href="auto_examples/advanced_training/plot_sae_reve.html">
+            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_sae_reve_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
+            <span class="tut-tag bd-mono">Mechanistic XAI · REVE</span>
+            <h3 class="tut-title">Causal sparse-autoencoder feature interventions on REVE</h3>
+          </a>
+          <a class="tut-card" href="auto_examples/applied_examples/plot_sleep_staging_chambon2018.html">
+            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_sleep_staging_chambon2018_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
+            <span class="tut-tag bd-mono">Sleep PSG</span>
+            <h3 class="tut-title">Clinical polysomnography staging on Sleep Physionet</h3>
+          </a>
+          <a class="tut-card" href="auto_examples/advanced_training/plot_interpretability.html">
+            <img class="tut-thumb dark-light" src="_images/sphx_glr_plot_interpretability_thumb.png" alt="" width="400" height="280" loading="lazy" decoding="async"/>
+            <span class="tut-tag bd-mono">Attribution &amp; XAI</span>
+            <h3 class="tut-title">Amplitude-spectrum gradients and randomization checks</h3>
+          </a>
         </div>
       </div>
     </section>
