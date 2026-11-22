@@ -192,8 +192,10 @@ class Labram(EEGModuleMixin, nn.Module):
        arXiv:2208.06366 [cs.CV]
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: LABRAM_CHANNEL_ORDER
+    _time_axis = "free"
+    _channel_axis = (
+        "fixed"  # fixed: position_embedding requires ch_names when n_chans != 128
+    )
 
     # Constant, so TorchScript compiles only the mode in use (the decoder-only
     # locals do not exist in tokenizer mode).
@@ -432,7 +434,12 @@ class Labram(EEGModuleMixin, nn.Module):
         self.reset_classifier(self.n_outputs)
 
         self._init_parameters()
-        self._n_times_step = patch_size
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
+        self._n_times_step = self.patch_size
+
+    @torch.jit.unused
+    def _effective_time_axis(self):
+        return "free" if self.neural_tokenizer else "fixed"
 
     @torch.jit.unused
     def _bypass_channel_check(self, x, args, kwargs) -> bool:
@@ -504,26 +511,26 @@ class Labram(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             The output of the model.
         """
-        batch_size, n_input_chans, _ = x.shape
+        batch_size = x.shape[0]
+        n_input_chans = x.shape[1]
         token_mask: Optional[torch.Tensor] = None
         key_mask: Optional[torch.Tensor] = None
         if ch_mask is not None:
             # Padding may hold NaN, which the patch embedding would spread.
             x = x.masked_fill(~ch_mask[:, :, None], 0.0)
-            # Tokens are (channel, patch), channel outermost; [CLS] is real.
-            token_mask = ch_mask.repeat_interleave(self.patch_embed[0].n_patchs, dim=1)
-            key_mask = torch.cat(
-                [token_mask.new_ones(batch_size, 1), token_mask], dim=1
-            )
 
         if self.neural_tokenizer:
             # For neural tokenizer: input is (batch, n_chans, n_times)
-            # patch_embed returns (batch, n_chans, emb_dim)
-            x = self.patch_embed.temporal_conv(
-                self.patch_embed.segment_patch(x), ch_mask
-            )
-            # x shape: (batch, n_chans, emb_dim)
-            n_patch = n_input_chans  # Use actual input channels, not self.n_chans
+            patches = self.patch_embed.segment_patch(x)
+            n_patches = patches.shape[2]
+            if ch_mask is not None:
+                # Tokens are (channel, patch), channel outermost; [CLS] is real.
+                token_mask = ch_mask.repeat_interleave(n_patches, dim=1)
+                key_mask = torch.cat(
+                    [token_mask.new_ones(batch_size, 1), token_mask], dim=1
+                )
+            x = self.patch_embed.temporal_conv(patches, ch_mask)
+            # x shape: (batch, n_chans * n_patches, emb_dim)
             temporal = self.embed_dim
         else:
             # For neural decoder: input is (batch, n_chans, n_times)
@@ -546,7 +553,9 @@ class Labram(EEGModuleMixin, nn.Module):
                 pos_embed_used = self.position_embedding[:, input_chans]
 
                 pos_embed = self._adj_position_embedding(
-                    pos_embed_used=pos_embed_used, batch_size=batch_size
+                    pos_embed_used=pos_embed_used,
+                    batch_size=batch_size,
+                    n_patches=n_patches,
                 )
             else:
                 # In decoder mode, patch_embed already averages over the grouped
@@ -567,7 +576,7 @@ class Labram(EEGModuleMixin, nn.Module):
             time_embed = self._adj_temporal_embedding(
                 num_ch=num_ch,
                 batch_size=batch_size,
-                n_patches=self.patch_embed[0].n_patchs,
+                n_patches=n_patches,
             )
             x[:, 1:, :] += time_embed
         else:
@@ -767,6 +776,11 @@ class Labram(EEGModuleMixin, nn.Module):
         """
         # Get the temporal embedding: (1, n_time_slots, emb_size)
         # Keep the first n_patches slots: (1, n_patches, emb_size)
+        if n_patches > self.temporal_embedding.shape[1]:
+            raise ValueError(
+                f"Input has {n_patches} patches per channel, exceeding "
+                f"Labram temporal_embedding size ({self.temporal_embedding.shape[1]})."
+            )
         cut_dimension = n_patches
         temporal_embedding = self.temporal_embedding[:, 0:cut_dimension, :]
 
@@ -848,9 +862,16 @@ class Labram(EEGModuleMixin, nn.Module):
             error_msgs,
         )
 
-    def _adj_position_embedding(self, pos_embed_used, batch_size: int):
+    def _adj_position_embedding(
+        self,
+        pos_embed_used,
+        batch_size: int,
+        n_patches: Optional[int] = None,
+    ):
         """Copy/pasted from https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/modeling_finetune.py#L358-L362"""
-        input_time_window = self.patch_embed[0].n_patchs
+        input_time_window = (
+            self.patch_embed[0].n_patchs if n_patches is None else n_patches
+        )
         pos_embed = (
             pos_embed_used[:, 1:, :]
             .unsqueeze(2)
