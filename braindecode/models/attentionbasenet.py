@@ -5,6 +5,7 @@ from __future__ import annotations
 # License: BSD (3-clause)
 import math
 
+import torch
 from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
@@ -251,6 +252,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: input_block.spatial_conv.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -364,11 +366,14 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Sequential(
             nn.Flatten(), nn.Linear(seq_lengths[-1] * ch_dim, self.n_outputs)
         )
+        self._build_time_len = seq_lengths[-1]
 
     def forward(self, x):
         x = self.input_block(x)
         x = self.channel_expansion(x)
         x = self.channel_attention_block(x)
+        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
+            x = self._pool_to_build_length(x, -1)
         x = self.final_layer(x)
         return x
 

@@ -230,6 +230,57 @@ parcel mixing, the fitted covariance) lives under ``channel_layer.*``, so a back
 checkpoint without these keys still loads. The layer runs in eager mode, and TorchScript
 works under ``"native"`` only.
 
+.. _adapting-a-built-model:
+
+************************
+ Adapting a built model
+************************
+
+A model that has already been trained or loaded can be adapted in place to another
+montage, sampling rate or window length with
+:meth:`~braindecode.models.EEGModuleMixin.adapt_input`, without adding keys to its
+``state_dict``:
+
+.. code-block:: python
+
+    from braindecode.datasets import pad_channels_collate
+    from braindecode.models import EEGNet
+
+    model = EEGNet(chs_info=train_chs, n_outputs=4, n_times=1000, sfreq=250)
+
+    # Fixed source montage and 500 Hz -> 250 Hz in-model resampling
+    model.adapt_input(chs_info=eval_chs, channel_strategy="spline", sfreq=500)
+    y = model(x_500hz)  # x_500hz: (batch, len(eval_chs), 2000)
+
+    # Mixed-montage batches from windows with set_return_ch_pos(True)
+    model.adapt_input(channel_strategy="spline")  # chs_info=None: per-sample pos
+    X, y_true, ind, pos, ch_mask = pad_channels_collate(batch)
+    y = model(X, pos=pos, ch_mask=ch_mask)
+
+- **Montage.** ``chs_info`` (``channel_strategy`` defaults to ``"nearest"``) adds a
+  :class:`~braindecode.modules.ChannelLayer` from that montage onto the montage the model
+  was built with. ``channel_strategy`` alone maps each sample from the ``pos`` and
+  ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate` with
+  ``set_return_ch_pos(True)``, so mixed-montage batches also reach native convolutional
+  models such as :class:`~braindecode.models.EEGNet`. A model built without ``chs_info``,
+  built with a ``channel_strategy`` (pass ``chs_info`` to ``forward`` instead), or taking
+  MEG, fNIRS, sEMG or non-electrode channels raises a ``ValueError``.
+- **Stateless strategies only.** ``"wiener"``, ``"latent"`` and ``"source"`` with
+  ``trainable=True`` raise a ``ValueError``: they add fitted or trained tensors. The
+  ``state_dict`` keys stay those of the built model, so checkpoints load with
+  ``strict=True`` before and after ``adapt_input``.
+- **Sampling rate.** An integer ``sfreq`` resamples the input to ``model.sfreq`` before
+  the length checks and the channel mapping. ``sfreq=model.sfreq`` removes it.
+- **Window length.** ``n_times`` is the window length at ``model.sfreq``. Free and dense
+  models run on it as they are. Fixed-length models whose only weight sized by
+  ``n_times`` is the head (such as :class:`~braindecode.models.EEGConformer`,
+  :class:`~braindecode.models.EEGPT` and :class:`~braindecode.models.REVE`) average-pool
+  their features to the build length before the head, which is the identity at the build
+  ``n_times``. The other fixed-length models raise a ``ValueError``.
+- **Saved with the model.** ``get_config()["input_adaptation"]`` holds the adaptation,
+  and ``from_config`` and ``from_pretrained`` apply it again. A model without adaptation
+  has no such entry.
+
 ***************************
  Reconstruct a bad channel
 ***************************

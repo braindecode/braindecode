@@ -4,6 +4,7 @@
 # License: BSD (3-clause)
 import math
 
+import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
@@ -172,6 +173,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
 
     _time_axis = "fixed"  # fixed: final_layer.fc.weight
     _channel_axis = "fixed"  # fixed: inception_block_1.branches.0.4.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -335,8 +337,18 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         module.add_module("identity", nn.Identity())
 
         self.add_module("final_layer", module)
+        self._build_time_len = spatial_dim_last_layer
 
         self._init_parameters()
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        x = self.dimshuffle(self.ensuredims(input))
+        x = self.avg_pool_1(self.inception_block_1(x))
+        x = self.avg_pool_2(self.inception_block_2(x))
+        x = self.final_block(x)
+        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
+            x = self._pool_to_build_length(x, -1)
+        return self.final_layer(self.flat(x))
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

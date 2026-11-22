@@ -205,6 +205,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: fc.fc.0.weight
     _channel_axis = "fixed"  # fixed: patch_embedding.shallownet.1.weight
+    _supports_n_times_adaptation = True
 
     # Old full-object checkpoints restore state without calling __init__.
     activation_checkpointing = False
@@ -291,6 +292,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
         self.final_layer = nn.Linear(self.fc.hidden_channels, self.n_outputs)
         self._n_times_step = pool_time_stride
+        self._build_time_len = self.final_fc_length // n_filters_time
 
     def compile(self, *args, **kwargs):
         # Reject before installing a native compiled call (including estimator
@@ -314,6 +316,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         if self.return_features:
             return feature
 
+        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
+            feature = self._pool_to_build_length(feature, 1)
         x = self.fc(feature)
         x = self.final_layer(x)
         return x

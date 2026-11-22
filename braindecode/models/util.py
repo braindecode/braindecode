@@ -251,12 +251,22 @@ def build_model_config(model) -> dict:
             elif not _is_jsonable(val):
                 continue
             config[name] = val
-    layer = getattr(model, "channel_layer", None)  # save the input, not the target
+    adaptation = dict(getattr(model, "_adapt_config", None) or {})
+    # Save the input montage, not the target; an adapted layer is saved apart.
+    layer = (
+        None
+        if "channel_strategy" in adaptation
+        else getattr(model, "channel_layer", None)
+    )
     chs_info = (
         layer.chs_info if layer is not None else getattr(model, "_chs_info", None)
     )
     if chs_info is not None:
         config["chs_info"] = model._serialize_chs_info(chs_info)
+    if adaptation.get("chs_info") is not None:
+        adaptation["chs_info"] = model._serialize_chs_info(adaptation["chs_info"])
+    if adaptation:
+        config["input_adaptation"] = adaptation
     return config
 
 

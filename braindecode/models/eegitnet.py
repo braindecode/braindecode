@@ -2,6 +2,7 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
+import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn.utils.parametrize import register_parametrization
@@ -77,6 +78,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
     _channel_axis = (
         "fixed"  # fixed: inception_block.branches.0.2.parametrizations.weight.original
     )
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -227,12 +229,21 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
                 f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
             )
         num_features = tcn_in_channel * n_time
+        self._build_time_len = n_time
 
         # The authors constrain the final dense with ``max_norm(0.25)``.
         self.add_module(
             "final_layer",
             LinearWithConstraint(num_features, self.n_outputs, max_norm=0.25),
         )
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        x = self.pooling(self.inception_block(self.input_preprocess(input)))
+        x = self.TC_block2(self.TC_block1(x))
+        x = self.dim_reduction(self.TC_block4(self.TC_block3(x)))
+        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
+            x = self._pool_to_build_length(x, -1)
+        return self.final_layer(self.flatten(x))
 
     @staticmethod
     def _get_inception_branch(

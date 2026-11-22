@@ -171,6 +171,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: final_layer.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -299,6 +300,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
         self._n_times_step = self.patch_size
         self._snaps_in_prepare_inputs = False
         self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
+        self._build_time_len = n_patches
 
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
@@ -343,6 +345,8 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # A token per patch of each pair, zero where the patch is invalid:
         # (batch, 2C, n_times) -> (batch, C, P, D)
         x = self.encode(x)["foundation"]
+        if not return_features and not torch.jit.is_scripting():
+            x = self._pool_to_build_length(x, 2)  # adapt_input(n_times=...)
         # Every token of the window in one vector, pair after pair, the input
         # of the benchmark's flatten_linear head: (batch, C * P * D)
         x = self.flatten_layer(x)

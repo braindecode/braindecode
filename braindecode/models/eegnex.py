@@ -171,6 +171,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.parametrizations.weight.original
     _channel_axis = "fixed"  # fixed: block_3.0.parametrizations.weight.original
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -223,6 +224,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
 
         # final layers output
         self.in_features = self._calculate_output_length()
+        self._build_time_len = self.in_features // self.filter_1
 
         # Following paper nomenclature
         self.block_1 = nn.Sequential(
@@ -326,7 +328,11 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         # (batch_size, 1, n_filter*8, n_times//4)
         x = self.block_4(x)
         # (batch_size, 1, n_filter*8, n_times//4)
-        x = self.block_5(x)
+        if torch.jit.is_scripting():
+            x = self.block_5(x)
+        else:  # adapt_input(n_times=...) pools before the flatten
+            x = self.block_5[:-1](x)
+            x = self.block_5[-1](self._pool_to_build_length(x, -1))
         # (batch_size, n_filter*(n_times//32))
         x = self.final_layer(x)
 

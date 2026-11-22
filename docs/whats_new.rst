@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :meth:`braindecode.models.EEGModuleMixin.adapt_input` to adapt a built model, in
+  place and with unchanged ``state_dict`` keys, to another EEG montage, sampling rate or
+  window length; ``get_config`` saves the adaptation (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.CareSleepNet`,
   :class:`~braindecode.models.EEGInceptionMI`, :class:`~braindecode.models.FBCNet`,
   :class:`~braindecode.models.FBMSNet`, :class:`~braindecode.models.IFNet`,

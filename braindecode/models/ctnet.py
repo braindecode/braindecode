@@ -107,6 +107,7 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "fixed"  # fixed: final_layer.weight is sized by n_times
     _channel_axis = "fixed"  # fixed: cnn.eegnet_module.2.weight is sized by n_chans
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -235,6 +236,7 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
             in_features=int(self.embed_dim * self.sequence_length),
             out_features=self.n_outputs,
         )
+        self._build_time_len = self.sequence_length
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -256,6 +258,8 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
         cnn = self.position(cnn)
         trans = self.trans(cnn)
         features = cnn + trans
+        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
+            features = self._pool_to_build_length(features, 1)
         flatten_feature = self.flatten_drop_layer(features)
         out = self.final_layer(flatten_feature)
         return out

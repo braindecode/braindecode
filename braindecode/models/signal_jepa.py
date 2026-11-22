@@ -653,6 +653,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
     _time_axis = "fixed"  # fixed: final_layer.linear.weight
     _channel_axis = "fixed"  # fixed: final_layer.spat_conv.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -725,6 +726,9 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             n_classes=self.n_outputs,
             n_spat_filters=n_spat_filters,
         )
+        self._build_time_len = _n_times_out(
+            feature_encoder__conv_layers_spec, self.n_times
+        )
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
@@ -750,6 +754,10 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
                 "cls_token": None,
             }
             return out
+        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
+            contextual_features = self._pool_to_build_length(
+                contextual_features.unflatten(1, (self.n_chans, -1)), 2
+            ).flatten(1, 2)
         y = self.final_layer(contextual_features)  # type: ignore
         return y  # type: ignore
 
@@ -914,6 +922,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
     _time_axis = "fixed"  # fixed: final_layer.linear.weight
     _channel_axis = "fixed"  # fixed: final_layer.spat_conv.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -982,6 +991,9 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
             n_times=self.n_times,
             n_classes=self.n_outputs,
             n_spat_filters=n_spat_filters,
+        )
+        self._build_time_len = _n_times_out(
+            feature_encoder__conv_layers_spec, self.n_times
         )
 
     def reset_head(self, n_outputs):
@@ -1064,6 +1076,10 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
                 "cls_token": None,
             }
             return out
+        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
+            local_features = self._pool_to_build_length(
+                local_features.unflatten(1, (self.n_chans, -1)), 2
+            ).flatten(1, 2)
         y = self.final_layer(local_features)
         return y
 
@@ -1153,6 +1169,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: spatial_conv.1.weight
+    _supports_n_times_adaptation = True
 
     _feature_encoder_channels: str = "n_spat_filters"
 
@@ -1229,6 +1246,9 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         self.final_layer = nn.Sequential(
             nn.Flatten(start_dim=1),
             nn.Linear(self._out_emb_dim, self.n_outputs),
+        )
+        self._build_time_len = _n_times_out(
+            feature_encoder__conv_layers_spec, self.n_times
         )
 
     def reset_head(self, n_outputs):
@@ -1309,6 +1329,10 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
                 "cls_token": None,
             }
             return out
+        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
+            local_features = self._pool_to_build_length(
+                local_features.unflatten(1, (self.n_spat_filters, -1)), 2
+            ).flatten(1, 2)
         y = self.final_layer(local_features)
         return y
 
