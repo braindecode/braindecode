@@ -1047,17 +1047,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Mean-pool ``features`` to a 2-D ``(batch, dim)`` embedding."""
         if features.ndim == 2:
             return features
-        if features.ndim < 2:
-            raise ValueError(
-                f"{type(self).__name__}: expected features with at least 2 dimensions "
-                f"(batch, ..., dim), got shape {tuple(features.shape)}."
-            )
         axis = self._feature_axis % features.ndim
-        if axis == 0:
-            raise ValueError(
-                f"{type(self).__name__}: _feature_axis={self._feature_axis} points to "
-                f"the batch axis for shape {tuple(features.shape)}."
-            )
         if axis != features.ndim - 1:
             features = features.movedim(axis, -1)
         return features.mean(dim=tuple(range(1, features.ndim - 1)))
@@ -1104,12 +1094,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             want_features = bool(kwargs.pop("return_features"))
             if want_features:
                 name = type(self).__name__
-                final_layer = getattr(self, "final_layer", None)
-                if not isinstance(final_layer, torch.nn.Module):
-                    raise ValueError(
-                        f"{name} has no final_layer; return_features needs a native "
-                        "implementation for this model."
-                    )
                 captured: list[Any] = []
 
                 def _capture(
@@ -1117,7 +1101,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 ) -> None:
                     captured.append(hook_args[0] if hook_args else None)
 
-                handle = final_layer.register_forward_pre_hook(_capture)
+                handle = self.final_layer.register_forward_pre_hook(_capture)
                 try:
                     super().__call__(*args, **kwargs)
                 finally:
@@ -1132,18 +1116,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         "for this model."
                     )
                 feat = captured[0]
-                if not isinstance(feat, torch.Tensor):
-                    raise ValueError(
-                        f"{name}: final_layer input is {type(feat).__name__}, not a "
-                        "Tensor; return_features needs a native implementation for "
-                        "this model."
-                    )
                 x = self._first_input(args, kwargs)
-                if feat.ndim < 2 or (x is not None and feat.shape[0] != x.shape[0]):
+                if (
+                    not isinstance(feat, torch.Tensor)
+                    or feat.ndim < 2
+                    or (x is not None and feat.shape[0] != x.shape[0])
+                ):
                     raise ValueError(
-                        f"{name}: the head reads a tensor whose first axis is not "
-                        "the batch; return_features needs a native implementation "
-                        "for this model."
+                        f"{name}: the head does not read one batched tensor; "
+                        "return_features needs a native implementation for this "
+                        "model."
                     )
                 return {
                     "features": feat,

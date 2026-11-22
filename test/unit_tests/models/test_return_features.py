@@ -188,7 +188,7 @@ def test_feature_fallback_refuses_repeated_heads():
         _RepeatedHeadModel().eval()(x, return_features=True)
     with pytest.raises(ValueError, match="final_layer ran 0 times"):
         _SkippedHeadModel().eval()(x, return_features=True)
-    with pytest.raises(ValueError, match="first axis is not the batch"):
+    with pytest.raises(ValueError, match="does not read one batched tensor"):
         _TimeFirstHeadModel().eval()(x, return_features=True)
 
 
