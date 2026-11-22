@@ -106,7 +106,7 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         https://github.com/Jiaheng-Wang/IFNet
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _time_axis = "free"
     _channel_axis = "fixed"  # fixed: feature_block.spatial_conv.weight
 
     def __init__(
@@ -189,6 +189,9 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         )
 
         self.flatten = Rearrange("batch ... -> batch (...)")
+        self._n_times_step = self.stride_factor
+        self.on_non_divisible = "pad"
+        self._min_n_times = self.stride_factor
 
         # Initialize parameters
         self._init_parameters()
@@ -430,7 +433,8 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         x = self.inter_frequency(x_t)
 
         # Reshape for temporal segmentation
-        x = self.padding_layer(x)
+        if x.shape[-1] % self.stride_factor != 0:
+            x = self.padding_layer(x)
         # x is now of shape (batch_size, ..., n_times_padded)
 
         # Reshape for log-power computation
@@ -438,7 +442,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
             batch_size,
             self.out_channels,
             self.stride_factor,
-            self.n_times_padded // self.stride_factor,
+            -1,
         )
 
         # Log-Power layer
