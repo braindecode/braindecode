@@ -467,6 +467,9 @@ def test_check_ch_mask():
         check_ch_mask(torch.ones(2, 2, dtype=torch.bool), x)
     with pytest.raises(ValueError, match="at least one real channel"):
         check_ch_mask(torch.tensor([[True, False, False], [False] * 3]), x)
+    # Off the CPU the value check is a device-side assertion, not a host read.
+    meta_mask = torch.ones(2, 3, dtype=torch.bool, device="meta")
+    assert check_ch_mask(meta_mask, x.to("meta")).is_meta
 
 
 @pytest.mark.parametrize("scripted", [False, True])
