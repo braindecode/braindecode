@@ -992,13 +992,19 @@ html:not(:has(.bd-landing)) .bd-page-width {
   max-width: 88rem;
 }
 
+html:not(:has(.bd-landing)) .bd-main .bd-content {
+  min-width: 0;
+}
+
 html:not(:has(.bd-landing)) .bd-main .bd-content .bd-article-container {
   background-color: transparent;
   padding-top: 1.75rem;
+  min-width: 0;
 }
 
-html:not(:has(.bd-landing)) .bd-article h1 {
+html:not(:has(.bd-landing)) .bd-article-container h1 {
   font-family: var(--pst-font-family-heading);
+  font-size: clamp(1.625rem, 5.4vw, 2.5rem);
   font-weight: 500;
   letter-spacing: -0.024em;
   line-height: 1.14;
@@ -1007,7 +1013,7 @@ html:not(:has(.bd-landing)) .bd-article h1 {
   overflow-wrap: anywhere;
 }
 
-html:not(:has(.bd-landing)) .bd-article h2 {
+html:not(:has(.bd-landing)) .bd-article-container h2 {
   font-family: var(--pst-font-family-heading);
   font-weight: 500;
   letter-spacing: -0.02em;
@@ -1019,8 +1025,8 @@ html:not(:has(.bd-landing)) .bd-article h2 {
   margin-bottom: 1rem;
 }
 
-html:not(:has(.bd-landing)) .bd-article h3,
-html:not(:has(.bd-landing)) .bd-article h4 {
+html:not(:has(.bd-landing)) .bd-article-container h3,
+html:not(:has(.bd-landing)) .bd-article-container h4 {
   font-family: var(--pst-font-family-heading);
   font-weight: 600;
   letter-spacing: -0.015em;
@@ -1076,6 +1082,7 @@ html:not(:has(.bd-landing)) dl.attribute > dt.sig {
   padding: 0.55rem 0.85rem;
   font-family: var(--pst-font-family-monospace);
   font-size: 0.89rem;
+  overflow-wrap: anywhere;
 }
 
 html[data-theme="dark"]:not(:has(.bd-landing)) dl.py > dt.sig,
@@ -1160,7 +1167,7 @@ html[data-theme="dark"] .sd-btn-primary:hover {
 }
 
 html:not(:has(.bd-landing)) table.table,
-html:not(:has(.bd-landing)) .bd-article table.docutils {
+html:not(:has(.bd-landing)) .bd-article-container table.docutils {
   border: 1px solid var(--pst-color-border);
   border-radius: 10px;
   border-collapse: separate;
@@ -1170,7 +1177,7 @@ html:not(:has(.bd-landing)) .bd-article table.docutils {
 }
 
 html:not(:has(.bd-landing)) table.table thead th,
-html:not(:has(.bd-landing)) .bd-article table.docutils thead th {
+html:not(:has(.bd-landing)) .bd-article-container table.docutils thead th {
   background-color: var(--pst-color-table-heading-bg);
   color: var(--pst-color-text-base);
   font-weight: 600;
