@@ -179,8 +179,8 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
        picking. Nature Communications, 11, 3952.
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: encoder.0.conv.weight
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: encoder.0.conv.weight is sized by n_chans
 
     def __init__(
         self,
@@ -281,10 +281,7 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
             n_filters[0], self.n_outputs, final_kernel_size, padding="same"
         )
         self._min_n_times = 1
-
-    @torch.jit.unused
-    def _bypass_time_check(self, x, args, kwargs) -> bool:
-        return x.ndim >= 3 and 1 <= x.shape[-1] <= self.max_n_times
+        self._n_times_step = 1
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the output convolution for a new number of outputs."""
@@ -295,6 +292,17 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
         )
         self.final_layer = head.to(old_head.weight)
 
+    def _positional_encoding(self, steps: torch.Tensor) -> torch.Tensor:
+        n_steps = steps.shape[1]
+        if n_steps <= self.positional_encoding.shape[0]:
+            return self.positional_encoding[:n_steps]
+        return sinusoidal_positional_encoding(
+            n_steps,
+            self.positional_encoding.shape[1],
+            device=steps.device,
+            dtype=self.positional_encoding.dtype,
+        )
+
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Predict logits for every time sample.
@@ -302,19 +310,14 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
         Parameters
         ----------
         x : torch.Tensor
-            Input of shape ``(batch, n_chans, n_times)``. Inputs shorter than
-            the configured ``n_times`` are accepted.
+            Input of shape ``(batch, n_chans, n_times)``. Any positive window
+            length ``n_times`` is accepted.
 
         Returns
         -------
         torch.Tensor
             Logits of shape ``(batch, n_outputs, n_times)``.
         """
-        if x.shape[-1] > self.max_n_times:
-            raise ValueError(
-                f"SeizureTransformer was built for at most {self.max_n_times} "
-                f"time samples (n_times), but received {x.shape[-1]}."
-            )
         skips: list[torch.Tensor] = []
         for block in self.encoder:
             x = block(x)
@@ -323,7 +326,7 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
 
         features = self.res_blocks(x)
         steps = self.to_steps(features)
-        steps = steps + self.positional_encoding[: steps.shape[1]]
+        steps = steps + self._positional_encoding(steps)
         steps = self.transformer(self.positional_dropout(steps))
         x = self.to_features(steps) + features
 
