@@ -1,5 +1,5 @@
 Model,Application,Type,Sampling Frequency (Hz),Hyperparameters,#Parameters,get_#Parameters,Categorization,Modality,Time axis,Channel axis,Output,Cropped decoding,adapt_input,reset_head,return_features
-ATCNet,General,Prediction,250,"n_chans, n_outputs, n_times",113732,"ATCNet(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Recurrent,Attention/Transformer",EEG,fixed,fixed,"(batch, outputs)",no,no,no,no
+ATCNet,General,Prediction,250,"n_chans, n_outputs, n_times",113732,"ATCNet(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Recurrent,Attention/Transformer",EEG,free,fixed,"(batch, outputs)",no,no,no,no
 AXON,General,"Classification,Embedding",200,"chs_info, n_outputs",118630108,"AXON(n_chans=22, chs_info=chs_info, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer,Channel",EEG,free,fixed,"(batch, outputs)",no,no,yes,yes
 AttentionBaseNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",3692,"AttentionBaseNet(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG,fixed,fixed,"(batch, outputs)",no,no,no,no
 BaRISTA,General,"Prediction, Embedding",2048,"chs_info, n_outputs, n_times",870324,"BaRISTA(n_chans=22, chs_info=chs_info, n_outputs=4, n_times=6144, sfreq=2048)","Attention/Transformer,Foundation Model,Channel",iEEG,fixed,fixed,"(batch, outputs)",no,no,yes,yes
