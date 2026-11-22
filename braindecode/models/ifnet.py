@@ -106,8 +106,10 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         https://github.com/Jiaheng-Wang/IFNet
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: feature_block.spatial_conv.weight
+    _time_axis = "free"
+    _channel_axis = (
+        "fixed"  # fixed: feature_block.spatial_conv.weight is sized by n_chans
+    )
 
     def __init__(
         self,
@@ -192,6 +194,9 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
 
         # Initialize parameters
         self._init_parameters()
+        self.on_non_divisible = "pad"
+        self._min_n_times = self.stride_factor
+        self._n_times_step = self.stride_factor
 
     # Reference ``initParms``: truncated normal (std 0.01) linears and
     # convolutions, zero biases, unit/zero normalization layers. The max-norm
@@ -386,14 +391,6 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         # Inter-frequency module
         self.inter_frequency = _InterFrequencyModule(activation=self.activation)
 
-        if self.n_times % self.stride_factor != 0:
-            self.padding_size = stride_factor - (self.n_times % stride_factor)
-            self.n_times_padded = self.n_times + self.padding_size
-            self.padding_layer = nn.ConstantPad1d((0, self.padding_size), 0.0)
-        else:
-            self.padding_layer = nn.Identity()
-            self.n_times_padded = self.n_times
-
         # Log-Power layer
         self.log_power = LogPowerLayer(dim=self.dim)  # type: ignore
         # Dropout
@@ -430,15 +427,17 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         x = self.inter_frequency(x_t)
 
         # Reshape for temporal segmentation
-        x = self.padding_layer(x)
-        # x is now of shape (batch_size, ..., n_times_padded)
+        if x.shape[-1] % self.stride_factor != 0:
+            x = nn.functional.pad(
+                x, (0, self.stride_factor - x.shape[-1] % self.stride_factor)
+            )
 
         # Reshape for log-power computation
         x = x.view(
             batch_size,
             self.out_channels,
             self.stride_factor,
-            self.n_times_padded // self.stride_factor,
+            x.shape[-1] // self.stride_factor,
         )
 
         # Log-Power layer
