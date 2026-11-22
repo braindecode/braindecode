@@ -784,12 +784,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     @staticmethod
     def _snap_to_length(x: torch.Tensor, target: int) -> torch.Tensor:
-        cur = x.shape[-1]
-        if cur == target:
-            return x
-        if cur > target:
-            return x[..., :target]
-        return F.pad(x, (0, target - cur))
+        return F.pad(x[..., :target], (0, max(0, target - x.shape[-1])))
 
     def _grid(self) -> tuple[int, int]:
         """First patch length and step of the length grid."""
