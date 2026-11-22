@@ -72,8 +72,10 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         Journal of Neural Engineering, 18(4), 046014.
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: initial_inception_module.bottleneck.weight
+    _time_axis = "free"
+    _channel_axis = (
+        "fixed"  # fixed: initial_inception_module.bottleneck.weight is sized by n_chans
+    )
 
     def __init__(
         self,
@@ -198,6 +200,8 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         )
         module.add_module("out_fun", nn.Identity())
         self.final_layer = module
+        self._min_n_times = 1
+        self._n_times_step = 1
 
     def forward(
         self,
@@ -221,7 +225,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         out = res2 + out
 
-        out = self.ave_pooling(out)
+        out = nn.functional.avg_pool2d(out, kernel_size=(1, out.shape[-1]))
         out = self.flat(out)
         out = self.final_layer(out)
         return out
