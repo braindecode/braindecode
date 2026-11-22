@@ -252,8 +252,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
         https://github.com/Altaheri/EEG-ATCNet/blob/main/models.py
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: conv_block.conv2.weight
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: conv_block.conv2.weight is sized by n_chans
 
     def __init__(
         self,
@@ -428,6 +428,10 @@ class ATCNet(EEGModuleMixin, nn.Module):
             )
 
         self.out_fun = nn.Identity()
+        self._min_n_times = (
+            self.n_windows * self.conv_block_pool_size_1 * self.conv_block_pool_size_2
+        )
+        self._n_times_step = 1
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         # Dimension: (batch_size, C, T)
@@ -439,7 +443,9 @@ class ATCNet(EEGModuleMixin, nn.Module):
         # ----- Sliding window -----
         conv_feat = self.conv_block(X)
         # Dimension: (batch_size, F2, Tc, 1)
-        conv_feat = conv_feat.view(-1, self.F2, self.Tc)
+        tc = conv_feat.shape[2]
+        tw = tc - self.n_windows + 1
+        conv_feat = conv_feat.view(conv_feat.shape[0], self.F2, tc)
         # Dimension: (batch_size, F2, Tc)
 
         # ----- Sliding window -----
@@ -450,7 +456,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         for idx, (attention, tcn_module) in enumerate(
             zip(self.attention_blocks, self.temporal_conv_nets)
         ):
-            conv_feat_w = conv_feat[..., idx : idx + self.Tw]
+            conv_feat_w = conv_feat[..., idx : idx + tw]
             # Dimension: (batch_size, F2, Tw)
 
             # ----- Attention block -----
