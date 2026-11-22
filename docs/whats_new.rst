@@ -214,20 +214,12 @@ API and behavior changes
 - Every model's ``forward`` takes its signal as ``x`` and :class:`braindecode.models.LUNA` its
   positions as ``pos``; the old keywords ``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor`` and
   ``channel_locations`` still work with a ``FutureWarning`` until 2.2 (by `Bruno Aristimunha`_).
-- Constructor feature-extraction flags (``return_feats`` on
-  :class:`braindecode.models.AttnSleep`, :class:`~braindecode.models.DeepSleepNet`,
-  :class:`~braindecode.models.SleepStagerBlanco2020`, and
-  :class:`~braindecode.models.SleepStagerChambon2018`; ``return_feature`` on
-  :class:`~braindecode.models.BIOT`, :class:`~braindecode.models.EEGSimpleConv`, and
-  :class:`~braindecode.models.EMG2QwertyNet`; ``return_encoder_output`` on
-  :class:`~braindecode.models.CBraMod`, :class:`~braindecode.models.CSBrain`,
-  :class:`~braindecode.models.EEGDINO`, and :class:`~braindecode.models.EEGPT`; and
-  ``return_features`` on :class:`~braindecode.models.EEGConformer`,
-  :class:`~braindecode.models.EEGDINO`, :class:`~braindecode.models.FBMSNet`,
-  :class:`~braindecode.models.MEGGPT`, :class:`~braindecode.models.MIRepNet`,
-  :class:`~braindecode.models.MSVTNet`, and :class:`~braindecode.models.SSTDPN`) now
-  emit a ``FutureWarning`` and will be removed in 2.2; call
+- The constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
+  ``return_features`` of 17 models emit a ``FutureWarning`` and go in 2.2; call
   ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
+- ``to_dense_prediction_model`` also converts dilated 1-D and 2-D stacks and raises ``ValueError``
+  with the reason on models it cannot convert, including EMG2QwertyNet and NeuroPose, which did
+  not raise before (by `Bruno Aristimunha`_).
 - Every registered model declares ``_time_axis`` (``"fixed"``, ``"free"`` or
   ``"dense"``), ``_channel_axis`` (``"fixed"`` or ``"free"``) and, on ``"free"``
   and ``"dense"`` models, ``_min_n_times``; :class:`braindecode.models.EEGModuleMixin`
