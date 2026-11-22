@@ -525,3 +525,16 @@ def test_summary_generator_subset_and_cli(tmp_path):
         ValueError, match="EEGNet is missing editorial column 'Application'"
     ):
         generate_summary_rows(names=["EEGNet"], csv_path=missing_editorial_csv)
+
+    # TFMTokenizer's hand-written 200 Hz is blank; the constructor default fills it.
+    blank_sfreq_csv = tmp_path / "blank_sfreq.csv"
+    blank_sfreq_csv.write_text(
+        text.replace(
+            'TFMTokenizer,General,"Pretraining, Tokenization",200,',
+            'TFMTokenizer,General,"Pretraining, Tokenization",,',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    (row,) = generate_summary_rows(names=["TFMTokenizer"], csv_path=blank_sfreq_csv)
+    assert row["Sampling Frequency (Hz)"] == "200"

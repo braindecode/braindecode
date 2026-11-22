@@ -617,7 +617,11 @@ def generate_summary_rows(
             raise ValueError(f"{name} must declare _time_axis and _channel_axis.")
         req, sp = mandatory[name]
         init_kwargs, expr, probe_shape = _resolve_kwargs(name, req, sp)
-        editorial = existing.get(name, {})
+        editorial = dict(existing.get(name, {}))
+        # An empty Sampling Frequency cell takes the constructor default of sfreq.
+        sfreq = inspect.signature(cls.__init__).parameters["sfreq"].default
+        if not editorial.get("Sampling Frequency (Hz)") and sfreq is not None:
+            editorial["Sampling Frequency (Hz)"] = f"{sfreq:g}"
         for col in EDITORIAL_COLUMNS:
             if not editorial.get(col):
                 raise ValueError(f"{name} is missing editorial column {col!r}.")
