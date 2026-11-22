@@ -63,9 +63,7 @@ _KNOWN_LOAD_STATE_DICT_OVERRIDES: set[tuple[str, str]] = {
 }
 
 # C5: download primitives and non-docstring URLs (excluding base.py).
-_KNOWN_DOWNLOADS: set[tuple[str, str]] = {
-    ("sleepfm", "SleepFMStager.from_pretrained"),
-}
+_KNOWN_DOWNLOADS: set[tuple[str, str]] = set()
 
 # C6: vendor identifiers, imports, and non-docstring backend strings in executable code.
 _KNOWN_VENDOR_REFERENCES: set[tuple[str, str]] = {
