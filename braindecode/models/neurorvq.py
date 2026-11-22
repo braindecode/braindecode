@@ -638,6 +638,11 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             head_dim *= len(slots) * self.num_patches
         self.fc_norm = nn.LayerNorm(head_dim)
         self.final_layer = nn.Linear(head_dim, self.n_outputs)
+        self._n_times_step = (
+            math.ceil(patch_size * int(in_sfreq) / preset["sfreq"])
+            if in_sfreq is not None and in_sfreq != preset["sfreq"]
+            else patch_size
+        )
         self._init_parameters()
 
     def _init_parameters(self):

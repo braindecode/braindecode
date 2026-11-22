@@ -224,7 +224,6 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             + self.filter_time_length
             - 1
         )
-        self._has_ensure4d = True
 
         # Initialization, xavier is same as in paper...
         self._init_parameters()

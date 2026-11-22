@@ -17,7 +17,6 @@ from torch import nn
 
 from braindecode.functional import (
     check_ch_mask,
-    check_n_chans,
     patch_count,
     sinusoidal_positional_encoding,
 )
@@ -596,12 +595,6 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         ``channel_mask`` are as in :meth:`SleepFM.encode`; ``temporal_mask`` is
         ``True`` for padded patches.
         """
-        check_n_chans(
-            x,
-            self.n_chans,
-            "SleepFMStager",
-            "build the model with the chs_info of this montage.",
-        )
         # The count the tokenizer produces (padded patch included with "pad").
         n_patches = self.patch_embedding.patchify.n_patches(x.shape[-1])
         patch_mask = _check_mask(

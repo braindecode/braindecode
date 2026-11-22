@@ -80,7 +80,6 @@ class PatchTokenizer(nn.Module):
         on_non_divisible="pad",
         projection="conv",
         output_order="channel_patch",
-        warn_non_divisible: bool = True,
     ):
         super().__init__()
         # A crop tokenizer may receive a longer signal than its nominal length.
@@ -101,7 +100,7 @@ class PatchTokenizer(nn.Module):
         self.projection = projection
         self.output_order = output_order
         self.emb_dim = (emb_dim or patch_size) if learnable else patch_size
-        if warn_non_divisible and on_non_divisible == "pad" and n_times % patch_size:
+        if on_non_divisible == "pad" and n_times % patch_size:
             warn(
                 f"Time dimension ({n_times}) is not divisible by patch_size "
                 f"({patch_size}). Input will be padded.",

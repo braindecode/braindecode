@@ -388,6 +388,16 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if pooling == "flatten":
             self._time_axis = "fixed"
 
+    def _check_input_shape(
+        self, x: torch.Tensor, args: tuple, kwargs: dict
+    ) -> str | None:
+        spectrogram = self.normalization == "session"
+        if x.ndim != (4 if spectrogram else 3) or (
+            spectrogram and x.shape[2] != self._n_bins
+        ):
+            return None
+        return super()._check_input_shape(x, args, kwargs)
+
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True

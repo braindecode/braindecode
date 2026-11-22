@@ -508,11 +508,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
-        if x.shape[1] != self.n_chans:
-            raise ValueError(
-                f"STEEGFormer was built for {self.n_chans} channels but got input "
-                f"with {x.shape[1]}; rebuild the model for this montage."
-            )
         # Tokens + positional embeddings, kept on the (seq, channel) grid.
         # Pads, crops or rejects a non-multiple of patch_size (on_non_divisible).
         tokens = self.patch_embed(x)  # (batch, seq, n_chans, embed_dim)

@@ -287,7 +287,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._min_n_times = self.patch_size
         self._n_times_step = self.patch_stride
         self._n_times_offset = self.patch_size
-        self._snaps_in_prepare_inputs = False
+        self._snaps_in_prepare_inputs = "pad_only"
 
     def _build_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(

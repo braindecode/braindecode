@@ -357,6 +357,8 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, self.n_outputs),
         )
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = fine_time_pts
 
     def forward(
         self,

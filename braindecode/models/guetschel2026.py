@@ -601,7 +601,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         self._min_n_times = self.patch_size
         self._n_times_step = self.patch_step
         self._n_times_offset = self.patch_size
-        self._snaps_in_prepare_inputs = False
+        self._snaps_in_prepare_inputs = "pad_only"
 
     @classmethod
     def hub_repo_id(cls, pretext: str, mask_radius: str, mask_length: int) -> str:

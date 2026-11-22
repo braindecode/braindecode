@@ -301,12 +301,10 @@ class USleep(EEGModuleMixin, nn.Module):
             # output is (B, n_classes, S)
         )
 
-    def _check_input_shape(
-        self, x: torch.Tensor, args: tuple, kwargs: dict
-    ) -> str | None:
+    def _input_chans_and_times(self, x: torch.Tensor) -> tuple[int, int | None, bool]:
         if x.ndim == 4:
-            x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
-        return super()._check_input_shape(x, args, kwargs)
+            return x.shape[2], x.shape[1] * x.shape[3], False
+        return super()._input_chans_and_times(x)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:

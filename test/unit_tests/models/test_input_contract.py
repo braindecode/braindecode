@@ -3,11 +3,22 @@
 import inspect
 import warnings
 
+import numpy as np
 import pytest
 import torch
 
+import braindecode.models.base as base_mod
 from braindecode.datasets import pad_channels_collate
-from braindecode.models import LUNA, EEGConformer
+from braindecode.models import (
+    AXON,
+    CORTEG,
+    DIVER1,
+    LUNA,
+    BrainBERT,
+    EEGConformer,
+    SensingDynamics,
+    TinyMyo,
+)
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
@@ -233,3 +244,156 @@ def test_eval_is_deterministic_and_batch_independent(
         if la.ndim >= 1 and la.shape[0] == x.shape[0] and l1.shape[0] == 1:
             tol = 1e-4 * max(1.0, l1.abs().max().item())
             torch.testing.assert_close(la[:1], l1, rtol=1e-4, atol=tol)
+
+
+def test_no_hf_hub_backfill_and_diver1_on_non_divisible(monkeypatch):
+    seeg_chs = [
+        {
+            "ch_name": f"A{i + 1}",
+            "kind": "seeg",
+            "loc": np.array([0.01 * (i + 1), 0.02, -0.01, *([0.0] * 9)]),
+        }
+        for i in range(3)
+    ]
+    orig_eeg_init = base_mod.EEGModuleMixin.__init__
+    had_hub_config = []
+
+    def _init_without_hub_config(self, *args, **kwargs):
+        self.__dict__.pop("_hub_mixin_config", None)
+        had_hub_config.append(getattr(self, "_hub_mixin_config", None))
+        return orig_eeg_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(base_mod, "HAS_HF_HUB", False)
+    monkeypatch.setattr(base_mod.EEGModuleMixin, "__init__", _init_without_hub_config)
+
+    luna = LUNA(
+        n_chans=3, n_outputs=2, n_times=1000, embed_dim=16, depth=1, num_heads=2
+    ).eval()
+    assert had_hub_config == [None]
+    assert luna.on_non_divisible == "pad"
+    assert luna._min_n_times == 1
+    with torch.no_grad(), pytest.warns(UserWarning, match="LUNA snapped"):
+        assert luna(torch.randn(2, 3, 1)).shape == (2, 2)
+
+    tinymyo = TinyMyo(
+        n_chans=3, n_outputs=2, n_times=100, embed_dim=24, depth=1, num_heads=2
+    ).eval()
+    assert tinymyo.on_non_divisible == "pad"
+    assert tinymyo._min_n_times == 1
+    with torch.no_grad(), pytest.warns(UserWarning, match="TinyMyo snapped"):
+        assert tinymyo(torch.randn(2, 3, 1)).shape == (2, 2)
+
+    brainbert = BrainBERT(
+        n_chans=2,
+        n_outputs=2,
+        n_times=2048,
+        hidden_dim=32,
+        ffn_dim=64,
+        n_layers=1,
+        n_heads=2,
+    ).eval()
+    assert brainbert.on_non_divisible == "pad"
+    assert brainbert._min_n_times == 1
+
+    diver = DIVER1(
+        chs_info=seeg_chs,
+        n_outputs=2,
+        n_times=1000,
+        sfreq=500.0,
+        d_model=64,
+        n_layers=1,
+    ).eval()
+    assert diver.on_non_divisible == "pad"
+
+
+def test_axon_crop_suppresses_warning_and_pad_snaps_patches():
+    chs_info = [
+        {"ch_name": name, "kind": "eeg", "loc": np.zeros(12)}
+        for name in ("Fz", "Cz", "Pz")
+    ]
+    axon = AXON(
+        chs_info=chs_info,
+        n_outputs=2,
+        n_times=None,
+        embed_dim=32,
+        depth=1,
+        num_heads=2,
+    ).eval()
+    x = torch.randn(2, 3, 1000)
+    with torch.no_grad(), warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        crop_out = axon(x, return_features=True)
+    assert not [w for w in caught if "snapped" in str(w.message)]
+    assert crop_out["tokens"].shape == (2, 3, 5, 32)
+
+    axon.on_non_divisible = "pad"
+    with torch.no_grad(), pytest.warns(
+        UserWarning, match=r"AXON snapped input length 1000 to 1100"
+    ):
+        pad_out = axon(x, return_features=True)
+    assert pad_out["tokens"].shape == (2, 3, 6, 32)
+
+
+def test_secondary_time_inputs_snap_positional_and_keyword():
+    ecog_chs = [
+        {
+            "ch_name": f"G{i + 1}",
+            "kind": "ecog",
+            "loc": np.array([0.02 * (i + 1), 0.03, 0.05, *([0.0] * 9)]),
+        }
+        for i in range(2)
+    ]
+    corteg = CORTEG(
+        chs_info=ecog_chs,
+        n_outputs=2,
+        n_times=64,
+        embed_dim=32,
+        depth=2,
+        num_heads=2,
+        n_merge_blocks=1,
+        knn_k=2,
+        on_non_divisible="pad",
+    ).eval()
+    seen_corteg = []
+    corteg.register_forward_pre_hook(
+        lambda _m, a, kw: seen_corteg.append((a, kw)), with_kwargs=True
+    )
+    x = torch.randn(2, 2, 30)
+    x_hi = torch.randn(2, 2, 48)
+    with torch.no_grad():
+        out_pos = corteg(x, x_hi)
+        out_kw = corteg(x=x, x_hi=x_hi)
+    assert seen_corteg[0][0][0].shape == (2, 2, 32)
+    assert seen_corteg[0][0][1].shape == (2, 2, 50)
+    assert seen_corteg[1][1]["x"].shape == (2, 2, 32)
+    assert seen_corteg[1][1]["x_hi"].shape == (2, 2, 50)
+    torch.testing.assert_close(out_pos, out_kw)
+
+    sd = SensingDynamics(
+        n_chans=16,
+        n_outputs=3,
+        n_times=200,
+        sfreq=2000.0,
+        temporal_channels=8,
+        mid_channels=8,
+        spatial_channels=8,
+        mlp_hidden=16,
+    ).eval()
+    sd._time_axis = "fixed"
+    seen_sd = []
+    sd.register_forward_pre_hook(
+        lambda _m, a, kw: seen_sd.append((a, kw)), with_kwargs=True
+    )
+    x_emg = torch.randn(2, 16, 201)
+    x_lp = torch.randn(2, 16, 201)
+    with torch.no_grad(), pytest.warns(
+        UserWarning, match=r"SensingDynamics snapped input length 201 to n_times=200"
+    ):
+        sd_pos = sd(x_emg, x_lp)
+    with torch.no_grad():
+        sd_kw = sd(x=x_emg, x_lowpass=x_lp)
+    assert seen_sd[0][0][0].shape == (2, 16, 200)
+    assert seen_sd[0][0][1].shape == (2, 16, 200)
+    assert seen_sd[1][1]["x"].shape == (2, 16, 200)
+    assert seen_sd[1][1]["x_lowpass"].shape == (2, 16, 200)
+    torch.testing.assert_close(sd_pos, sd_kw)

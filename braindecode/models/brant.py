@@ -284,6 +284,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Upstream's seizure head is an MLP trained on private data; braindecode
         # ships a bare linear layer, as for BrainBERT.
         self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
+        self._n_times_step = self.patch_size
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""

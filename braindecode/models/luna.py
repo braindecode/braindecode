@@ -295,6 +295,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
 
         self._init_parameters()
+        self.on_non_divisible = on_non_divisible
         self._n_times_step = self.patch_size
         self._snaps_in_prepare_inputs = False
         self._min_n_times = 1 if on_non_divisible == "pad" else self.patch_size

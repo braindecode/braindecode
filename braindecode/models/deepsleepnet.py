@@ -293,6 +293,11 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             else nn.Linear(fc_out_features, self.n_outputs)
         )
 
+    def _input_chans_and_times(self, x: torch.Tensor) -> tuple[int, int | None, bool]:
+        if x.ndim == 4 and x.shape[1] == 1:
+            return x.shape[2], x.shape[3], True
+        return super()._input_chans_and_times(x)
+
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
         if x.ndim == 3:

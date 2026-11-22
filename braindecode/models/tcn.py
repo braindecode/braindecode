@@ -92,7 +92,6 @@ class BDTCN(EEGModuleMixin, nn.Module):
             torch.nn.AdaptiveAvgPool1d(1), torch.nn.Flatten()
         )
         self._min_n_times = self.base_tcn.min_len
-        self._has_ensure4d = True
 
     def forward(self, x):
         x = self.base_tcn(x)

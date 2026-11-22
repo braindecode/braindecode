@@ -223,7 +223,7 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._min_n_times = patch_size
         self._n_times_step = patch_stride
         self._n_times_offset = patch_size
-        self._snaps_in_prepare_inputs = False
+        self._snaps_in_prepare_inputs = "pad_only"
 
     def _build_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(

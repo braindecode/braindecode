@@ -249,6 +249,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         self.patch_tokenizer = PatchTokenizer(
             patch_size, self.n_times, on_non_divisible=on_non_divisible
         )
+        self._n_times_step = patch_size
         # Time-major flattening of the last convolution: (frames, filters).
         self.embed_dim = n_filters[-1] * (patch_size // math.prod(strides))
 

@@ -238,7 +238,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         )
         self._n_times_step = self.patch_size
         self._min_n_times = self.patch_size
-        self._snaps_in_prepare_inputs = False
+        self._snaps_in_prepare_inputs = "pad_only"
 
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):

@@ -464,6 +464,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.patch_tokenizer = PatchTokenizer(
             patch_size, self.n_times, on_non_divisible=on_non_divisible
         )
+        self._n_times_step = patch_size
         embed_dim = out_chans * (patch_size // 8)
         # LaBraM's attention would silently floor the head width otherwise.
         if embed_dim % num_heads:

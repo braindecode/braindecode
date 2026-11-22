@@ -657,7 +657,7 @@ def test_labram_forward_none_ch_names_wrong_count_raises(chs_info, n_outputs):
     model = _small_labram_for_ch_names(chs_info, n_outputs)
     x = torch.randn(1, 22, 400)  # not 128
 
-    with pytest.raises(ValueError, match="ch_names is None"):
+    with pytest.raises(ValueError, match="built for n_chans=128 and got 22 channels"):
         model(x)
 
 
@@ -2508,7 +2508,7 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
 @pytest.mark.parametrize(
     "metadata,pooling,match",
     [
-        (None, "mean", "built for 6 channels but got input with 9"),
+        (None, "mean", "built for n_chans=6 and got 9 channels"),
         (torch.zeros(3, 5), "mean", r"shape \(9, 5\)"),
         (torch.zeros(9, 4), "mean", r"shape \(9, 5\)"),
         (torch.full((9, 5), 7.0), "mean", "modality column"),
@@ -2517,7 +2517,7 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
             "mean",
             "sub-modality",
         ),
-        (torch.zeros(9, 5), "flatten", "pooling='flatten'"),
+        (torch.zeros(9, 5), "flatten", "built for n_chans=6 and got 9 channels"),
     ],
 )
 def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, match):
@@ -3120,14 +3120,14 @@ def test_mapa_flatten_pooling_stays_tied_to_its_montage():
         d_model=64,
         pooling="flatten",
     ).eval()
-    with pytest.raises(ValueError, match="pooling='flatten'"):
+    with pytest.raises(ValueError, match="built for n_chans=5 and got 8 channels"):
         mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), MAPA.sensor_indices(MAPA_SUBJECT_B))
 
 
 @pytest.mark.parametrize(
     "sensor_indices,match",
     [
-        (None, "got input with 8 channels"),
+        (None, "built for n_chans=5 and got 8 channels"),
         (torch.zeros(3, 3, dtype=torch.long), r"shape \(8, 3\)"),
         (torch.zeros(8, 3), "must hold integers"),
         (torch.full((8, 3), 75), "region slots below 75"),
@@ -3140,7 +3140,7 @@ def test_mapa_bad_sensor_indices_are_rejected(mapa_model, sensor_indices, match)
 
 
 def test_mapa_window_shorter_than_one_slow_token_is_rejected(mapa_model):
-    with pytest.raises(ValueError, match="at least 448 samples"):
+    with pytest.raises(ValueError, match="needs at least 448 time samples"):
         mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 256))
 
 
@@ -3215,7 +3215,7 @@ def test_mapa_session_normalization_reads_another_subject():
     [
         ((1, 5, 2048), "takes a spectrogram"),
         ((1, 5, 19, 32), "takes a spectrogram"),
-        ((1, 5, 20, 4), "at least 8 frames"),
+        ((1, 5, 20, 4), "needs at least 8 time samples"),
     ],
 )
 def test_mapa_session_normalization_rejects_bad_input(shape, match):
@@ -3538,7 +3538,7 @@ def test_duin_rejects_invalid_geometry():
     with pytest.raises(ValueError, match="product of strides"):
         DuIN(n_chans=3, n_outputs=2, n_times=60, **{**_DUIN_SMALL, "strides": (3, 1)})
     model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL)
-    with pytest.raises(ValueError, match="time samples"):
+    with pytest.raises(ValueError, match="built for n_times=60 and got 40 samples"):
         model(torch.randn(1, 3, 40))
 
 

@@ -342,7 +342,6 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
         n_pool1_min = max(1, self.final_conv_length * self.pool2_kernel_size - delta2)
         delta1 = 2 * (self.kernel_length // 2) - self.kernel_length + 1
         self._min_n_times = max(1, n_pool1_min * self.pool1_kernel_size - delta1)
-        self._has_ensure4d = True
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()

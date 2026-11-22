@@ -356,7 +356,6 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             min_time = (min_time - 1) * pool_stride + self.pool_time_length
             min_time = (min_time - 1) * conv_stride + filter_length
         self._min_n_times = min_time
-        self._has_ensure4d = True
 
         # Initialization, xavier is same as in our paper...
         self._init_parameters()

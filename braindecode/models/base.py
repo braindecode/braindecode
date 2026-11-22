@@ -42,6 +42,7 @@ from braindecode.models.util import (
     track_model_init_kwargs,
 )
 from braindecode.modules.channels import ChannelLayer
+from braindecode.modules.layers import Ensure4d
 from braindecode.modules.parametrization import make_parametrizations_scriptable
 from braindecode.version import __version__
 
@@ -397,6 +398,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "_warned_length_snap",
         "_on_non_divisible_explicit",
         "_snaps_in_prepare_inputs",
+        "_has_ensure4d",
         "_materialized_n_chans",
         "_materialized_n_times",
     ]
@@ -543,11 +545,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self._n_times = n_times  # type: ignore[assignment]
         self._sfreq = sfreq  # type: ignore[assignment]
 
-        # Back-fill instance attributes from _hub_mixin_config for any
-        # params the subclass didn't store on self.  Skip EEG params
-        # (stored as self._*) and descriptors (properties).
-        for key, val in getattr(self, "_hub_mixin_config", {}).items():
-            if key in _EEG_PARAMS:
+        # Back-fill instance attributes from captured init kwargs (or
+        # _hub_mixin_config) for any params the subclass didn't store on self.
+        # Skip EEG params (stored as self._*) and descriptors (properties).
+        init_config = (
+            getattr(self, "_braindecode_init_kwargs", None)
+            or getattr(self, "_hub_mixin_config", None)
+            or {}
+        )
+        for key, val in init_config.items():
+            if key in _EEG_PARAMS or isinstance(val, (torch.nn.Module, torch.Tensor)):
                 continue
             if hasattr(getattr(type(self), key, None), "__get__"):
                 continue
@@ -558,7 +565,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self._n_times_step: int = 1
         self._n_times_offset: int = 0
         self._warned_length_snap: bool = False
-        self._snaps_in_prepare_inputs: bool = True
+        self._snaps_in_prepare_inputs: bool | str = True
+        self._has_ensure4d: bool | None = None
         self._materialized_n_chans: int | None = None
         self._materialized_n_times: int | None = None
         self._on_non_divisible_explicit: bool = "on_non_divisible" in getattr(
@@ -815,6 +823,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     new_kwargs[key] = snapped
         return (tuple(new_args) if args_changed else args), new_kwargs
 
+    def _uses_ensure4d(self) -> bool:
+        cached = getattr(self, "_has_ensure4d", None)
+        if cached is None:
+            cached = any(isinstance(m, Ensure4d) for m in self.modules())
+            self._has_ensure4d = cached
+        return cached
+
+    def _input_chans_and_times(self, x: torch.Tensor) -> tuple[int, int | None, bool]:
+        if x.ndim < 3:
+            return x.shape[1], None, False
+        if x.ndim == 4 and x.shape[3] == 1 and self._uses_ensure4d():
+            return x.shape[1], x.shape[2], False
+        return x.shape[1], x.shape[-1], True
+
     def _check_input_shape(
         self, x: torch.Tensor, args: tuple, kwargs: dict
     ) -> str | None:
@@ -829,26 +851,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if (time_axis is None and channel_axis is None) or x.ndim < 2:
             return None
         name = type(self).__name__
+        got_chans, got_times, can_snap_last_dim = self._input_chans_and_times(x)
 
         if channel_axis == "fixed" and not self._accepts_any_n_chans(args, kwargs):
             n_chans = self._signal_param("n_chans")
-            if n_chans is not None and x.shape[1] != n_chans:
+            if n_chans is not None and got_chans != n_chans:
                 raise ValueError(
-                    f"{name} was built for n_chans={n_chans} and got {x.shape[1]} "
+                    f"{name} was built for n_chans={n_chans} and got {got_chans} "
                     f"channels (input shape {tuple(x.shape)}). Rebuild it with "
-                    f"n_chans={x.shape[1]}, or map the montage with "
+                    f"n_chans={got_chans}, or map the montage with "
                     "model.adapt_input(chs_info=...)."
                 )
 
-        if x.ndim < 3:
+        if got_times is None:
             return None
-
-        time_dim = (
-            2
-            if x.ndim == 4 and x.shape[3] == 1 and getattr(self, "_has_ensure4d", False)
-            else -1
-        )
-        got_times = x.shape[time_dim]
 
         min_n_times = getattr(self, "_min_n_times", None)
         if min_n_times is not None and got_times < min_n_times:
@@ -869,7 +885,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     on_non_divisible != "error"
                     and diff <= max(1, n_times // 100)
                     and diff <= max(1, step)
-                    and time_dim == -1
+                    and can_snap_last_dim
                 ):
                     return "fixed_snap"
                 raise ValueError(
@@ -881,7 +897,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 )
             return None
 
-        if step > 1 and time_dim == -1:
+        if step > 1 and can_snap_last_dim:
             rem = (got_times - offset) % step if got_times >= offset else -1
             if rem != 0:
                 if on_non_divisible == "error":
@@ -926,13 +942,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             return args, kwargs
 
         nominal = self._signal_param("n_times")
+        on_non_divisible = getattr(self, "on_non_divisible", "crop")
         snapped_len = self._snap_grid_target(got_times)
-        if getattr(self, "_snaps_in_prepare_inputs", True):
+        snap_mode = getattr(self, "_snaps_in_prepare_inputs", True)
+        snap_here = snap_mode is True or (
+            snap_mode == "pad_only" and on_non_divisible == "pad"
+        )
+        snapped_anywhere = snap_here or snap_mode is False
+        if snap_here:
             args, kwargs = self._replace_time_inputs(
                 args, kwargs, lambda key, t: self._snap_grid_tensor(key, t)
             )
         if (
-            not explicit_policy
+            snapped_anywhere
+            and not explicit_policy
             and got_times != nominal
             and snapped_len != got_times
             and not getattr(self, "_warned_length_snap", False)
@@ -941,7 +964,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             warnings.warn(
                 f"{name} snapped input length {got_times} to {snapped_len} "
                 f"(step={getattr(self, '_n_times_step', 1)}, "
-                f"on_non_divisible={getattr(self, 'on_non_divisible', 'crop')!r}).",
+                f"on_non_divisible={on_non_divisible!r}).",
                 UserWarning,
                 stacklevel=3,
             )

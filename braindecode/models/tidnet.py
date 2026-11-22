@@ -117,7 +117,6 @@ class TIDNet(EEGModuleMixin, nn.Module):
             activation=activation,
         )
         self._min_n_times = max(1, pooling)
-        self._has_ensure4d = True
 
         self._num_features = self.dscnn.num_features
 

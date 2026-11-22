@@ -204,6 +204,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
                 "Pass None to average every frame instead."
             )
         _check_on_non_divisible(on_non_divisible)
+        self.on_non_divisible = on_non_divisible
         self.pool_n_frames = pool_n_frames
         self.min_frames = 1 if pool_n_frames is None else pool_n_frames
         warn_if_sfreq_differs("BrainBERT", self._sfreq, 2048)

@@ -136,6 +136,11 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
                 nn.Linear(in_features=self.len_last_layer, out_features=self.n_outputs),
             )
 
+    def _input_chans_and_times(self, x: torch.Tensor) -> tuple[int, int | None, bool]:
+        if x.ndim == 4 and x.shape[1] == 1:
+            return x.shape[2], x.shape[3], True
+        return super()._input_chans_and_times(x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.

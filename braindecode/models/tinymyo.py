@@ -270,6 +270,7 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.norm = norm_layer(embed_dim)
         self.final_layer = nn.Linear(self.n_chans * embed_dim, self.n_outputs)
+        self.on_non_divisible = on_non_divisible
         self._n_times_step = patch_size
         self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 

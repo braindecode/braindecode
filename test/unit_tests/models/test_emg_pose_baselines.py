@@ -214,7 +214,9 @@ def test_vemg2pose_tracking_forward_preserves_gradients():
 def test_vemg2pose_rejects_windows_without_valid_samples():
     model = _small_vemg2pose()
 
-    with pytest.raises(ValueError, match="left context"):
+    with pytest.raises(
+        ValueError, match=rf"needs at least {model._min_n_times} time samples"
+    ):
         model(torch.randn(1, 4, model.left_context))
 
 
