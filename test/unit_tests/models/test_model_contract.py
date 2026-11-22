@@ -16,7 +16,7 @@ import pickle  # nosec B403 - the test reloads a model it just pickled
 import re
 import sys
 from collections import namedtuple
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 import pytest
 import torch
@@ -35,36 +35,13 @@ from braindecode.models.util import (
     models_dict,
     models_mandatory_parameters,
 )
-from test.unit_tests.models._fixtures import _get_signal_params
+from test.unit_tests.models._fixtures import (
+    _build_case,
+    _materialize,
+    _tensor_leaves,
+)
 
 all_models_dict = dict(models_dict)
-
-
-def _tensor_leaves(value):
-    """Yield tensor leaves from nested model outputs."""
-    if torch.is_tensor(value):
-        yield value
-    elif isinstance(value, Mapping):
-        for child in value.values():
-            yield from _tensor_leaves(child)
-    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        for child in value:
-            yield from _tensor_leaves(child)
-
-
-def _build_case(model_name, required_params, signal_params):
-    signal = _get_signal_params(signal_params)
-    model_kwargs = _get_signal_params(signal_params, required_params)
-    model = all_models_dict[model_name](**model_kwargs).eval()
-    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
-    return model, x
-
-
-def _materialize(model, x):
-    """Run one no-grad forward if lazy parameters still need their shapes."""
-    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
-        with torch.no_grad():
-            model(x)
 
 
 def _clone_state(model):
