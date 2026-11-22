@@ -96,18 +96,16 @@ class _AvgPool1dWithConv(nn.Module):
 
     def __init__(
         self,
-        kernel_size: int | tuple[int],
-        stride: int | tuple[int] = 1,
-        dilation: int | tuple[int] = 1,
-        padding: int | tuple[int] = 0,
+        kernel_size: tuple[int],
+        stride: tuple[int],
+        dilation: tuple[int],
+        padding: tuple[int],
     ) -> None:
         super().__init__()
-        self.kernel_size = (
-            (kernel_size,) if isinstance(kernel_size, int) else tuple(kernel_size)
-        )
-        self.stride = (stride,) if isinstance(stride, int) else tuple(stride)
-        self.dilation = (dilation,) if isinstance(dilation, int) else tuple(dilation)
-        self.padding = (padding,) if isinstance(padding, int) else tuple(padding)
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.dilation = dilation
+        self.padding = padding
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         in_channels = x.shape[1]
@@ -135,12 +133,15 @@ def _has_strided_layer(model: nn.Module) -> bool:
     return False
 
 
-def _replace_submodule(root: nn.Module, path: str, new_module: nn.Module) -> None:
-    parts = path.split(".")
-    parent = root
-    for part in parts[:-1]:
-        parent = getattr(parent, part)
-    setattr(parent, parts[-1], new_module)
+def _as_list(value, rank: int) -> list[int]:
+    if isinstance(value, (tuple, list)):
+        return [int(v) for v in value]
+    return [int(value)] * rank
+
+
+def _like(old, new: list[int]):
+    # keep an int attribute an int when it stays one value (MaxPool1d stores ints)
+    return tuple(new) if isinstance(old, (tuple, list)) or len(new) > 1 else new[0]
 
 
 def to_dense_prediction_model(
@@ -160,7 +161,7 @@ def to_dense_prediction_model(
         Sequential convolutional model to convert in place.
     axis : int or tuple of int, default=(2, 3)
         Intermediate tensor axes to convert; only ``2``, ``3``, or ``(2, 3)``
-        are allowed.
+        are allowed. 1-D layers convert when ``2`` is included.
     """
     if isinstance(axis, (int, np.integer)):
         axes = (int(axis),)
@@ -171,12 +172,13 @@ def to_dense_prediction_model(
     if not axes or any(ax not in (2, 3) for ax in axes):
         raise ValueError(f"Only 2 and 3 are allowed for axis; got {axis!r}.")
 
-    ax_2d = [ax - 2 for ax in axes]
-    convert_1d = 0 in ax_2d
-    stride_1d = 1
-    stride_2d = [1, 1]
-    replacements: list[tuple[str, nn.Module]] = []
-
+    # positions in a layer's (H, W) or (T,) stride tuple, and the stride removed so far
+    conv_axes = {1: [0] if 2 in axes else [], 2: [ax - 2 for ax in axes]}
+    stride_so_far = {1: [1], 2: [1, 1]}
+    avg_pools = {
+        1: (nn.AvgPool1d, _AvgPool1dWithConv),
+        2: (nn.AvgPool2d, AvgPool2dWithConv),
+    }
     skip_types = (
         nn.modules.conv._ConvTransposeNd,
         nn.modules.pooling._AdaptiveAvgPoolNd,
@@ -185,146 +187,56 @@ def to_dense_prediction_model(
     )
     known_1d = (nn.Conv1d, nn.MaxPool1d, nn.AvgPool1d, _AvgPool1dWithConv)
     known_2d = (nn.Conv2d, nn.MaxPool2d, nn.AvgPool2d, AvgPool2dWithConv)
+    replacements: list[tuple[str, nn.Module]] = []
 
     for name, module in list(model.named_modules()):
         if module is model or isinstance(module, skip_types):
             continue
         if isinstance(module, Chomp1d):
-            if convert_1d and stride_1d > 1:
-                module.chomp_size = int(module.chomp_size * stride_1d)
+            module.chomp_size = int(module.chomp_size * stride_so_far[1][0])
+            continue
+        if not isinstance(module, (*known_1d, *known_2d)) and any(
+            True for _ in module.children()
+        ):
+            continue
+        dilation = getattr(module, "dilation", None)
+        stride = getattr(module, "stride", None)
+        if dilation is None and stride is None:
             continue
 
-        is_known = isinstance(module, (*known_1d, *known_2d))
-        if not is_known and any(True for _ in module.children()):
+        sample = stride if stride is not None else dilation
+        rank = 1 if isinstance(module, known_1d) else 2
+        if not isinstance(module, (*known_1d, *known_2d)):
+            rank = 1 if isinstance(sample, tuple) and len(sample) == 1 else 2
+        conv, so_far = conv_axes[rank], stride_so_far[rank]
+        if not conv:
             continue
 
-        has_dil = getattr(module, "dilation", None) is not None
-        has_str = getattr(module, "stride", None) is not None
-        if not has_dil and not has_str:
+        new_d = _as_list(1 if dilation is None else dilation, rank)
+        new_s = _as_list(1 if stride is None else stride, rank)
+        padding = getattr(module, "padding", 0)
+        new_p = None if isinstance(padding, str) else _as_list(padding, rank)
+        for i in conv:
+            new_d[i] *= so_far[i]
+            if new_p is not None:
+                new_p[i] *= so_far[i]
+            so_far[i] *= new_s[i]
+            new_s[i] = 1
+
+        pool_cls, conv_pool_cls = avg_pools[rank]
+        if isinstance(module, pool_cls) and any(d > 1 for d in new_d):
+            kernel = tuple(_as_list(module.kernel_size, rank))
+            pad = tuple(new_p) if new_p is not None else (0,) * rank
+            replacements.append(
+                (name, conv_pool_cls(kernel, tuple(new_s), tuple(new_d), pad))
+            )
             continue
-
-        is_1d = isinstance(module, known_1d)
-        if not is_1d and not isinstance(module, known_2d):
-            sample = module.stride if has_str else module.dilation
-            is_1d = isinstance(sample, tuple) and len(sample) == 1
-
-        if is_1d:
-            if not convert_1d:
-                continue
-            raw_d = module.dilation if has_dil else 1
-            old_d = int(raw_d[0]) if isinstance(raw_d, (tuple, list)) else int(raw_d)
-            new_d = int(old_d * stride_1d)
-
-            raw_s = module.stride if has_str else 1
-            old_s = int(raw_s[0]) if isinstance(raw_s, (tuple, list)) else int(raw_s)
-
-            old_p = getattr(module, "padding", 0)
-            if isinstance(old_p, tuple):
-                new_p_1d: int | tuple[int, ...] | str = (int(old_p[0] * stride_1d),)
-            elif isinstance(old_p, (int, np.integer)):
-                new_p_1d = int(old_p * stride_1d)
-            else:
-                new_p_1d = old_p
-
-            stride_1d *= old_s
-            if isinstance(module, nn.AvgPool1d) and new_d > 1:
-                k_1d = (
-                    module.kernel_size[0]
-                    if isinstance(module.kernel_size, tuple)
-                    else int(module.kernel_size)
-                )
-                p_1d = (
-                    new_p_1d[0]
-                    if isinstance(new_p_1d, tuple)
-                    else (int(new_p_1d) if isinstance(new_p_1d, int) else 0)
-                )
-                replacements.append(
-                    (
-                        name,
-                        _AvgPool1dWithConv(
-                            kernel_size=k_1d, stride=1, dilation=new_d, padding=p_1d
-                        ),
-                    )
-                )
-            else:
-                if has_dil:
-                    module.dilation = (
-                        (new_d,) if isinstance(module.dilation, tuple) else new_d
-                    )
-                if isinstance(old_p, (int, np.integer, tuple)) and hasattr(
-                    module, "padding"
-                ):
-                    module.padding = new_p_1d  # type: ignore[assignment]
-                if has_str:
-                    module.stride = (1,) if isinstance(module.stride, tuple) else 1
-        else:
-            if has_dil:
-                raw_d2 = module.dilation
-                old_d2 = (
-                    [int(v) for v in raw_d2]
-                    if isinstance(raw_d2, (tuple, list))
-                    else [int(raw_d2), int(raw_d2)]
-                )
-            else:
-                old_d2 = [1, 1]
-            new_d2 = list(old_d2)
-            for idx in ax_2d:
-                if idx < len(new_d2):
-                    new_d2[idx] = int(old_d2[idx] * stride_2d[idx])
-
-            if has_str:
-                raw_s2 = module.stride
-                old_s2 = (
-                    [int(v) for v in raw_s2]
-                    if isinstance(raw_s2, (tuple, list))
-                    else [int(raw_s2), int(raw_s2)]
-                )
-            else:
-                old_s2 = [1, 1]
-            new_s2 = list(old_s2)
-
-            old_p2 = getattr(module, "padding", 0)
-            if isinstance(old_p2, (int, np.integer)):
-                new_p2: list[int] | None = [int(old_p2), int(old_p2)]
-            elif isinstance(old_p2, (tuple, list)):
-                new_p2 = [int(v) for v in old_p2]
-            else:
-                new_p2 = None
-            if new_p2 is not None:
-                for idx in ax_2d:
-                    if idx < len(new_p2):
-                        new_p2[idx] = int(new_p2[idx] * stride_2d[idx])
-
-            for idx in ax_2d:
-                if idx < len(old_s2):
-                    stride_2d[idx] *= int(old_s2[idx])
-                    new_s2[idx] = 1
-
-            if isinstance(module, nn.AvgPool2d) and any(d > 1 for d in new_d2):
-                k_2d = (
-                    module.kernel_size
-                    if isinstance(module.kernel_size, tuple)
-                    else (int(module.kernel_size), int(module.kernel_size))
-                )
-                p_2d = tuple(new_p2) if new_p2 is not None else (0, 0)
-                replacements.append(
-                    (
-                        name,
-                        AvgPool2dWithConv(
-                            kernel_size=k_2d,
-                            stride=tuple(new_s2),
-                            dilation=tuple(new_d2),
-                            padding=p_2d,
-                        ),
-                    )
-                )
-            else:
-                if has_dil:
-                    module.dilation = tuple(new_d2)
-                if new_p2 is not None and hasattr(module, "padding"):
-                    module.padding = tuple(new_p2)  # type: ignore[assignment]
-                if has_str:
-                    module.stride = tuple(new_s2)
+        if dilation is not None:
+            module.dilation = _like(dilation, new_d)
+        if new_p is not None and hasattr(module, "padding"):
+            module.padding = _like(padding, new_p)  # type: ignore[assignment]
+        if stride is not None:
+            module.stride = _like(stride, new_s)
 
     for name, new_module in replacements:
-        _replace_submodule(model, name, new_module)
+        model.set_submodule(name, new_module)
