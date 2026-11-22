@@ -411,7 +411,12 @@ class VEMG2Pose(
         )
         self.decoder.apply(_init_weights)
 
-    def forward(self, x: torch.Tensor, y0: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        y0: torch.Tensor | None = None,
+        return_features: bool = False,
+    ):
         """Decode hand pose from raw EMG.
 
         Parameters
@@ -422,9 +427,19 @@ class VEMG2Pose(
             Ground-truth initial pose (Tracking mode). Falls back to zeros
             (Regression mode) when omitted, which is how the released
             ``regression`` checkpoint was trained.
+        return_features : bool, default=False
+            If True, return a dictionary with batch-first encoder ``"features"``,
+            mean-pooled ``"embedding"``, and ``"cls_token"`` before rollout.
         """
         batch_size, _, n_times = x.shape
         features = self.encoder(x)
+        if not torch.jit.is_scripting() and return_features:
+            seq = features.transpose(1, 2)
+            return {
+                "features": seq,
+                "embedding": seq.mean(dim=1),
+                "cls_token": None,
+            }
 
         # Predictions span the input past the left context, unrolled at
         # ``rollout_rate``.

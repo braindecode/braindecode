@@ -234,11 +234,18 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         )
 
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(self, X):
+    def forward(self, X, return_features: bool = False):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
         features = self.eeg_encoder(X)
         if features.ndim == 2:
             features = features.unsqueeze(-1)
+        if not torch.jit.is_scripting() and return_features:
+            seq = features.transpose(1, 2)
+            return {
+                "features": seq,
+                "embedding": seq.mean(dim=1),
+                "cls_token": None,
+            }
         batch_size = features.shape[0]
         # Project every dense prediction, then average over time.
         per_step = features.transpose(1, 2).reshape(-1, features.shape[1])

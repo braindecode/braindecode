@@ -432,7 +432,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.n_windows * self.conv_block_pool_size_1 * self.conv_block_pool_size_2
         )
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor, return_features: bool = False):
         # Dimension: (batch_size, C, T)
         X = self.ensuredims(X)
         # Dimension: (batch_size, C, T, 1)
@@ -467,6 +467,14 @@ class ATCNet(EEGModuleMixin, nn.Module):
             # Dimension: (batch_size, F2)
 
             sw_concat.append(tcn_feat)
+
+        if not torch.jit.is_scripting() and return_features:
+            features = torch.stack(sw_concat, dim=1)
+            return {
+                "features": features,
+                "embedding": features.mean(dim=1),
+                "cls_token": None,
+            }
 
         # Outputs of sliding window can be either averaged after being
         # mapped by dense layer or concatenated then mapped by a dense

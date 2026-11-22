@@ -28,6 +28,12 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Every non-tokenizer model accepts ``model(x, return_features=True)`` and returns
+  a dictionary with ``"features"``, a mean-pooled 2-D ``"embedding"`` of shape
+  ``(batch, dim)``, and ``"cls_token"``; :class:`~braindecode.models.CBraMod`,
+  :class:`~braindecode.models.CSBrain`, and :class:`~braindecode.models.GCNsNet`
+  also build their classification heads at construction when input shapes are known
+  (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.CareSleepNet`,
   :class:`~braindecode.models.EEGInceptionMI`, :class:`~braindecode.models.FBCNet`,
   :class:`~braindecode.models.FBMSNet`, :class:`~braindecode.models.IFNet`,

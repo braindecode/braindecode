@@ -376,12 +376,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         import torch
 
         x = torch.randn(1, model.n_chans, model.n_times)
-        # Extract encoder features (consistent dict across all models)
+        # Extract encoder features and a mean-pooled 2-D embedding
         out = model(x, return_features=True)
+        embedding = out["embedding"]  # (batch, dim)
         features = out["features"]
 
         # Replace the classification head
         model.reset_head(n_outputs=10)
+
+    Note that ``torch.jit.script`` returns features only on models whose
+    ``forward`` declares ``return_features``.
 
     **Saving and restoring full configuration:**
 
@@ -402,6 +406,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     See :ref:`load-pretrained-models` for a complete tutorial.
     """
 
+    _feature_axis: ClassVar[int] = -1
+    _native_features: ClassVar[bool] = False
+
     #: Attributes that :func:`torch.jit.script` must not introspect. The
     #: signal-related properties raise :class:`ValueError` when their value was
     #: neither given nor inferable, and ``mapping`` carries a postponed
@@ -414,6 +421,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "mapping",
         "_time_axis",
         "_channel_axis",
+        "_feature_axis",
+        "_native_features",
+        "_head_in_features",
+        "_head_spec",
         "_time_inputs",
         "_min_n_times",
         "_n_times_step",
@@ -431,6 +442,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def __init_subclass__(cls, **kwargs):
         license = kwargs.pop("license", "bsd-3-clause")
+        cls._native_features = (
+            "return_features" in inspect.signature(cls.forward).parameters
+        )
 
         if "reset_head" in cls.__dict__:
             cls.reset_head = _new_head_follows_model(cls.__dict__["reset_head"])
@@ -995,6 +1009,54 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             )
         return args, kwargs
 
+    def _head_linear(self) -> torch.nn.Module | None:
+        """Return the last linear or convolutional layer inside ``final_layer``."""
+        final_layer = getattr(self, "final_layer", None)
+        if not isinstance(final_layer, torch.nn.Module):
+            return None
+        last: torch.nn.Module | None = None
+        for module in final_layer.modules():
+            if isinstance(module, (torch.nn.Linear, torch.nn.Conv1d, torch.nn.Conv2d)):
+                last = module
+        return last
+
+    def _pool_embedding(self, features: torch.Tensor) -> torch.Tensor:
+        """Mean-pool ``features`` to a 2-D ``(batch, dim)`` embedding."""
+        if features.ndim == 2:
+            return features
+        if features.ndim < 2:
+            raise ValueError(
+                f"{type(self).__name__}: expected features with at least 2 dimensions "
+                f"(batch, ..., dim), got shape {tuple(features.shape)}."
+            )
+        axis = self._feature_axis % features.ndim
+        if axis == 0:
+            raise ValueError(
+                f"{type(self).__name__}: _feature_axis={self._feature_axis} points to "
+                f"the batch axis for shape {tuple(features.shape)}."
+            )
+        if axis != features.ndim - 1:
+            features = features.movedim(axis, -1)
+        return features.mean(dim=tuple(range(1, features.ndim - 1)))
+
+    def _record_materialized_axes(
+        self,
+        args: tuple,
+        kwargs: dict,
+        had_lazy: bool,
+        need_chans: bool,
+        need_times: bool,
+    ) -> None:
+        if had_lazy and not any(
+            isinstance(p, UninitializedParameter) for p in self.parameters()
+        ):
+            x = self._first_input(args, kwargs)
+            if x is not None and x.ndim >= 3:
+                if need_chans and not self._accepts_any_n_chans(args, kwargs):
+                    self._materialized_n_chans = x.shape[1]
+                if need_times and not self._accepts_any_n_times(args, kwargs):
+                    self._materialized_n_times = x.shape[-1]
+
     def __call__(self, *args, **kwargs):
         args, kwargs = self._prepare_inputs(args, kwargs)
         need_chans = (
@@ -1008,16 +1070,66 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         had_lazy = (need_chans or need_times) and any(
             isinstance(p, UninitializedParameter) for p in self.parameters()
         )
+        if not self._native_features and "return_features" in kwargs:
+            kwargs = dict(kwargs)
+            want_features = bool(kwargs.pop("return_features"))
+            if want_features:
+                name = type(self).__name__
+                final_layer = getattr(self, "final_layer", None)
+                if not isinstance(final_layer, torch.nn.Module):
+                    raise ValueError(
+                        f"{name} has no final_layer; return_features needs a native "
+                        "implementation for this model."
+                    )
+                captured: list[Any] = []
+
+                def _capture(
+                    _module: torch.nn.Module, hook_args: tuple[Any, ...]
+                ) -> None:
+                    captured.append(hook_args[0] if hook_args else None)
+
+                handle = final_layer.register_forward_pre_hook(_capture)
+                try:
+                    super().__call__(*args, **kwargs)
+                finally:
+                    handle.remove()
+                self._record_materialized_axes(
+                    args, kwargs, had_lazy, need_chans, need_times
+                )
+                if len(captured) != 1:
+                    raise ValueError(
+                        f"{name}: final_layer ran {len(captured)} times in one "
+                        "forward; return_features needs a native implementation "
+                        "for this model."
+                    )
+                feat = captured[0]
+                if not isinstance(feat, torch.Tensor):
+                    raise ValueError(
+                        f"{name}: final_layer input is {type(feat).__name__}, not a "
+                        "Tensor; return_features needs a native implementation for "
+                        "this model."
+                    )
+                x = self._first_input(args, kwargs)
+                if feat.ndim < 2 or (x is not None and feat.shape[0] != x.shape[0]):
+                    raise ValueError(
+                        f"{name}: the head reads a tensor whose first axis is not "
+                        "the batch; return_features needs a native implementation "
+                        "for this model."
+                    )
+                return {
+                    "features": feat,
+                    "embedding": self._pool_embedding(feat),
+                    "cls_token": None,
+                }
+
         out = super().__call__(*args, **kwargs)
-        if had_lazy and not any(
-            isinstance(p, UninitializedParameter) for p in self.parameters()
-        ):
-            x = self._first_input(args, kwargs)
-            if x is not None and x.ndim >= 3:
-                if need_chans and not self._accepts_any_n_chans(args, kwargs):
-                    self._materialized_n_chans = x.shape[1]
-                if need_times and not self._accepts_any_n_times(args, kwargs):
-                    self._materialized_n_times = x.shape[-1]
+        self._record_materialized_axes(args, kwargs, had_lazy, need_chans, need_times)
+        if self._native_features and isinstance(out, dict) and "features" in out:
+            out.setdefault("cls_token", None)
+            if out.get("embedding") is None and isinstance(
+                out["features"], torch.Tensor
+            ):
+                out["embedding"] = self._pool_embedding(out["features"])
         return out
 
     def get_output_shape(self) -> tuple[int, ...]:

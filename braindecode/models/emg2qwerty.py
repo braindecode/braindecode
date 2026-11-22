@@ -430,10 +430,13 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         # it, so the default emissions-only path skips the extra transpose
         # + contiguous copy on every forward.
         if return_features:
-            return {
-                "features": encoded.transpose(0, 1).contiguous(),
+            features = encoded.transpose(0, 1).contiguous()
+            out: dict[str, torch.Tensor | None] = {
+                "features": features,
+                "embedding": features.mean(dim=1),
                 "cls_token": None,
             }
+            return out
         emissions = self.final_layer(encoded)
         if self.log_softmax:
             emissions = F.log_softmax(emissions, dim=-1)

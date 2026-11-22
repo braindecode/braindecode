@@ -307,17 +307,21 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self._sync_graph_shapes(node_counts)
         self.graph_initialized = True
 
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x, return_features: bool = False):
         """
         Parameters
         ----------
         x : torch.Tensor
             Input tensor of shape (batch_size, n_chans, n_times).
+        return_features : bool, default=False
+            If True, return a dictionary with ``"features"``, ``"embedding"``,
+            and ``"cls_token"`` before the linear readout.
 
         Returns
         -------
-        torch.Tensor
-            Output tensor of shape (batch_size, n_outputs).
+        torch.Tensor or dict
+            Output tensor of shape (batch_size, n_outputs), or feature dictionary
+            when ``return_features=True``.
         """
         if torch.jit.is_scripting():
             if not self.graph_initialized:
@@ -352,7 +356,15 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
                 x = F.max_pool1d(x, pool_size, ceil_mode=True)
             x = x.transpose(1, 2)
 
-        x = self.final_layer(self.dropout(x.flatten(1)))
+        x = self.dropout(x.flatten(1))
+        if not torch.jit.is_scripting() and return_features:
+            features = x.reshape(batch_size, n_times, -1)
+            return {
+                "features": features,
+                "embedding": features.mean(dim=1),
+                "cls_token": None,
+            }
+        x = self.final_layer(x)
         # Average the per-sample logits over time.
         return x.reshape(batch_size, n_times, self.n_outputs).mean(dim=1)
 

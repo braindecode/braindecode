@@ -46,6 +46,7 @@ class BDTCN(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: base_tcn.temporal_blocks.temporal_block_0.conv1.parametrizations.weight.original1
+    _feature_axis = 1
 
     def __init__(
         self,
@@ -93,7 +94,16 @@ class BDTCN(EEGModuleMixin, nn.Module):
         )
         self._min_n_times = self.base_tcn.min_len
 
-    def forward(self, x):
+    def forward(self, x, return_features: bool = False):
+        if not torch.jit.is_scripting() and return_features:
+            features = self.base_tcn.temporal_blocks(
+                self.base_tcn.ensuredims(x).squeeze(3)
+            )
+            return {
+                "features": features,
+                "embedding": features.mean(dim=-1),
+                "cls_token": None,
+            }
         x = self.base_tcn(x)
         x = self.final_layer(x)
         return x
