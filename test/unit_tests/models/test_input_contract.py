@@ -26,6 +26,7 @@ from test.unit_tests.models._fixtures import (
     _build_case,
     _materialize,
     _shapes,
+    _summary_row,
     _tensor_leaves,
     non_classification_models,
 )
@@ -64,7 +65,11 @@ def _matches_free_channels(out, ref, n_chans: int) -> bool:
     for lo, lr in zip(out_leaves, ref_leaves):
         if lo.ndim != lr.ndim or lo.ndim < 3:
             return False
-        if lo.shape[0] != lr.shape[0] or lo.shape[1] != n_chans or lo.shape[2:] != lr.shape[2:]:
+        if (
+            lo.shape[0] != lr.shape[0]
+            or lo.shape[1] != n_chans
+            or lo.shape[2:] != lr.shape[2:]
+        ):
             return False
     return True
 
@@ -101,8 +106,7 @@ def test_time_axis_matches_forward(model_name, required_params, signal_params):
         else:
             longer = model(torch.randn(2, C, 2 * T))
             assert (
-                next(_tensor_leaves(longer)).numel()
-                > next(_tensor_leaves(ref)).numel()
+                next(_tensor_leaves(longer)).numel() > next(_tensor_leaves(ref)).numel()
             )
 
 
@@ -327,8 +331,9 @@ def test_axon_crop_suppresses_warning_and_pad_snaps_patches():
     assert crop_out["tokens"].shape == (2, 3, 5, 32)
 
     axon.on_non_divisible = "pad"
-    with torch.no_grad(), pytest.warns(
-        UserWarning, match=r"AXON snapped input length 1000 to 1100"
+    with (
+        torch.no_grad(),
+        pytest.warns(UserWarning, match=r"AXON snapped input length 1000 to 1100"),
     ):
         pad_out = axon(x, return_features=True)
     assert pad_out["tokens"].shape == (2, 3, 6, 32)
@@ -386,8 +391,12 @@ def test_secondary_time_inputs_snap_positional_and_keyword():
     )
     x_emg = torch.randn(2, 16, 201)
     x_lp = torch.randn(2, 16, 201)
-    with torch.no_grad(), pytest.warns(
-        UserWarning, match=r"SensingDynamics snapped input length 201 to n_times=200"
+    with (
+        torch.no_grad(),
+        pytest.warns(
+            UserWarning,
+            match=r"SensingDynamics snapped input length 201 to n_times=200",
+        ),
     ):
         sd_pos = sd(x_emg, x_lp)
     with torch.no_grad():
@@ -397,3 +406,70 @@ def test_secondary_time_inputs_snap_positional_and_keyword():
     assert seen_sd[1][1]["x"].shape == (2, 16, 200)
     assert seen_sd[1][1]["x_lowpass"].shape == (2, 16, 200)
     torch.testing.assert_close(sd_pos, sd_kw)
+
+
+_VALID_OUTPUT_TAGS = {
+    "(batch, outputs)",
+    "(batch, outputs, time)",
+    "(batch, time, outputs)",
+    "reconstruction",
+    "(batch, tokens, dim)",
+}
+
+
+def test_summary_csv_matches_generator():
+    from braindecode.models._summary import check_summary_csv
+
+    diffs = check_summary_csv()
+    assert diffs == [], "\n".join(diffs)
+
+
+def test_summary_csv_declares_axes():
+    for name, cls in models_dict.items():
+        row = _summary_row(name)
+        assert row["Time axis"] == cls._time_axis, name
+        assert row["Channel axis"] == cls._channel_axis, name
+        assert row["Output"] in _VALID_OUTPUT_TAGS, name
+        for cap_col in (
+            "Cropped decoding",
+            "adapt_input",
+            "reset_head",
+            "return_features",
+        ):
+            assert row[cap_col] in {"yes", "no"}, (name, cap_col)
+
+
+def test_summary_generator_subset_and_cli(tmp_path):
+    import shutil
+
+    from braindecode.models._summary import (
+        SUMMARY_CSV_PATH,
+        check_summary_csv,
+        generate_summary_rows,
+        main,
+    )
+
+    rows = generate_summary_rows(names=["EEGNet"])
+    assert len(rows) == 1
+    assert rows[0]["Model"] == "EEGNet"
+    assert int(rows[0]["#Parameters"]) > 0
+    assert rows[0]["Time axis"] == models_dict["EEGNet"]._time_axis
+
+    temp_csv = tmp_path / "summary.csv"
+    shutil.copyfile(SUMMARY_CSV_PATH, temp_csv)
+    assert main(["--check", "--csv", str(temp_csv)]) == 0
+
+    text = temp_csv.read_text(encoding="utf-8")
+    corrupted = text.replace(
+        f"EEGNet,{rows[0]['Application']}",
+        f"EEGNet,{rows[0]['Application']}",
+    ).replace(f",{rows[0]['#Parameters']},", ",999999,", 1)
+    temp_csv.write_text(corrupted, encoding="utf-8")
+
+    diffs = check_summary_csv(temp_csv)
+    assert any("EEGNet" in d and "#Parameters" in d for d in diffs)
+    assert main(["--check", "--csv", str(temp_csv)]) == 1
+    assert (
+        main(["--files", "braindecode/models/eegnet.py", "--csv", str(temp_csv)]) == 0
+    )
+    assert check_summary_csv(temp_csv) == []

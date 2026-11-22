@@ -8,7 +8,7 @@ ci:
   autoupdate_branch: "master"
   autoupdate_commit_msg: "[pre-commit.ci] pre-commit autoupdate"
   autoupdate_schedule: quarterly
-  skip: [ ]
+  skip: [summary-csv]
   submodules: false
 
 repos:
@@ -100,3 +100,9 @@ repos:
         pass_filenames: false
         require_serial: true
         additional_dependencies: ["ty==0.0.107"]
+
+      - id: summary-csv
+        name: summary-csv
+        entry: python -m braindecode.models._summary --files
+        language: system
+        files: ^braindecode/models/.*\.py$
