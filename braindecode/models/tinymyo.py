@@ -255,6 +255,7 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
                         attn_drop=attn_drop,
                         proj_drop=drop_prob,
                         rotary_runs=self.n_chans,
+                        rotary_run_len=self.patch_embed.n_patches(self.n_times),
                     ),
                     TimmMlp(
                         embed_dim,

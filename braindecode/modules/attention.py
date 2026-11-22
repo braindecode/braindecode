@@ -893,6 +893,7 @@ class TimmAttention(nn.Module):
         proj_drop: float = 0.0,
         exact: bool = False,
         rotary_runs: Optional[int] = None,
+        rotary_run_len: Optional[int] = None,
     ):
         super().__init__()
         if not 1 <= num_heads <= dim:
@@ -903,11 +904,23 @@ class TimmAttention(nn.Module):
         self.head_dim = dim // num_heads
         if rotary_runs is not None and rotary_runs < 1:
             raise ValueError(f"rotary_runs must be positive, got {rotary_runs}.")
+        if rotary_run_len is not None and rotary_run_len < 1:
+            raise ValueError(f"rotary_run_len must be positive, got {rotary_run_len}.")
         if rotary_runs is not None and self.head_dim % 2:
             raise ValueError(
                 f"head_dim ({self.head_dim}) must be even: RoPE rotates in pairs."
             )
         self.rotary_runs = rotary_runs
+        # cos and sin of the build length, so forward does not rebuild them
+        cos = sin = torch.empty(0, self.head_dim)
+        if rotary_runs is not None and rotary_run_len is not None:
+            positions = torch.arange(rotary_run_len, dtype=torch.float32)
+            angles = rotary_angles(
+                positions.repeat(rotary_runs), rotary_frequencies(self.head_dim)
+            )
+            cos, sin = angles.cos(), angles.sin()
+        self.register_buffer("_rotary_cos", cos, persistent=False)
+        self.register_buffer("_rotary_sin", sin, persistent=False)
         all_head_dim = self.head_dim * num_heads
         self.scale = self.head_dim**-0.5
         self.exact = exact
@@ -947,13 +960,19 @@ class TimmAttention(nn.Module):
             )
         # Rotate in float32 at least, as the reference implementations do
         dtype = torch.promote_types(q.dtype, torch.float32)
-        positions = torch.arange(
-            n_tokens // rotary_runs, device=q.device, dtype=dtype
-        ).repeat(rotary_runs)
-        angles = rotary_angles(
-            positions, rotary_frequencies(self.head_dim, device=q.device, dtype=dtype)
-        )
-        cos, sin = angles.cos(), angles.sin()
+        if self._rotary_cos.dtype == dtype == torch.float32 and (
+            n_tokens == self._rotary_cos.shape[0]
+        ):
+            cos, sin = self._rotary_cos, self._rotary_sin
+        else:
+            positions = torch.arange(
+                n_tokens // rotary_runs, device=q.device, dtype=dtype
+            ).repeat(rotary_runs)
+            angles = rotary_angles(
+                positions,
+                rotary_frequencies(self.head_dim, device=q.device, dtype=dtype),
+            )
+            cos, sin = angles.cos(), angles.sin()
         return (
             apply_rotary(q.to(dtype), cos, sin).to(q.dtype),
             apply_rotary(k.to(dtype), cos, sin).to(k.dtype),
