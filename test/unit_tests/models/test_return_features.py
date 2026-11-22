@@ -255,15 +255,6 @@ def _build_registered(name, **kwargs):
     return _ALL_MODELS[name](**{**signal_params, **kwargs}).eval()
 
 
-@pytest.mark.parametrize("name", _RESET_HEAD_CASES)
-def test_reset_head_updates_config(name):
-    model = _build_registered(name)
-    n_outputs = model.n_outputs + 3
-    model.reset_head(n_outputs)
-    assert model.n_outputs == n_outputs
-    assert model.get_config()["n_outputs"] == n_outputs
-
-
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
 @pytest.mark.parametrize("name", _RESET_HEAD_CASES)
 def test_reset_head_model_reloads_after_saving(name, tmp_path):

@@ -809,7 +809,7 @@ def test_reset_head_on_every_model(model_name, required_params, signal_params):
     with torch.no_grad():
         out = next(_tensor_leaves(model(x)))
     assert n in out.shape[1:]
-    assert model.get_config()["n_outputs"] == n
+    assert model.n_outputs == n == model.get_config()["n_outputs"]
     rebuilt = type(model).from_config(model.get_config()).eval()
     _materialize(rebuilt, x)
     with torch.no_grad():
