@@ -34,6 +34,8 @@ Enhancements
 - ``n_outputs=None`` builds any registered model without a head (``final_layer`` is ``nn.Identity``) for
   self-supervised training, and :meth:`~braindecode.models.EEGModuleMixin.reset_head` has a default for every model,
   keeping the weights whose shape does not depend on ``n_outputs`` (`Bruno Aristimunha`_).
+- Add :func:`braindecode.training.info_nce`, the NT-Xent contrastive loss, a registry-wide test of one contrastive
+  step through every headless model, and the tutorial :ref:`contrastive-pretraining-eeg` (`Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
   with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
   DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).
