@@ -387,9 +387,12 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         self,
         x: torch.Tensor,
         return_features: bool = False,
-        ch_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Classify ``x`` or return the pooled features.
+
+        There is no ``ch_mask``: the head flattens the ``n_chans * latent_dim``
+        features and the sensor geometry is the fixed ``chs_info`` montage, so
+        every sample needs all ``n_chans`` channels.
 
         Parameters
         ----------
@@ -398,18 +401,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         return_features : bool
             If True, return ``{"features": (batch, n_chans * latent_dim),
             "cls_token": None}`` instead of the logits.
-        ch_mask : torch.Tensor, optional
-            Not supported: any value but ``None`` raises a ``ValueError``.
-            The head flattens the ``n_chans * latent_dim`` features and the
-            sensor geometry is the fixed ``chs_info`` montage, so every sample
-            needs all ``n_chans`` channels.
         """
-        if ch_mask is not None:
-            raise ValueError(
-                "MEGXL does not accept ch_mask: its head flattens the n_chans * "
-                "latent_dim features and its sensor geometry is the chs_info "
-                "montage, so every sample needs all n_chans channels."
-            )
         # (batch, n_chans, n_times) -> (batch, n_chans, n_tokens, latent_dim)
         # -> mean over time (batch, n_chans, latent_dim)
         # -> (batch, n_chans * latent_dim)
