@@ -442,8 +442,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def __init_subclass__(cls, **kwargs):
         license = kwargs.pop("license", "bsd-3-clause")
+        forward = getattr(cls, "forward", None)
         cls._native_features = (
-            "return_features" in inspect.signature(cls.forward).parameters
+            forward is not None
+            and "return_features" in inspect.signature(forward).parameters
         )
 
         if "reset_head" in cls.__dict__:
