@@ -412,10 +412,11 @@ class REVE(EEGModuleMixin, nn.Module):
 
     def __setstate__(self, state):
         super().__setstate__(state)
-        if "channel_index" in self.__dict__:
-            # Migrate pickles saved when channel_index was a plain attribute.
-            channel_index = self.__dict__.pop("channel_index")
-            self.register_buffer("channel_index", channel_index, persistent=False)
+        # Migrate pickles saved when these were plain attributes (braindecode 2.0).
+        for name in ("default_pos", "channel_index"):
+            if name in self.__dict__:
+                value = self.__dict__.pop(name)
+                self.register_buffer(name, value, persistent=False)
 
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""

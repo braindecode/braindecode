@@ -1798,7 +1798,7 @@ def test_reve_drop_channel_index_follows_device_without_saving_state():
     assert out.is_meta and out.shape == (1, 2)
 
 
-def test_reve_unpickles_legacy_channel_index_as_nonpersistent_buffer():
+def test_reve_unpickles_legacy_attributes_as_nonpersistent_buffers():
     import pickle
 
     chs = [{"ch_name": "Cz"}, {"ch_name": "NOT_A_CH"}, {"ch_name": "F3"}]
@@ -1813,15 +1813,17 @@ def test_reve_unpickles_legacy_channel_index_as_nonpersistent_buffer():
             head_dim=16,
             on_missing="drop",
         ).eval()
-    legacy_idx = model._buffers.pop("channel_index")
-    model._non_persistent_buffers_set.discard("channel_index")
-    model.__dict__["channel_index"] = legacy_idx
+    # braindecode 2.0 kept both as plain attributes, which .to() does not move.
+    for name in ("default_pos", "channel_index"):
+        model.__dict__[name] = model._buffers.pop(name)
+        model._non_persistent_buffers_set.discard(name)
     loaded = pickle.loads(pickle.dumps(model))
-    assert "channel_index" in loaded._buffers
-    assert "channel_index" not in loaded.__dict__
-    assert "channel_index" not in loaded.state_dict()
+    for name in ("default_pos", "channel_index"):
+        assert name in loaded._buffers
+        assert name not in loaded.__dict__
+        assert name not in loaded.state_dict()
     loaded.to("meta")
-    assert loaded.channel_index.is_meta
+    assert loaded.default_pos.is_meta and loaded.channel_index.is_meta
     out = loaded(torch.empty(1, 3, 400, device="meta"))
     assert out.is_meta and out.shape == (1, 2)
 
