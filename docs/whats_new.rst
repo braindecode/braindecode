@@ -28,6 +28,15 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.CareSleepNet`,
+  :class:`~braindecode.models.EEGInceptionMI`, :class:`~braindecode.models.FBCNet`,
+  :class:`~braindecode.models.FBMSNet`, :class:`~braindecode.models.IFNet`,
+  :class:`~braindecode.models.Labram` (with ``neural_tokenizer=True``),
+  :class:`~braindecode.models.NeuroRVQTokenizer`,
+  :class:`~braindecode.models.SeizureTransformer` and :class:`~braindecode.models.PBT`
+  read the temporal window length from the input tensor in ``forward`` instead of
+  using the length stored at construction, accepting variable-length windows with
+  unchanged weights and build-shape outputs (by `Bruno Aristimunha`_).
 - Speed up serialized dataset saving and lazy reloading in
   :func:`braindecode.datautil.serialization.load_concat_dataset` and
   :meth:`braindecode.datasets.BaseConcatDataset.save` by dispatching

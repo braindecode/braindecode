@@ -219,8 +219,8 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2607.27308
     """
 
-    _time_axis = "fixed"  # fixed: encoder.rotary_cosine
-    _channel_axis = "fixed"  # fixed: final_layer.1.weight
+    _time_axis = "fixed"  # fixed: encoder.rotary_cosine is sized by n_times
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_chans
 
     def __init__(
         self,

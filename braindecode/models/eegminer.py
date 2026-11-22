@@ -103,8 +103,8 @@ class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
     """
 
-    _time_axis = "fixed"  # fixed: filter.n_range
-    _channel_axis = "fixed"  # fixed: batch_layer.running_mean
+    _time_axis = "fixed"  # fixed: filter.n_range is sized by n_times
+    _channel_axis = "fixed"  # fixed: final_layer.weight is sized by n_chans
 
     def __init__(
         self,  # Signal related parameters

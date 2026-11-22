@@ -83,7 +83,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
-    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
+    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original is sized by n_chans
 
     def __init__(
         self,

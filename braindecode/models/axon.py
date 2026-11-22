@@ -137,7 +137,7 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
     """
 
     _time_axis = "free"
-    _channel_axis = "fixed"  # fixed: encoder.channel_positions
+    _channel_axis = "fixed"  # fixed: encoder.channel_positions is sized by n_chans
 
     def __init__(
         self,

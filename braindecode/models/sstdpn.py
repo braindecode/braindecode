@@ -218,8 +218,8 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         https://github.com/hancan16/SST-DPN
     """
 
-    _time_axis = "fixed"  # fixed: proto_cpt
-    _channel_axis = "fixed"  # fixed: encoder.chan_conv.0.weight
+    _time_axis = "fixed"  # fixed: proto_sep is sized by n_times
+    _channel_axis = "fixed"  # fixed: encoder.chan_conv.0.weight is sized by n_chans
 
     def __init__(
         self,

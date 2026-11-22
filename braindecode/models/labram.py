@@ -193,7 +193,7 @@ class Labram(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
-    _channel_axis = "fixed"  # fixed: LABRAM_CHANNEL_ORDER
+    _channel_axis = "fixed"  # fixed: position_embedding is sized by n_chans
 
     # Constant, so TorchScript compiles only the mode in use (the decoder-only
     # locals do not exist in tokenizer mode).

@@ -105,8 +105,8 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
         https://github.com/snailpt/CTNet
     """
 
-    _time_axis = "fixed"  # fixed: final_layer.weight
-    _channel_axis = "fixed"  # fixed: cnn.eegnet_module.2.weight
+    _time_axis = "fixed"  # fixed: final_layer.weight is sized by n_times
+    _channel_axis = "fixed"  # fixed: cnn.eegnet_module.2.weight is sized by n_chans
 
     def __init__(
         self,

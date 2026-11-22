@@ -268,8 +268,8 @@ class REVE(EEGModuleMixin, nn.Module):
     requiring matched layouts between pretraining and downstream tasks.
     """
 
-    _time_axis = "fixed"  # fixed: final_layer.1.bias
-    _channel_axis = "fixed"  # fixed: final_layer.1.bias
+    _time_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_times
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_chans
 
     # Constant, so TorchScript compiles only the head in use (``cls_query_token``
     # exists only with attention pooling).
