@@ -265,6 +265,13 @@ figure.unavailable::after {
   pointer-events: none;
 }
 
+.bd-content p,
+.bd-content li {
+  text-align: left;
+  text-wrap: pretty;
+  line-height: 1.65;
+}
+
 ul.funders li {
   margin-left: 36px;
   text-indent: -36px;
@@ -976,13 +983,6 @@ html:not(:has(.bd-landing)) .bd-page-width {
 html:not(:has(.bd-landing)) .bd-main .bd-content .bd-article-container {
   background-color: transparent;
   padding-top: 1.75rem;
-}
-
-.bd-content p,
-.bd-content li {
-  text-align: left;
-  text-wrap: pretty;
-  line-height: 1.65;
 }
 
 html:not(:has(.bd-landing)) .bd-article h1 {
