@@ -193,6 +193,9 @@ class DeepSOZ(EEGModuleMixin, nn.Module):
        Epilepsia, 66(S3), 14-24. https://doi.org/10.1111/epi.18113
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: channel_embedding.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -243,6 +246,8 @@ class DeepSOZ(EEGModuleMixin, nn.Module):
         )
         self.patch_size = patch_size
         self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
         self.channel_embedding = nn.Embedding(self.n_chans + 1, patch_size)
         self.encoder = nn.TransformerEncoderLayer(
