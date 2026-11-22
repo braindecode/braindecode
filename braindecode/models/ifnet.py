@@ -108,6 +108,7 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: feature_block.spatial_conv.weight
+    _dense_conversion = False
 
     def __init__(
         self,

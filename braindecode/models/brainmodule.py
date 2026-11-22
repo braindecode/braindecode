@@ -290,6 +290,7 @@ class BrainModule(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: input_projection.weight
+    _dense_conversion = False
 
     def __init__(
         self,

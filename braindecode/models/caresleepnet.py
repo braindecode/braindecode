@@ -163,6 +163,7 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: eeg_encoder.0.branches.0.0.weight
+    _dense_conversion = False
 
     def __init__(
         self,

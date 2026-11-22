@@ -258,6 +258,7 @@ class BENDR(EEGModuleMixin, nn.Module):
     _channel_axis = (
         "fixed"  # fixed: encoder.conv_blocks.0.0.parametrizations.weight.original1
     )
+    _dense_conversion = False
 
     _channel_target = BENDR_CHANNEL_ORDER
 

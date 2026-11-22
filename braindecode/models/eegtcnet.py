@@ -79,6 +79,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: eegnet_tc.depthwise_conv.weight
+    _dense_conversion = False
 
     def __init__(
         self,

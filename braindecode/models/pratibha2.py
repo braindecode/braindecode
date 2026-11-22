@@ -172,6 +172,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: channel_positions
+    _dense_conversion = False
 
     channel_index: Optional[torch.Tensor]
 

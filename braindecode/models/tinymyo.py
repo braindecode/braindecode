@@ -185,6 +185,7 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: final_layer.weight
+    _dense_conversion = False
 
     def __init__(
         self,

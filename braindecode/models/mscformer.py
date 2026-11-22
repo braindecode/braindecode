@@ -135,6 +135,7 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: cnn.branches.0.1.weight
+    _dense_conversion = False
 
     def __init__(
         self,

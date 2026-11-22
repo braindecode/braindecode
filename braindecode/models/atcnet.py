@@ -254,6 +254,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: conv_block.conv2.weight is sized by n_chans
+    _dense_conversion = False
 
     def __init__(
         self,

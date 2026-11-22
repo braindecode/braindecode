@@ -158,6 +158,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "free"
+    _dense_conversion = False
 
     _channel_target = (
         "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()

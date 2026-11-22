@@ -46,6 +46,7 @@ class BDTCN(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: base_tcn.temporal_blocks.temporal_block_0.conv1.parametrizations.weight.original1
+    _dense_conversion = False
 
     def __init__(
         self,

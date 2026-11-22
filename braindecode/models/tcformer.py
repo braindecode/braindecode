@@ -173,6 +173,7 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: conv_block.channel_dw_conv.0.weight
+    _dense_conversion = False
 
     def __init__(
         self,

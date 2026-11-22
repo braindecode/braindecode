@@ -99,6 +99,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: conv.weight
+    _dense_conversion = False
 
     def __init__(
         self,

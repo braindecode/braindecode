@@ -374,6 +374,7 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
                     max_norm=norm_rate,
                 ),
             )
+            self._time_axis = "fixed"
         self.add_module("final_layer", module)
 
         self._init_parameters()

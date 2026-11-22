@@ -141,6 +141,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: pos is sized by n_chans
+    _dense_conversion = False
 
     def __init__(
         self,
@@ -416,6 +417,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: tokenizer.pos is sized by n_chans
+    _dense_conversion = False
 
     def __init__(
         self,

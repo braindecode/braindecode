@@ -400,6 +400,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     _time_axis = "dense"
     _channel_axis = "fixed"  # fixed: spatial_embedding_ix
+    _dense_conversion = False
 
     def __init__(
         self,

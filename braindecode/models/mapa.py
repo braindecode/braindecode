@@ -226,6 +226,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: default_sensor_indices is sized by n_chans
+    _dense_conversion = False
 
     # TorchScript reads no module globals, so forward reads these constants.
     __constants__ = ("_band_strides", "_n_bins", "_n_regions")

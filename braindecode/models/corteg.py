@@ -239,6 +239,7 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: default_pos is sized by n_chans
     _time_inputs = ("x", "x_hi")
+    _dense_conversion = False
 
     def __init__(
         self,

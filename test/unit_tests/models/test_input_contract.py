@@ -1,28 +1,37 @@
 """Contract tests for declared input axes, minimum length, and length-grid snapping."""
 
+import copy
 import inspect
 import warnings
 
 import numpy as np
 import pytest
 import torch
+from torch import nn
 
 import braindecode.models.base as base_mod
 from braindecode.datasets import pad_channels_collate
 from braindecode.models import (
     AXON,
+    BDTCN,
     CORTEG,
     DIVER1,
     LUNA,
     BrainBERT,
     EEGConformer,
+    EEGNet,
+    EMG2QwertyNet,
     FBCNet,
     FBMSNet,
     IFNet,
     SensingDynamics,
+    ShallowFBCSPNet,
     TinyMyo,
+    USleep,
 )
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.modules import CausalConv1d, Chomp1d, SqueezeFinalOutput
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
     PARAMS,
@@ -516,3 +525,193 @@ def test_summary_generator_subset_and_cli(tmp_path):
         ValueError, match="EEGNet is missing editorial column 'Application'"
     ):
         generate_summary_rows(names=["EEGNet"], csv_path=missing_editorial_csv)
+
+
+def _has_symmetric_padding(model: nn.Module) -> bool:
+    for mod in model.modules():
+        if isinstance(mod, CausalConv1d):
+            continue
+        pad = getattr(mod, "padding", 0)
+        if isinstance(pad, str) and pad != "valid":
+            return True
+        if isinstance(pad, int) and pad > 0:
+            return True
+        if isinstance(pad, tuple) and any(p > 0 for p in pad):
+            return True
+    return False
+
+
+@PARAMS
+def test_dense_conversion_contract(model_name, required_params, signal_params):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    T = x.shape[-1]
+    dense = copy.deepcopy(model)
+    if _summary_row(model_name)["Cropped decoding"] == "no":
+        with pytest.raises(ValueError, match="cannot give dense predictions"):
+            dense.to_dense_prediction_model()
+        return
+    dense.to_dense_prediction_model()
+    with pytest.raises(
+        ValueError, match="cannot give dense predictions: it is already converted"
+    ):
+        dense.to_dense_prediction_model()
+    long = torch.randn(2, x.shape[1], 3 * T)
+    with torch.no_grad():
+        out = dense(long)
+        assert out.numel() > dense(long[..., : 2 * T]).numel()
+        window = model(long[..., :T])
+        if window.ndim == 2:
+            # On the single window itself, step 0 matches for both valid and
+            # symmetrically zero-padded convolutions (e.g. EEGNet). On the 3*T
+            # signal, symmetrically padded convolutions read real samples past T
+            # instead of the single window's right zero-padding.
+            torch.testing.assert_close(
+                dense(long[..., :T])[..., 0], window, atol=1e-5, rtol=1e-4
+            )
+            if not _has_symmetric_padding(model):
+                torch.testing.assert_close(out[..., 0], window, atol=1e-5, rtol=1e-4)
+
+
+def test_dense_conversion_refusal_reasons_and_dilated_stacks():
+    from braindecode.modules.util import to_dense_prediction_model
+
+    # 1. Fixed window length
+    fixed_cls = EEGConformer(n_chans=3, n_outputs=2, n_times=1000).eval()
+    with pytest.raises(
+        ValueError,
+        match="EEGConformer cannot give dense predictions: its head needs a fixed window length",
+    ):
+        fixed_cls.to_dense_prediction_model()
+
+    eegnet_linear = EEGNet(
+        n_chans=3, n_outputs=2, n_times=128, final_layer_with_constraint=True
+    ).eval()
+    with pytest.raises(
+        ValueError,
+        match="EEGNet cannot give dense predictions: its head needs a fixed window length",
+    ):
+        eegnet_linear.to_dense_prediction_model()
+
+    # 2. Pools or tokenizes over the whole window
+    for mdl in (
+        BDTCN(n_chans=3, n_outputs=2, n_times=1000).eval(),
+        LUNA(
+            n_chans=3, n_outputs=2, n_times=1000, embed_dim=16, depth=1, num_heads=2
+        ).eval(),
+        USleep(n_chans=2, sfreq=128, n_times=3840, n_outputs=5).eval(),
+    ):
+        with pytest.raises(
+            ValueError,
+            match=rf"{type(mdl).__name__} cannot give dense predictions: it pools or tokenizes over the whole window",
+        ):
+            mdl.to_dense_prediction_model()
+
+    # 3. Already converted
+    shallow = ShallowFBCSPNet(n_chans=3, n_outputs=2, n_times=1000).eval()
+    shallow.to_dense_prediction_model()
+    with pytest.raises(
+        ValueError,
+        match="ShallowFBCSPNet cannot give dense predictions: it is already converted",
+    ):
+        shallow.to_dense_prediction_model()
+
+    # 4. No strided layer to convert
+    emg_ctc = EMG2QwertyNet(n_chans=32, n_outputs=99, n_times=8000, sfreq=2000.0).eval()
+    with pytest.raises(
+        ValueError,
+        match="EMG2QwertyNet cannot give dense predictions: it has no strided layer to convert",
+    ):
+        emg_ctc.to_dense_prediction_model()
+
+    with pytest.raises(ValueError, match="Only 2 and 3"):
+        ShallowFBCSPNet(n_chans=3, n_outputs=2, n_times=1000).to_dense_prediction_model(
+            axis=1
+        )
+
+    # Third-party 1-D strided + dilated + causal + AvgPool1d stack (undeclared _time_axis)
+    class _ThirdPartyDilatedCNN1d(EEGModuleMixin, nn.Module):
+        def __init__(self, n_chans: int = 3, n_outputs: int = 2, n_times: int = 64):
+            super().__init__(n_outputs=n_outputs, n_chans=n_chans, n_times=n_times)
+            # Receptive field before conversion:
+            # conv1 (k=3, s=2) -> pool (k=2, s=2) -> causal (k=3, d=2) -> chomp_conv (k=3, d=3, pad=6) + Chomp1d(6)
+            # T=64 -> conv1: 31 -> pool: 15 -> causal: 15 -> chomp_conv: 15 -> head (k=15): 1
+            self.conv1 = nn.Conv1d(n_chans, 8, kernel_size=3, stride=2)
+            self.pool = nn.AvgPool1d(kernel_size=2, stride=2)
+            self.causal = CausalConv1d(8, 8, kernel_size=3, dilation=2)
+            self.dilated = nn.Conv1d(8, 8, kernel_size=3, dilation=3, padding=6)
+            self.chomp = Chomp1d(6)
+            self.head = nn.Conv1d(8, n_outputs, kernel_size=15)
+            self.squeeze = SqueezeFinalOutput()
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            x = torch.relu(self.conv1(x))
+            x = self.pool(x)
+            x = torch.relu(self.causal(x))
+            x = torch.relu(self.chomp(self.dilated(x)))
+            x = self.head(x)
+            return self.squeeze(x.unsqueeze(-1))
+
+    torch.manual_seed(0)
+    m1d = _ThirdPartyDilatedCNN1d().eval()
+    d1d = copy.deepcopy(m1d)
+    d1d.to_dense_prediction_model()
+    assert d1d.causal.dilation == (2 * 4,)
+    assert d1d.dilated.dilation == (3 * 4,)
+    assert d1d.chomp.chomp_size == 6 * 4
+
+    long_1d = torch.randn(2, 3, 100)
+    with torch.no_grad():
+        dense_1d = d1d(long_1d)
+        assert dense_1d.shape == (2, 2, 100 - 61 + 1)
+        torch.testing.assert_close(
+            dense_1d[..., 0], m1d(long_1d[..., :64]), atol=1e-5, rtol=1e-4
+        )
+
+    # Unpadded 1-D strided + dilated + AvgPool1d stack: every step k matches window [k, k + 43)
+    # Receptive field: conv1 (k=3, s=2) -> pool (k=2, s=2) -> dilated (k=3, d=2) -> head (k=6):
+    # T=43 -> conv1: 21 -> pool: 10 -> dilated: 6 -> head: 1
+    valid_1d = nn.Sequential(
+        nn.Conv1d(3, 8, kernel_size=3, stride=2),
+        nn.ReLU(),
+        nn.AvgPool1d(kernel_size=2, stride=2),
+        nn.Conv1d(8, 8, kernel_size=3, dilation=2),
+        nn.ReLU(),
+        nn.Conv1d(8, 2, kernel_size=6),
+    ).eval()
+    ref_1d = copy.deepcopy(valid_1d)
+    to_dense_prediction_model(valid_1d)
+    with torch.no_grad():
+        out_valid_1d = valid_1d(long_1d)
+        for step in (0, 1, 5, 20):
+            torch.testing.assert_close(
+                out_valid_1d[..., step : step + 1],
+                ref_1d(long_1d[..., step : step + 43]),
+                atol=1e-5,
+                rtol=1e-4,
+            )
+
+    # Standalone modules.util.to_dense_prediction_model on a 2-D strided + dilated stack
+    net2d = nn.Sequential(
+        nn.Conv2d(1, 4, kernel_size=(3, 1), stride=(2, 1)),
+        nn.ReLU(),
+        nn.Conv2d(4, 4, kernel_size=(3, 1), dilation=(2, 1)),
+        nn.AvgPool2d(kernel_size=(2, 1), stride=(3, 1)),
+        nn.Conv2d(4, 2, kernel_size=(2, 3), dilation=(3, 1)),
+    ).eval()
+    ref2d = copy.deepcopy(net2d)
+    to_dense_prediction_model(net2d)
+    assert net2d[2].dilation == (4, 1)
+    assert net2d[4].dilation == (18, 1)
+    long_2d = torch.randn(2, 1, 80, 3)
+    with torch.no_grad():
+        out_2d = net2d(long_2d)
+        # Receptive field along H: conv0 (k=3,s=2) + conv2 (k=3,d=2 -> span 5*2=8) + pool3 (k=2,s=3 -> span 2) + conv4 (k=2,d=3 -> span 3*6=18):
+        # For H_win = 33: (33-3)//2+1 = 16 -> 16 - 4 = 12 -> (12-2)//3+1 = 4 -> 4 - 3 = 1!
+        for step in (0, 1, 7, 15):
+            torch.testing.assert_close(
+                out_2d[:, :, step : step + 1, :],
+                ref2d(long_2d[:, :, step : step + 33, :]),
+                atol=1e-5,
+                rtol=1e-4,
+            )

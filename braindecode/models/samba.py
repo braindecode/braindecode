@@ -225,6 +225,7 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: encoder.cdse.target_positions
+    _dense_conversion = False
 
     def __init__(
         self,
