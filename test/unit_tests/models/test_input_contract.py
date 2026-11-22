@@ -2,12 +2,14 @@
 determinism across every registered model."""
 
 import ast
+import copy
 import inspect
 import shutil
 import time
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
@@ -15,6 +17,12 @@ from braindecode.datasets import pad_channels_collate
 from braindecode.models import (
     CORTEG,
     LUNA,
+    MAPA,
+    AttentionBaseNet,
+    BrainModule,
+    BrainOmni,
+    CTNet,
+    Deep4Net,
     EEGConformer,
     EEGNet,
     EEGSimpleConv,
@@ -23,14 +31,24 @@ from braindecode.models import (
     FBMSNet,
     IFNet,
     MVPFormer,
+    NeuroRVQ,
     SensingDynamics,
+    ShallowFBCSPNet,
 )
+from braindecode.models import base as _models_base
 from braindecode.models import util as _models_util
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import (
+    _draw_chs_info,
+    models_dict,
+    models_mandatory_parameters,
+)
+from braindecode.modules import ChannelLayer
+from braindecode.modules.channels import STRATEGIES
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
     PARAMS,
     _build_case,
+    _get_signal_params,
     _materialize,
     _shapes,
     _summary_row,
@@ -530,3 +548,408 @@ def test_eegsimpleconv_short_input_emits_no_snap_warning():
             out = model(torch.randn(2, 3, 1))
     assert out.shape == (2, 2)
     assert not [w for w in caught if "snapped" in str(w.message)]
+
+
+_HEAD_POOLABLE_FIXED_MODELS = (
+    "AttentionBaseNet",
+    "CBraMod",
+    "CSBrain",
+    "CTNet",
+    "CodeBrain",
+    "DIVER1",
+    "EEGConformer",
+    "EEGITNet",
+    "EEGInceptionERP",
+    "EEGNeX",
+    "EEGPT",
+    "Guetschel2026",
+    "JungMAE",
+    "REVE",
+    "SCCNet",
+    "SignalJEPA_Contextual",
+    "SignalJEPA_PostLocal",
+    "SignalJEPA_PreLocal",
+    "SincShallowNet",
+    "SleepStagerBlanco2020",
+    "SleepStagerChambon2018",
+    "SyncNet",
+    "TMSANet",
+)
+
+_INNER_FIXED_MODELS = (
+    "AttnSleep",
+    "BaRISTA",
+    "Brant",
+    "DGCNN",
+    "DeepSleepNet",
+    "DuIN",
+    "EEGMiner",
+    "EEGSym",
+    "EpiNT",
+    "FBLightConvNet",
+    "FNIRS4D",
+    "FNIRSNet",
+    "FNIRSPreT",
+    "FNIRST",
+    "GeoNIRS",
+    "MEDFormer",
+    "MSVTNet",
+    "NICE",
+    "NeuroRVQ",
+    "PBT",
+    "PopulationTransformer",
+    "SSTDPN",
+    "TSception",
+    "ZUNA",
+)
+
+STRATEGY_MODELS = tuple(
+    name
+    for name, cls in sorted(models_dict.items())
+    if "channel_strategy" in inspect.signature(cls.__init__).parameters
+    and name not in {"SleepFM", "SleepFMStager"}
+)
+
+
+def _is_eeg_montage_model(model_name: str) -> bool:
+    modalities = {
+        m.strip() for m in _summary_row(model_name)["Modality"].split(",") if m.strip()
+    }
+    return bool({"EEG", "iEEG", "ECoG"} & modalities) and model_name not in {
+        "SleepFM",
+        "SleepFMStager",
+    }
+
+
+def _build_with_montage(
+    model_name: str, required_params: list, signal_params
+) -> tuple[torch.nn.Module, torch.Tensor, list[dict]]:
+    sp = _get_signal_params(signal_params)
+    kw = _get_signal_params(signal_params, required_params)
+    kw.pop("n_chans", None)
+    kw["chs_info"] = sp["chs_info"]
+    model = models_dict[model_name](**kw).eval()
+    x = torch.randn(2, len(sp["chs_info"]), sp["n_times"])
+    _materialize(model, x)
+    return model, x, sp["chs_info"]
+
+
+@PARAMS
+def test_adapt_input_maps_a_permuted_montage(
+    model_name, required_params, signal_params
+):
+    model, x, chs = _build_with_montage(model_name, required_params, signal_params)
+    C = x.shape[1]
+    perm = list(reversed(range(C)))
+    perm_chs = [chs[i] for i in perm]
+    if not _is_eeg_montage_model(model_name):
+        with pytest.raises(
+            ValueError,
+            match=r"not an EEG montage|channel layer maps electrodes|montage adaptation",
+        ):
+            copy.deepcopy(model).adapt_input(chs_info=perm_chs)
+        return
+    adapted = copy.deepcopy(model).adapt_input(chs_info=perm_chs)
+    with torch.no_grad():
+        expected = list(_tensor_leaves(model(x)))
+        actual = list(_tensor_leaves(adapted(x[:, perm])))
+    assert len(actual) == len(expected)
+    for got_leaf, exp_leaf in zip(actual, expected):
+        torch.testing.assert_close(got_leaf, exp_leaf)
+
+
+def test_adapt_input_corteg_dual_stream_and_modality_refusals():
+    sp = _get_signal_params(None)
+    chs = sp["chs_info"]
+    perm = list(reversed(range(len(chs))))
+    perm_chs = [chs[i] for i in perm]
+
+    corteg = CORTEG(
+        chs_info=chs,
+        n_outputs=2,
+        n_times=64,
+        patch_size=16,
+        hi_patch_size=25,
+        embed_dim=32,
+        depth=1,
+        num_heads=2,
+        n_merge_blocks=1,
+    ).eval()
+    x = torch.randn(2, len(chs), 64)
+    x_hi = torch.randn(2, len(chs), 100)
+    adapted_corteg = copy.deepcopy(corteg).adapt_input(chs_info=perm_chs)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            adapted_corteg(x[:, perm], x_hi=x_hi[:, perm]),
+            corteg(x, x_hi=x_hi),
+        )
+
+    meg_chs = [
+        {"ch_name": f"MEG{i}", "kind": 1, "coil_type": 3022, "loc": ch["loc"]}
+        for i, ch in enumerate(chs)
+    ]
+    with pytest.raises(ValueError, match="electrodes"):
+        BrainOmni(
+            chs_info=meg_chs,
+            n_outputs=2,
+            n_times=512,
+            sfreq=256.0,
+            emb_dim=16,
+            lm_dim=16,
+            n_neuro=4,
+            n_filters=4,
+            ratios=(4, 2),
+            depth=2,
+            num_heads=2,
+            tokenizer_num_heads=2,
+            codebook_dim=16,
+            codebook_size=16,
+            num_quantizers=2,
+        ).adapt_input(chs_info=meg_chs)
+    with pytest.raises(ValueError, match="electrodes"):
+        BrainModule(
+            chs_info=meg_chs, n_outputs=2, n_times=100, sfreq=250.0
+        ).adapt_input(chs_info=meg_chs)
+    with pytest.raises(ValueError, match="modality"):
+        NeuroRVQ(
+            chs_info=[{"ch_name": f"c{i + 1}"} for i in range(3)],
+            modality="emg",
+            n_outputs=2,
+            n_times=200,
+            sfreq=1000.0,
+            depth=1,
+            num_heads=2,
+            out_chans=4,
+        ).adapt_input(chs_info=chs)
+    with pytest.raises(ValueError, match="spectrograms|normalization"):
+        MAPA(
+            chs_info=[{"ch_name": "LA1", "kind": "seeg"}],
+            n_outputs=2,
+            n_times=32,
+            sfreq=32.0,
+            normalization="session",
+            d_model=64,
+        ).adapt_input(chs_info=[{"ch_name": "LA1", "kind": "seeg"}])
+
+
+def test_adapt_input_mixed_montage_batch():
+    chs = _draw_chs_info(6, np.random.default_rng(6))
+    C, T = len(chs), 1000
+    model = EEGNet(chs_info=chs, n_outputs=2, n_times=T, sfreq=250.0).eval()
+    adapted = copy.deepcopy(model).adapt_input(channel_strategy="spline")
+    batch = [
+        (
+            torch.randn(C, T).numpy(),
+            0,
+            [0, T, 0],
+            np.stack([c["loc"][:3] for c in chs]),
+        ),
+        (
+            torch.randn(C - 1, T).numpy(),
+            1,
+            [0, T, 0],
+            np.stack([c["loc"][:3] for c in chs[: C - 1]]),
+        ),
+    ]
+    X, _, _, pos, ch_mask = pad_channels_collate(batch)
+    with torch.no_grad():
+        out = adapted(X, pos=pos, ch_mask=ch_mask)
+    assert out.shape == (2, 2)
+    assert torch.isfinite(out).all()
+
+
+@PARAMS
+def test_adapt_input_resamples(model_name, required_params, signal_params):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    sfreq = model._signal_param("sfreq")
+    if sfreq is None or float(sfreq) != round(float(sfreq)):
+        pytest.skip("requires integer fixture sfreq")
+    C, T = x.shape[1:]
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        adapted = copy.deepcopy(model).adapt_input(sfreq=2 * float(sfreq))
+    with torch.no_grad():
+        ref = model(x)
+        out = adapted(torch.randn(2, C, 2 * T))
+    assert _shapes(out) == _shapes(ref)
+    if model._effective_time_axis() == "fixed" and not model._bypass_time_check(
+        x, (x,), {}
+    ):
+        bad_len = 2 * (T + max(20, T // 50 + 2))
+        with pytest.raises(ValueError, match="after resampling from"):
+            adapted(torch.randn(2, C, bad_len))
+
+
+def test_adapt_input_n_times_is_identity_at_build_length():
+    base = EEGConformer(n_chans=3, n_outputs=2, n_times=1000).eval()
+    x0 = torch.randn(2, 3, 1000)
+    adapted_same = copy.deepcopy(base).adapt_input(n_times=1000)
+    with torch.no_grad():
+        torch.testing.assert_close(adapted_same(x0), base(x0), atol=0, rtol=0)
+        longer = copy.deepcopy(base).adapt_input(n_times=1500)
+        assert longer(torch.randn(2, 3, 1500)).shape == (2, 2)
+
+
+@pytest.mark.parametrize("model_name", _HEAD_POOLABLE_FIXED_MODELS)
+def test_adapt_input_n_times_head_poolable_models(model_name):
+    req, raw_sp = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == model_name
+    )
+    sp = _get_signal_params(raw_sp)
+    kw = _get_signal_params(raw_sp, req)
+    if "n_times" not in kw:
+        kw["n_times"] = sp["n_times"]
+    model = models_dict[model_name](**kw).eval()
+    C, T = len(sp["chs_info"]), sp["n_times"]
+    x0 = torch.randn(2, C, T)
+    _materialize(model, x0)
+    adapted_same = copy.deepcopy(model).adapt_input(n_times=T)
+    step = getattr(model, "_n_times_step", 1)
+    longer_t = T + T // 2
+    if getattr(model, "on_non_divisible", "pad") == "error" and step > 1:
+        longer_t = T + ((T // 2 + step - 1) // step) * step
+    adapted_long = copy.deepcopy(model).adapt_input(n_times=longer_t)
+    with torch.no_grad():
+        torch.testing.assert_close(adapted_same(x0), model(x0), atol=0, rtol=0)
+        out_long = adapted_long(torch.randn(2, C, longer_t))
+        assert out_long.shape == model(x0).shape
+        assert torch.isfinite(out_long).all()
+
+
+@pytest.mark.parametrize("model_name", _INNER_FIXED_MODELS)
+def test_adapt_input_n_times_refuses_inner_fixed_models(model_name):
+    req, raw_sp = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == model_name
+    )
+    model, x = _build_case(model_name, req, raw_sp)
+    _materialize(model, x)
+    with pytest.raises(ValueError, match=r"fixes .+ to n_times|adapt_input\(n_times="):
+        copy.deepcopy(model).adapt_input(n_times=x.shape[-1] + 100)
+
+
+def test_adapt_input_n_times_special_bounds_and_free_models():
+    for mode in ("fca", "ge"):
+        attn_model = AttentionBaseNet(
+            n_chans=3, n_outputs=2, n_times=1000, attention_mode=mode
+        ).eval()
+        with pytest.raises(ValueError, match="attention_mode"):
+            attn_model.adapt_input(n_times=1500)
+
+    ctnet = CTNet(n_chans=3, n_outputs=2, n_times=1000).eval()
+    with pytest.raises(ValueError, match="position"):
+        ctnet.adapt_input(n_times=7000)
+
+    for cls in (EEGNet, Deep4Net, ShallowFBCSPNet):
+        m = cls(n_chans=3, n_outputs=2, n_times=1000).eval()
+        adapted = copy.deepcopy(m).adapt_input(n_times=1500)
+        assert adapted._adapted_n_times == 1500
+        with torch.no_grad():
+            assert torch.isfinite(adapted(torch.randn(2, 3, 1500))).all()
+
+
+def test_adapt_input_keeps_state_dict_keys():
+    chs = _get_signal_params(None)["chs_info"]
+    model = EEGNet(chs_info=chs, n_outputs=2, n_times=1000, sfreq=250.0).eval()
+    keys = set(model.state_dict())
+    for strategy in _models_base._ADAPT_STRATEGIES:
+        adapted = copy.deepcopy(model).adapt_input(
+            chs_info=chs, channel_strategy=strategy
+        )
+        assert set(adapted.state_dict()) == keys
+    for strategy in set(STRATEGIES) - set(_models_base._ADAPT_STRATEGIES) - {"native"}:
+        with pytest.raises(ValueError, match="adds learned or fitted state"):
+            copy.deepcopy(model).adapt_input(chs_info=chs, channel_strategy=strategy)
+    with pytest.raises(ValueError, match="adds learned or fitted state"):
+        copy.deepcopy(model).adapt_input(
+            chs_info=chs,
+            channel_strategy="source",
+            channel_strategy_kwargs={"trainable": True},
+        )
+
+
+def test_adapt_input_twice_and_reload(tmp_path):
+    sp = _get_signal_params(None)
+    chs, C, T = sp["chs_info"], len(sp["chs_info"]), sp["n_times"]
+    chs_a = list(reversed(chs))
+    chs_b = [chs[(i + 1) % C] for i in range(C)]
+    model = EEGNet(chs_info=chs, n_outputs=2, n_times=T, sfreq=250.0).eval()
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        adapted = copy.deepcopy(model).adapt_input(chs_info=chs_a)
+        adapted.adapt_input(chs_info=chs_b, sfreq=2 * model.sfreq)
+    assert adapted.channel_layer.chs_info == chs_b
+    plain = copy.deepcopy(model)
+    plain.load_state_dict(adapted.state_dict(), strict=True)
+    assert "input_adaptation" not in model.get_config()
+    cfg = adapted.get_config()
+    assert "input_adaptation" in cfg
+    assert [c["ch_name"] for c in cfg["chs_info"]] == [c["ch_name"] for c in chs]
+    assert [c["ch_name"] for c in cfg["input_adaptation"]["chs_info"]] == [
+        c["ch_name"] for c in chs_b
+    ]
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        rebuilt = type(model).from_config(cfg).eval()
+    rebuilt.load_state_dict(adapted.state_dict(), strict=True)
+    x2 = torch.randn(2, C, 2 * T)
+    with torch.no_grad():
+        torch.testing.assert_close(rebuilt(x2), adapted(x2))
+    if _models_base.HAS_HF_HUB:
+        adapted.save_pretrained(tmp_path)
+        with pytest.warns(UserWarning, match="resampled inside the model"):
+            hf_reloaded = type(model).from_pretrained(tmp_path).eval()
+        with torch.no_grad():
+            torch.testing.assert_close(hf_reloaded(x2), adapted(x2))
+
+
+def test_adapt_input_bfloat16():
+    sp = _get_signal_params(None)
+    chs, C, T = sp["chs_info"], len(sp["chs_info"]), sp["n_times"]
+    chs_b = [chs[(i + 1) % C] for i in range(C)]
+    model = EEGNet(chs_info=chs, n_outputs=2, n_times=T, sfreq=250.0).eval()
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        adapted = (
+            copy.deepcopy(model)
+            .adapt_input(chs_info=chs_b, sfreq=2 * model.sfreq)
+            .to(torch.bfloat16)
+        )
+    with torch.no_grad():
+        out = adapted(torch.randn(2, C, 2 * T, dtype=torch.bfloat16))
+    assert out.dtype == torch.bfloat16 and torch.isfinite(out).all()
+
+
+def test_adapt_input_needs_the_build_montage():
+    chs = _get_signal_params(None)["chs_info"]
+    with pytest.raises(ValueError, match="needs the montage the model was built with"):
+        EEGNet(n_chans=3, n_outputs=2, n_times=1000).adapt_input(chs_info=chs)
+
+
+@pytest.mark.parametrize("model_name", STRATEGY_MODELS)
+def test_identity_mapping_matches_native(model_name):
+    req, raw_sp = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == model_name
+    )
+    sp = _get_signal_params(raw_sp)
+    kw = _get_signal_params(raw_sp, req)
+    cls = models_dict[model_name]
+    target_spec = (
+        cls._channel_target if cls._channel_target is not None else sp["chs_info"]
+    )
+    target_dicts = [
+        c if isinstance(c, dict) else {"ch_name": c, "kind": "eeg", "loc": np.zeros(12)}
+        for c in target_spec
+    ]
+    target = ChannelLayer(target_dicts, "exact").target
+    kw.pop("n_chans", None)
+    kw["chs_info"] = target
+    torch.manual_seed(0)
+    native = cls(**kw).eval()
+    x = torch.randn(2, len(target), sp["n_times"])
+    _materialize(native, x)
+    mapped = cls(**kw, channel_strategy="nearest").eval()
+    _materialize(mapped, x)
+    mapped.load_state_dict(native.state_dict(), strict=True)
+    with torch.no_grad():
+        native_leaves = list(_tensor_leaves(native(x)))
+        mapped_leaves = list(_tensor_leaves(mapped(x)))
+    assert len(mapped_leaves) == len(native_leaves)
+    for got_leaf, ref_leaf in zip(mapped_leaves, native_leaves):
+        torch.testing.assert_close(got_leaf, ref_leaf)

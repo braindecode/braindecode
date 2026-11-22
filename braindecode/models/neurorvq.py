@@ -187,6 +187,7 @@ def _modality(model, modality: str, resample: bool = False) -> dict:
     at the modality's rate."""
     if modality not in _MODALITIES:
         raise ValueError(f"modality must be one of {sorted(_MODALITIES)}.")
+    model._modality = modality
     preset = _MODALITIES[modality]
     model_sfreq = _input_sfreq(model)
     if not resample and model_sfreq is not None and model_sfreq != preset["sfreq"]:
@@ -492,6 +493,11 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     _time_axis = "fixed"  # fixed: fc_norm.bias
     _channel_axis = "fixed"  # fixed: fc_norm.bias
+    _fixed_time_param = "fc_norm.bias"
+
+    @torch.jit.unused
+    def _check_montage_adaptation(self, chs_info):
+        _check_channel_strategy(self, self._modality, "nearest", None)
 
     def __init__(
         self,

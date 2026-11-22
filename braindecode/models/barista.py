@@ -207,6 +207,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     """
 
     _time_axis = "fixed"  # fixed: token_pooling.weight
+    _fixed_time_param = "token_pooling.weight"
     _channel_axis = "fixed"  # fixed: token_pooling.weight
 
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.

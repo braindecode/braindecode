@@ -4,6 +4,7 @@
 # License: BSD (3-clause)
 import math
 
+import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
@@ -172,6 +173,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
 
     _time_axis = "fixed"  # fixed: final_layer.fc.weight
     _channel_axis = "fixed"  # fixed: inception_block_1.branches.0.4.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -320,6 +322,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         )
 
         spatial_dim_last_layer = self.n_times // math.prod(self.pooling_sizes)
+        self._pool_t_target = spatial_dim_last_layer
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
         self.add_module("flat", nn.Flatten())
@@ -337,6 +340,23 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         self._init_parameters()
+
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        if n_times // math.prod(self.pooling_sizes) < 1:
+            raise ValueError(
+                f"EEGInceptionERP poolings leave no time sample for n_times={n_times}."
+            )
+
+    @torch.jit.unused
+    def _forward_backbone(self, x: torch.Tensor) -> torch.Tensor:
+        for name, module in self.named_children():
+            if name in ("channel_layer", "input_resample"):
+                continue
+            if name == "flat":
+                x = self._pool_adapted_time(x, self._pool_t_target, dim=-1)
+            x = module(x)
+        return x
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

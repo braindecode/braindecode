@@ -142,6 +142,11 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: pos is sized by n_chans
 
+    @torch.jit.unused
+    def _check_montage_adaptation(self, chs_info):
+        _check_channel_strategy(self, self._chs_info, "nearest")
+        _check_channel_strategy(self, chs_info, "nearest")
+
     def __init__(
         self,
         n_outputs=None,
@@ -416,6 +421,11 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: tokenizer.pos is sized by n_chans
+
+    @torch.jit.unused
+    def _check_montage_adaptation(self, chs_info):
+        _check_channel_strategy(self, self._chs_info, "nearest")
+        _check_channel_strategy(self, chs_info, "nearest")
 
     def __init__(
         self,

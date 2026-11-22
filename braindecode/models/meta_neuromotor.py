@@ -341,6 +341,7 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: rotation_invariant_mlp.fully_connected_layers.0.weight is sized by n_chans
+    _supports_montage_adaptation = False
 
     mapping = {
         "featurizer.window": "featurizer.stft.window",

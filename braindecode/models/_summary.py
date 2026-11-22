@@ -309,6 +309,8 @@ def _cropped_decoding_value(cls: type, model: nn.Module) -> str:
 def _adapt_input_value(cls: type, modality: str) -> str:
     if not callable(getattr(cls, "adapt_input", None)):
         return "no"
+    if not getattr(cls, "_supports_montage_adaptation", True):
+        return "no"
     explicit = getattr(cls, "_supports_adapt_input", None)
     if isinstance(explicit, str):
         return explicit

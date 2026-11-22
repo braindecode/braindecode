@@ -188,6 +188,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "fixed"  # fixed: head_hidden.0.weight
+    _fixed_time_param = "head_hidden.0.weight"
     _channel_axis = "fixed"  # fixed: spatial_projection.weight
 
     def __init__(

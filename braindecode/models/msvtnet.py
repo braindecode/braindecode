@@ -69,6 +69,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "fixed"  # fixed: transformer.pos_embedding.pe is sized by n_times
+    _fixed_time_param = "transformer.pos_embedding.pe"
     _channel_axis = "fixed"  # fixed: mstsconv.0.0.2.weight is sized by n_chans
 
     def __init__(

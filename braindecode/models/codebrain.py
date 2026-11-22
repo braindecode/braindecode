@@ -123,6 +123,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: final_layer.1.weight
+    _supports_n_times_adaptation = True
 
     _channel_target = (
         "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
@@ -328,6 +329,8 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             x_t = self.lm_head_t(x)
             x_f = self.lm_head_f(x)
             return (x_t, x_f)
+        if not torch.jit.is_scripting():
+            x = self._pool_adapted_time(x, self.n_times // self.patch_size, dim=2)
         # (batch, n_outputs)
         return self.final_layer(x)
 

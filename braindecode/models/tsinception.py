@@ -65,6 +65,7 @@ class TSception(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "fixed"  # fixed: dense_layer.0.weight
+    _fixed_time_param = "dense_layer.0.weight"
     _channel_axis = "fixed"  # fixed: dense_layer.0.weight
 
     def __init__(

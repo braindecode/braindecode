@@ -207,6 +207,7 @@ class PBT(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "fixed"  # fixed: pos_embedding.weight is sized by n_times
+    _fixed_time_param = "pos_embedding.weight"
     _channel_axis = "fixed"  # fixed: pos_embedding.weight is sized by n_chans
 
     def __init__(

@@ -180,6 +180,8 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "fixed"  # fixed: to_channel_embedding.2.weight is sized by n_times
     _channel_axis = "fixed"  # fixed: pos_embedding_channel is sized by n_chans
+    _supports_montage_adaptation = False
+    _fixed_time_param = "to_channel_embedding.2.weight"
 
     def __init__(
         self,
@@ -549,6 +551,8 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
 
     _time_axis = "fixed"  # fixed: pre.norms.0.weight is sized by n_times
     _channel_axis = "fixed"  # fixed: pos_embedding_channel is sized by n_chans
+    _supports_montage_adaptation = False
+    _fixed_time_param = "pre.norms.0.weight"
 
     # The signature repeats FNIRST's and adds ``preprocessing_kernel_sizes``;
     # with docstring inheritance on (docs/conf.py), a subclass sharing

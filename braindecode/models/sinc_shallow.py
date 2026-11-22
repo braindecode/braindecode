@@ -89,6 +89,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: depthwiseconv.1.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -160,6 +161,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         size_after_pooling = (
             (n_times_after_sinc_filter - pool_size) // pool_stride
         ) + 1
+        self._pool_t_target = size_after_pooling
         flattened_size = num_time_filters * depth_multiplier * size_after_pooling
 
         # Layers
@@ -203,6 +205,26 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
             self.n_outputs,
         )
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        pool = self.temporal_aggregation[2]
+        sinc = self.sinc_filter_layer
+        after_sinc = (
+            n_times if sinc.padding == "same" else n_times - sinc.kernel_size + 1
+        )
+        if after_sinc < pool.kernel_size[1]:
+            raise ValueError(
+                f"SincShallowNet needs n_times leaving >= {pool.kernel_size[1]} "
+                f"samples after sinc filtering; got n_times={n_times}."
+            )
+
+    @torch.jit.unused
+    def _forward_temporal_adapted(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.temporal_aggregation[:-1]:
+            x = layer(x)
+        x = self._pool_adapted_time(x, self._pool_t_target, dim=-1)
+        return self.temporal_aggregation[-1](x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
@@ -222,6 +244,10 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         # batch timefil time nfilter -> batch nfilter timefil time
         x = x.permute(0, 3, 1, 2).contiguous()
         x = self.depthwiseconv(x)
+        if not torch.jit.is_scripting():
+            if self._adapted_n_times is not None:
+                x = self._forward_temporal_adapted(x)
+                return self.final_layer(x)
         x = self.temporal_aggregation(x)
 
         return self.final_layer(x)

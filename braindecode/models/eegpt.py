@@ -8,6 +8,7 @@ from typing import Dict, Literal, Optional, Union
 
 import mne
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import init_weights_
@@ -225,6 +226,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.probe2.parametrizations.weight.original
     _channel_axis = "fixed"  # fixed: chan_proj.proj.parametrizations.weight.original
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -420,6 +422,14 @@ class EEGPT(EEGModuleMixin, nn.Module):
         state_dict.pop(prefix + "chans_id", None)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        ps = self.target_encoder.patch_embed.patch_size
+        if n_times < ps:
+            raise ValueError(
+                f"EEGPT needs n_times >= patch_size ({ps}); got {n_times}."
+            )
+
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
@@ -442,8 +452,11 @@ class EEGPT(EEGModuleMixin, nn.Module):
         # Channel projection (if configured)
         x = self.chan_proj(x)
 
+        allow_adapted = (
+            False if torch.jit.is_scripting() else self._adapted_n_times is not None
+        )
         # z shape: (batch, n_patches, embed_num, embed_dim)
-        z = self.target_encoder(x, self.chans_id)
+        z = self.target_encoder(x, self.chans_id, check_n_patches=not allow_adapted)
 
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
@@ -454,6 +467,13 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
         if self.return_encoder_output:
             return z
+
+        if not torch.jit.is_scripting():
+            target_patches = self.target_encoder.num_patches[1]
+            if self._adapted_n_times is not None and z.shape[1] != target_patches:
+                z = self._pool_adapted_time(
+                    z.flatten(2), target_patches, dim=1
+                ).unflatten(2, (self.embed_num, self.embed_dim))
 
         # Pass to final_layer
         # _LinearConstraintProbe expects z in 4D (batch, n_patches, embed_num, embed_dim)
@@ -821,7 +841,17 @@ class _PatchEmbed(nn.Module):
             Patch embeddings of shape (batch, n_patches, n_chans, embed_dim).
         """
         # x: batch, n_chans, n_times
-        x = self.padding_layer(x)
+        if x.shape[-1] == self.n_times or torch.jit.is_scripting():
+            x = self.padding_layer(x)
+        else:
+            if self.patch_stride is None:
+                rem = x.shape[-1] % self.patch_size
+                pad = self.patch_size - rem if rem != 0 else 0
+            else:
+                rem = (x.shape[-1] - self.patch_size) % self.patch_stride
+                pad = self.patch_stride - rem if rem != 0 else 0
+            if pad > 0:
+                x = F.pad(x, (0, pad))
         x = x.unsqueeze(1)  # (batch, 1, n_chans, n_times)
 
         if self.apply_norm:
@@ -1047,6 +1077,7 @@ class _EEGTransformer(nn.Module):
         chan_ids: Optional[torch.Tensor] = None,
         mask_x: Optional[torch.Tensor] = None,
         mask_t: Optional[torch.Tensor] = None,
+        check_n_patches: bool = True,
     ):
         """
         Forward pass.
@@ -1074,7 +1105,9 @@ class _EEGTransformer(nn.Module):
         # x shape: (batch, n_patches, n_chans, embed_dim)
         batch, n_patches, n_chans, embed_dim = x.shape
 
-        if n_patches != self.num_patches[1] or n_chans != self.num_patches[0]:
+        if (
+            check_n_patches and n_patches != self.num_patches[1]
+        ) or n_chans != self.num_patches[0]:
             raise ValueError(
                 f"Patch shape mismatch: got ({n_patches}, {n_chans}), "
                 f"expected ({self.num_patches[1]}, {self.num_patches[0]})"

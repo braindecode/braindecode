@@ -163,6 +163,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: final_layer.1.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -309,6 +310,10 @@ class CBraMod(EEGModuleMixin, nn.Module):
             )
         )
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        self.rearrange.n_patches(n_times)
+
     def forward(
         self,
         x: Tensor,
@@ -349,6 +354,11 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 "tokens": out,
             }
             return features
+        if not torch.jit.is_scripting():
+            if self._adapted_n_times is not None:
+                target_patch = self._n_patch()
+                if target_patch is not None:
+                    out = self._pool_adapted_time(out, target_patch, dim=2)
         return self.final_layer(out)
 
 

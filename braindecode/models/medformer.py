@@ -190,6 +190,7 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
     _time_axis = (
         "fixed"  # fixed: enc_embedding.channel_embedding.pe is sized by n_times
     )
+    _fixed_time_param = "enc_embedding.channel_embedding.pe"
     _channel_axis = (
         "fixed"  # fixed: enc_embedding.channel_embedding.pe is sized by n_chans
     )

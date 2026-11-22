@@ -401,6 +401,10 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: spatial_embedding_ix is sized by n_chans
 
+    @torch.jit.unused
+    def _check_montage_adaptation(self, chs_info):
+        _check_channel_strategy(self, self._modality, "nearest", None)
+
     def __init__(
         self,
         n_outputs: int | None = None,

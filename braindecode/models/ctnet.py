@@ -107,6 +107,7 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "fixed"  # fixed: final_layer.weight is sized by n_times
     _channel_axis = "fixed"  # fixed: cnn.eegnet_module.2.weight is sized by n_chans
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -236,6 +237,28 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
         )
         self._min_n_times = self.pool_size_1 * self.pool_size_2
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        seq_len = math.floor(
+            (
+                math.floor((n_times - self.pool_size_1) / self.pool_size_1 + 1)
+                - self.pool_size_2
+            )
+            / self.pool_size_2
+            + 1
+        )
+        if seq_len < 1:
+            raise ValueError(
+                f"CTNet needs at least {self.pool_size_1 * self.pool_size_2} time "
+                f"samples; got n_times={n_times}."
+            )
+        max_len = self.position.encoding.shape[1]
+        if seq_len > max_len:
+            raise ValueError(
+                f"CTNet's self.position encoding holds at most {max_len} tokens, "
+                f"but n_times={n_times} produces {seq_len} tokens."
+            )
+
     def forward(self, x: Tensor) -> Tensor:
         """
         Forward pass of the CTNet model.
@@ -256,6 +279,8 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
         cnn = self.position(cnn)
         trans = self.trans(cnn)
         features = cnn + trans
+        if not torch.jit.is_scripting():
+            features = self._pool_adapted_time(features, self.sequence_length, dim=1)
         flatten_feature = self.flatten_drop_layer(features)
         out = self.final_layer(flatten_feature)
         return out

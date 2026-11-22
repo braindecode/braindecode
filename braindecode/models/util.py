@@ -255,12 +255,24 @@ def build_model_config(model) -> dict:
             elif not _is_jsonable(val):
                 continue
             config[name] = val
-    layer = getattr(model, "channel_layer", None)  # save the input, not the target
-    chs_info = (
-        layer.chs_info if layer is not None else getattr(model, "_chs_info", None)
-    )
+    if getattr(model, "_adapt_channel_layer", False):
+        chs_info = getattr(model, "_ctor_chs_info", None)
+        if chs_info is None:
+            chs_info = getattr(model, "_chs_info", None)
+    else:
+        layer = getattr(model, "channel_layer", None)  # save the input, not the target
+        chs_info = (
+            layer.chs_info if layer is not None else getattr(model, "_chs_info", None)
+        )
     if chs_info is not None:
         config["chs_info"] = model._serialize_chs_info(chs_info)
+    adaptation = (
+        model._adaptation_config() if hasattr(model, "_adaptation_config") else None
+    )
+    if adaptation is not None:
+        config["input_adaptation"] = adaptation
+    else:
+        config.pop("input_adaptation", None)
     return config
 
 

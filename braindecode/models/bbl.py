@@ -156,6 +156,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "free"
+    _supports_montage_adaptation = False
 
     def __init__(
         self,

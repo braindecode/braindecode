@@ -194,6 +194,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: final_layer.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -367,6 +368,16 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     def _bypass_time_check(self, x, args, kwargs) -> bool:
         return self.pooling == "mean"
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        n_patches = -(-n_times // self.patch_size)
+        max_pos = self.encoder.rotary.cos.shape[0]
+        if n_patches + 1 > max_pos:
+            raise ValueError(
+                f"DIVER1 encoder rotary table holds {max_pos} positions, got "
+                f"{n_patches + 1} for n_times={n_times}."
+            )
+
     def reset_head(self, n_outputs):
         """Replace the linear classification head for a new ``n_outputs``."""
         self._n_outputs = n_outputs
@@ -451,7 +462,11 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"montages of any size."
             )
         # Reject a different patch count before tokenization.
-        if -(-x.shape[-1] // self.patch_size) != self.n_patches:
+        n_patches = -(-x.shape[-1] // self.patch_size)
+        allow_adapted = (
+            False if torch.jit.is_scripting() else self._adapted_n_times is not None
+        )
+        if n_patches != self.n_patches and not allow_adapted:
             raise ValueError(
                 f"DIVER1 was built for {self.n_patches} temporal patches of "
                 f"{self.patch_size} samples but got input with {x.shape[-1]} "
@@ -463,7 +478,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             x = x.masked_fill(~mask[:, :, None], 0.0)
             # Encoder keys of padded rows are masked; the register row stays.
             row_mask = torch.cat([mask.new_ones(batch, 1), mask], dim=1)
-            key_mask = row_mask.repeat_interleave(self.n_patches + 1, dim=1)
+            key_mask = row_mask.repeat_interleave(n_patches + 1, dim=1)
 
         # Reference order: CNN, spectrum, metadata, then input-conditioned STCPE.
         tokens = self.patch_tokenizer(x)
@@ -489,7 +504,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # corner (global).
         patch_reg = self.patch_register[None].expand(batch, n_chans, -1, -1)
         tokens = torch.cat([patch_reg, tokens], dim=2)
-        chan_reg = self.chan_register[None].expand(batch, -1, self.n_patches, -1)
+        chan_reg = self.chan_register[None].expand(batch, -1, n_patches, -1)
         global_reg = self.global_register[None].expand(batch, -1, -1, -1)
         row = torch.cat([global_reg, chan_reg], dim=2)
         tokens = torch.cat([row, tokens], dim=1)
@@ -505,9 +520,19 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             time_id=time_id,
             key_mask=key_mask,
         )
-        tokens = self.unflatten_grid(tokens)
+        if n_patches == self.n_patches or torch.jit.is_scripting():
+            tokens = self.unflatten_grid(tokens)
+        else:
+            tokens = tokens.unflatten(1, (n_rows, n_cols))
         # The reference discards register outputs, including during finetuning.
         tokens = tokens[:, 1:, 1:]
+
+        if (
+            not return_features
+            and self.pooling == "flatten"
+            and not torch.jit.is_scripting()
+        ):
+            tokens = self._pool_adapted_time(tokens, self.n_patches, dim=2)
 
         if self.pooling == "flatten":
             pooled = tokens.flatten(start_dim=1)
@@ -626,6 +651,7 @@ class _PatchCNN(nn.Sequential):
                 patch=n_patches,
             ),
         )
+        self._n_patches = n_patches
 
     def forward(
         self, x: torch.Tensor, ch_mask: torch.Tensor | None = None
@@ -649,7 +675,9 @@ class _PatchCNN(nn.Sequential):
                 )
             else:
                 x = layer(x)
-        return self.unfold_grid(x)
+        if n_patches == self._n_patches or torch.jit.is_scripting():
+            return self.unfold_grid(x)
+        return x.unflatten(2, (-1, n_patches)).permute(0, 2, 3, 1, 4).flatten(3)
 
 
 class _ChannelMetaEmbedding(nn.Module):
@@ -769,7 +797,15 @@ class _STCPE(nn.Module):
         channels; tokens of padded channels are then never attended to.
         """
         batch, n_chans, n_patches, _ = x.shape
-        window, n_windows = self.window, self.n_windows
+        window = self.window
+        if n_patches == self.n_patches or torch.jit.is_scripting():
+            n_windows, window_index = self.n_windows, self.window_index
+        else:
+            n_windows = n_patches + window - 1
+            window_index = (
+                torch.arange(window, device=x.device)[:, None]
+                + torch.arange(n_windows, device=x.device)
+            ).flatten()
 
         x = self.down(x)
         dim = x.shape[-1]
@@ -777,7 +813,7 @@ class _STCPE(nn.Module):
         # backward are slow on some accelerators, e.g. Intel Gaudi).
         windows = (
             F.pad(x, (0, 0, window - 1, window - 1))
-            .index_select(2, self.window_index)
+            .index_select(2, window_index)
             .view(batch, n_chans, window, n_windows, dim)
             .permute(0, 3, 1, 2, 4)
             .reshape(batch * n_windows, n_chans * window, dim)
@@ -803,12 +839,12 @@ class _STCPE(nn.Module):
         # Overlap-add back onto the padded patches, then drop the padding.
         n_padded = n_patches + 2 * (window - 1)
         folded = encoded.new_zeros(batch, n_chans, n_padded, dim).index_add(
-            2, self.window_index, encoded
+            2, window_index, encoded
         )
         # Count in the working dtype: a scalar window divisor changes BF16
         # accumulation for large windows (e.g. 259 overlaps accumulate to 256).
         overlap = x.new_zeros(n_padded).index_add(
-            0, self.window_index, x.new_ones(window * n_windows)
+            0, window_index, x.new_ones(window * n_windows)
         )
         start, stop = window - 1, window - 1 + n_patches
         averaged = folded[:, :, start:stop] / overlap[start:stop, None]

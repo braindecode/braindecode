@@ -2,6 +2,7 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
+import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn.utils.parametrize import register_parametrization
@@ -77,6 +78,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
     _channel_axis = (
         "fixed"  # fixed: inception_block.branches.0.2.parametrizations.weight.original
     )
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -226,6 +228,8 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
                 "The convolutions and poolings leave no time sample: too small "
                 f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
             )
+        self._pool_t_target = n_time
+        self._min_pool_input = pool_kernel * tcn_kernel_size
         num_features = tcn_in_channel * n_time
 
         # The authors constrain the final dense with ``max_norm(0.25)``.
@@ -233,6 +237,23 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             "final_layer",
             LinearWithConstraint(num_features, self.n_outputs, max_norm=0.25),
         )
+
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        if n_times < self._min_pool_input:
+            raise ValueError(
+                f"EEGITNet poolings leave no time sample for n_times={n_times}."
+            )
+
+    @torch.jit.unused
+    def _forward_backbone(self, x: torch.Tensor) -> torch.Tensor:
+        for name, module in self.named_children():
+            if name in ("channel_layer", "input_resample"):
+                continue
+            if name == "flatten":
+                x = self._pool_adapted_time(x, self._pool_t_target, dim=-1)
+            x = module(x)
+        return x
 
     @staticmethod
     def _get_inception_branch(

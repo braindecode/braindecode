@@ -119,6 +119,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     _time_axis = "free"
     _channel_axis = "free"
+    _supports_montage_adaptation = False
 
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
@@ -403,6 +404,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: _channel_order is sized by n_chans
+    _supports_montage_adaptation = False
 
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"

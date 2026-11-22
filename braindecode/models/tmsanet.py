@@ -76,6 +76,7 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: spatial_conv.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -154,7 +155,16 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
                 f"so the average pooling keeps at least one temporal token "
                 f"(would keep {n_tokens})."
             )
+        self._pool_t_target = n_tokens
+        self._pool_size = pool_size
         self.final_layer = nn.Linear(embed_dim * n_tokens, self.n_outputs)
+
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        if n_times < self._pool_size:
+            raise ValueError(
+                f"TMSANet needs n_times >= pool_size ({self._pool_size}); got {n_times}."
+            )
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.add_channel_dim(x)
@@ -167,6 +177,8 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
         x = self.avg_pool(x)
         x = self.dropout(x)
         x = self.transformer(x)
+        if not torch.jit.is_scripting():
+            x = self._pool_adapted_time(x, self._pool_t_target, dim=1)
         x = self.flatten(x)
         return self.final_layer(x)
 

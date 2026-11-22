@@ -201,6 +201,8 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "fixed"  # fixed: knowledge_embedding.0.weight is sized by n_times
     _channel_axis = "fixed"  # fixed: final_layer.weight is sized by n_chans
+    _supports_montage_adaptation = False
+    _fixed_time_param = "knowledge_embedding.0.weight"
 
     def __init__(
         self,

@@ -228,6 +228,14 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: default_sensor_indices is sized by n_chans
 
+    @torch.jit.unused
+    def _check_montage_adaptation(self, chs_info):
+        if self.normalization == "session":
+            raise ValueError(
+                "MAPA with normalization='session' takes spectrograms, not raw "
+                "signals for montage adaptation."
+            )
+
     # TorchScript reads no module globals, so forward reads these constants.
     __constants__ = ("_band_strides", "_n_bins", "_n_regions")
     _band_strides = _BAND_STRIDES

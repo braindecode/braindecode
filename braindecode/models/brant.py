@@ -178,6 +178,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
     """
 
     _time_axis = "fixed"  # fixed: temporal_encoder.input_embedding.positional_encoding
+    _fixed_time_param = "temporal_encoder.input_embedding.positional_encoding"
     _channel_axis = "free"
 
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.

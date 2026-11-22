@@ -270,6 +270,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_times
     _channel_axis = "fixed"  # fixed: final_layer.2.weight is sized by n_chans
+    _supports_n_times_adaptation = True
 
     # Constant, so TorchScript compiles only the head in use (``cls_query_token``
     # exists only with attention pooling).
@@ -410,6 +411,21 @@ class REVE(EEGModuleMixin, nn.Module):
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
         self._n_times_step = self.patch_size - self.patch_overlap
         self._n_times_offset = self.patch_size % self._n_times_step
+        self._pool_t_target = patch_count(
+            self.n_times,
+            self.patch_size,
+            self.on_non_divisible,
+            self._n_times_step,
+        )
+
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        patch_count(
+            n_times,
+            self.patch_size,
+            self.on_non_divisible,
+            self.patch_size - self.patch_overlap,
+        )
 
     @torch.jit.unused
     def _bypass_channel_check(self, x, args, kwargs) -> bool:
@@ -620,6 +636,8 @@ class REVE(EEGModuleMixin, nn.Module):
 
         if self.use_attention_pooling:
             x = self._attention_pooling(x, token_mask)
+        elif not torch.jit.is_scripting():
+            x = self._pool_adapted_time(x, self._pool_t_target, dim=2)
 
         x = self.final_layer(x)
         return x

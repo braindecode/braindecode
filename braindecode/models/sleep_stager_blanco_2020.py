@@ -4,6 +4,7 @@
 
 import math
 
+import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -56,6 +57,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: feature_extractor.0.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -137,6 +139,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         self.n_conv_chans = n_conv_chans
         self.max_pool_size = max_pool_size
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
+        self._pool_t_target = self.len_last_layer // self.n_conv_chans
         self.return_feats = return_feats
 
         # TODO: Add new way to handle return_features == True
@@ -159,6 +162,10 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             width //= self.max_pool_size
         return self.n_conv_chans * width
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        self._len_last_layer(self.n_chans, n_times)
+
     def forward(self, x):
         """Forward pass.
         Parameters
@@ -169,8 +176,9 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         if x.ndim == 3:
             x = x.unsqueeze(2)
 
-        feats = self.feature_extractor(x).flatten(start_dim=1)
+        feats = self.feature_extractor(x)
         if self.return_feats:
-            return feats
-        else:
-            return self.final_layer(feats)
+            return feats.flatten(start_dim=1)
+        if not torch.jit.is_scripting():
+            feats = self._pool_adapted_time(feats, self._pool_t_target, dim=-1)
+        return self.final_layer(feats.flatten(start_dim=1))

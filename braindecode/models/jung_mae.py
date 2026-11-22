@@ -171,6 +171,8 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: final_layer.weight
+    _supports_montage_adaptation = False
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -231,6 +233,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # head. patch_count refuses a bad patch_size or on_non_divisible
         n_pairs = self.n_chans // 2
         n_patches = patch_count(self.n_times, patch_size, on_non_divisible)
+        self._pool_t_target = n_patches
         # Validity rule of the reference: a patch is encoded when at least
         # ceil(minimum_patch_valid_fraction * Q) of its samples are valid
         self.min_valid_samples = math.ceil(patch_size * minimum_patch_valid_fraction)
@@ -341,6 +344,8 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # A token per patch of each pair, zero where the patch is invalid:
         # (batch, 2C, n_times) -> (batch, C, P, D)
         x = self.encode(x)["foundation"]
+        if not return_features and not torch.jit.is_scripting():
+            x = self._pool_adapted_time(x, self._pool_t_target, dim=2)
         # Every token of the window in one vector, pair after pair, the input
         # of the benchmark's flatten_linear head: (batch, C * P * D)
         x = self.flatten_layer(x)
@@ -436,6 +441,10 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # The pairs back on their own axis: (batch, C, P, D)
         x = x.unflatten(0, [batch_size, n_pairs])
         return {"foundation": x, "valid": valid_patches}
+
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        patch_count(n_times, self.patch_size, self.on_non_divisible)
 
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)

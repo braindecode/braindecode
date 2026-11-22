@@ -114,6 +114,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "fixed"  # fixed: final_layer.weight is sized by n_times
+    _fixed_time_param = "tce d_model (feature_extractor.1)"
     _channel_axis = (
         "fixed"  # fixed: feature_extractor.0.features1.0.weight is sized by n_chans
     )

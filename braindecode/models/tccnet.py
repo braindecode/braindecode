@@ -162,6 +162,7 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: feature_extractor.0.convolutions.0.conv.weight
+    _supports_montage_adaptation = False
 
     def __init__(
         self,

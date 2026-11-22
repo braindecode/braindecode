@@ -132,6 +132,7 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "fixed"  # fixed: encoder.0.norm1.bias
+    _fixed_time_param = "encoder.0.norm1.bias"
     _channel_axis = "free"
 
     def __init__(

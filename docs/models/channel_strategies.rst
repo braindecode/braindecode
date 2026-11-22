@@ -260,6 +260,70 @@ EEG channels before extracting the signal and its input montage:
 the signal of its nearest good electrode, and ``C3`` and ``C4`` are copied as they are.
 
 **********************
+ Adapting a built model
+**********************
+
+A model that is already instantiated (including native CNNs without a ``channel_strategy``
+constructor parameter, such as :class:`~braindecode.models.EEGNet`,
+:class:`~braindecode.models.ShallowFBCSPNet` and :class:`~braindecode.models.Deep4Net`)
+can be adapted in place with :meth:`~braindecode.models.base.EEGModuleMixin.adapt_input`.
+Calling ``adapt_input`` again cleanly replaces the active adaptation while keeping all
+``state_dict`` keys identical.
+
+.. code-block:: python
+
+    from braindecode.models import EEGNet
+
+    model = EEGNet(chs_info=train_chs, n_outputs=4, n_times=1000, sfreq=250.0)
+    model.adapt_input(chs_info=eval_chs, sfreq=500.0)
+    logits = model(x_eval_500hz)  # resampled to 250 Hz, mapped to train_chs
+
+Montage and mixed-montage batches
+=================================
+
+Passing ``chs_info`` maps recordings from that montage onto the build montage using
+``channel_strategy`` (``"nearest"`` by default). Any EEG, iEEG, or ECoG model built with
+``chs_info`` supports montage adaptation, whereas MEG, fNIRS, sEMG, and polysomnography
+models refuse with ``ValueError``. For mixed-montage batches collated with
+:func:`~braindecode.datasets.pad_channels_collate` and ``set_return_ch_pos(True)``, pass
+``channel_strategy`` with ``chs_info=None`` and call ``model(X, pos=pos, ch_mask=ch_mask)``:
+
+.. code-block:: python
+
+    model = EEGNet(chs_info=train_chs, n_outputs=2, n_times=1000, sfreq=250.0)
+    model.adapt_input(channel_strategy="spline")
+    logits = model(X, pos=pos, ch_mask=ch_mask)
+
+Stateless strategies only
+=========================
+
+``adapt_input`` accepts only the stateless strategies ``("exact", "zero", "nearest",
+"idw", "spline", "field", "source", "region")`` (with ``trainable=False`` enforced on
+``"source"``), because strategies with learned or fitted parameters (``"wiener"``,
+``"latent"``, or ``"source"`` with ``trainable=True``) add keys to ``state_dict``.
+
+Sampling rate and window length
+===============================
+
+Passing ``sfreq`` installs a non-persistent :class:`torchaudio.transforms.Resample` layer
+to convert integer-rate inputs to ``model.sfreq`` (with a warning), and passing
+``sfreq=model.sfreq`` clears it. Free and dense models accept any compatible ``n_times``
+directly. Supported fixed-time models adaptively pool features right before their
+classification head when ``n_times`` is set (exact identity at the build length), while
+fixed-time models whose internal layers depend on build length refuse with a ``ValueError``
+naming the fixed parameter.
+
+Configuration persistence
+=========================
+
+Whenever an input adaptation is active, :meth:`~braindecode.models.base.EEGModuleMixin.get_config`
+and :meth:`~braindecode.models.base.EEGModuleMixin.save_pretrained` store it under
+``"input_adaptation"`` while keeping ``"chs_info"`` equal to the build montage.
+:meth:`~braindecode.models.base.EEGModuleMixin.from_config` and
+:meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` re-apply the saved
+adaptation after loading weights, while unadapted models omit ``"input_adaptation"``.
+
+**********************
  See it in a tutorial
 **********************
 

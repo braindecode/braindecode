@@ -124,6 +124,7 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: temporal_conv1.conv.weight
+    _supports_montage_adaptation = False
 
     def __init__(
         self,

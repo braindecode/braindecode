@@ -109,6 +109,7 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "fixed"  # fixed: projector.0.weight
+    _fixed_time_param = "projector.0.weight"
     _channel_axis = "fixed"  # fixed: tsconv.4.weight
 
     def __init__(

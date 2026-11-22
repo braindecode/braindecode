@@ -359,6 +359,17 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
             x = encoder.norm(x)
         return x
 
+    @torch.jit.unused
+    def _pool_sjepa_tokens(self, tokens: torch.Tensor, channels: int) -> torch.Tensor:
+        if self._adapted_n_times is None:
+            return tokens
+        p_build = _n_times_out(self._clf_conv_layers_spec, self.n_times)
+        if tokens.shape[1] == channels * p_build:
+            return tokens
+        grid = tokens.unflatten(1, (channels, -1))
+        grid = self._pool_adapted_time(grid, p_build, dim=2)
+        return grid.flatten(1, 2)
+
 
 def _self_attention(mha: nn.MultiheadAttention, x: torch.Tensor) -> torch.Tensor:
     """``mha(x, x, x, need_weights=False)[0]`` (batch first, no mask) as
@@ -653,6 +664,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
     _time_axis = "fixed"  # fixed: final_layer.linear.weight
     _channel_axis = "fixed"  # fixed: final_layer.spat_conv.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -754,6 +766,10 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
                 "cls_token": None,
             }
             return out
+        if not torch.jit.is_scripting():
+            contextual_features = self._pool_sjepa_tokens(
+                contextual_features, self.n_chans
+            )
         y = self.final_layer(contextual_features)  # type: ignore
         return y  # type: ignore
 
@@ -918,6 +934,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
     _time_axis = "fixed"  # fixed: final_layer.linear.weight
     _channel_axis = "fixed"  # fixed: final_layer.spat_conv.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -1072,6 +1089,8 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
                 "cls_token": None,
             }
             return out
+        if not torch.jit.is_scripting():
+            local_features = self._pool_sjepa_tokens(local_features, self.n_chans)
         y = self.final_layer(local_features)
         return y
 
@@ -1161,6 +1180,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: spatial_conv.1.weight
+    _supports_n_times_adaptation = True
 
     _feature_encoder_channels: str = "n_spat_filters"
 
@@ -1229,6 +1249,8 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
             nn.Conv2d(1, n_spat_filters, (self.n_chans, 1)),
             Rearrange("b spat_filters 1 time -> b spat_filters time"),
         )
+        self._clf_conv_layers_spec = feature_encoder__conv_layers_spec
+        self._clf_n_spat_filters = n_spat_filters
         self._out_emb_dim = _get_out_emb_dim(
             conv_layers_spec=feature_encoder__conv_layers_spec,
             n_times=self.n_times,
@@ -1321,6 +1343,10 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
                 "cls_token": None,
             }
             return out
+        if not torch.jit.is_scripting():
+            local_features = self._pool_sjepa_tokens(
+                local_features, self._clf_n_spat_filters
+            )
         y = self.final_layer(local_features)
         return y
 

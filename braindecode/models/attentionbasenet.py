@@ -5,6 +5,7 @@ from __future__ import annotations
 # License: BSD (3-clause)
 import math
 
+import torch
 from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
@@ -251,6 +252,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: input_block.spatial_conv.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -361,14 +363,33 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             activation=activation,
         )
 
+        self._pool_t_target = seq_lengths[-1]
         self.final_layer = nn.Sequential(
             nn.Flatten(), nn.Linear(seq_lengths[-1] * ch_dim, self.n_outputs)
         )
+
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        if isinstance(
+            self.channel_attention_block.attention_block, (FCA, GatherExcite)
+        ):
+            mode = (
+                "fca"
+                if isinstance(self.channel_attention_block.attention_block, FCA)
+                else "ge"
+            )
+            raise ValueError(
+                f"AttentionBaseNet with attention_mode={mode!r} sizes the channel "
+                "attention block to build n_times; adapt_input(n_times=...) cannot "
+                "resize it."
+            )
 
     def forward(self, x):
         x = self.input_block(x)
         x = self.channel_expansion(x)
         x = self.channel_attention_block(x)
+        if not torch.jit.is_scripting():
+            x = self._pool_adapted_time(x, self._pool_t_target, dim=-1)
         x = self.final_layer(x)
         return x
 

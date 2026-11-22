@@ -205,6 +205,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: fc.fc.0.weight
     _channel_axis = "fixed"  # fixed: patch_embedding.shallownet.1.weight
+    _supports_n_times_adaptation = True
 
     # Old full-object checkpoints restore state without calling __init__.
     activation_checkpointing = False
@@ -298,6 +299,14 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             raise RuntimeError("activation_checkpointing requires eager execution")
         return super().compile(*args, **kwargs)
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        if self.patch_embedding.n_tokens(n_times) < 1:
+            raise ValueError(
+                f"EEGConformer temporal convolution and pooling leave no token for "
+                f"n_times={n_times}."
+            )
+
     def forward(self, x: Tensor) -> Tensor:
         if self.activation_checkpointing:
             if torch.jit.is_scripting():
@@ -313,6 +322,10 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         if self.return_features:
             return feature
 
+        if not torch.jit.is_scripting():
+            feature = self._pool_adapted_time(
+                feature, self.patch_embedding.n_tokens(self.n_times), dim=1
+            )
         x = self.fc(feature)
         x = self.final_layer(x)
         return x

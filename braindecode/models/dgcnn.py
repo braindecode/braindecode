@@ -365,6 +365,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "fixed"  # fixed: graph_conv.projection.weight
+    _fixed_time_param = "graph_conv.projection.weight"
     _channel_axis = "fixed"  # fixed: classifier.0.weight
 
     def __init__(

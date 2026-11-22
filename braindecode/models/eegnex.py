@@ -171,6 +171,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.parametrizations.weight.original
     _channel_axis = "fixed"  # fixed: block_3.0.parametrizations.weight.original
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -303,6 +304,24 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             max_norm=max_norm_linear,
         )
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        p4 = self.avg_pool_block4[1]
+        p5 = self.avg_pool_block5[1]
+        t3 = math.floor((n_times + 2 - p4) / p4) + 1
+        t5 = math.floor((t3 + 2 - p5) / p5) + 1
+        if t5 < 1:
+            raise ValueError(
+                f"EEGNeX poolings leave no time sample for n_times={n_times}."
+            )
+
+    @torch.jit.unused
+    def _forward_block5_adapted(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.block_5[:-1]:
+            x = layer(x)
+        x = self._pool_adapted_time(x, self.in_features // self.filter_1, dim=-1)
+        return self.block_5[-1](x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the EEGNeX model.
@@ -326,6 +345,10 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         # (batch_size, 1, n_filter*8, n_times//4)
         x = self.block_4(x)
         # (batch_size, 1, n_filter*8, n_times//4)
+        if not torch.jit.is_scripting():
+            if self._adapted_n_times is not None:
+                x = self._forward_block5_adapted(x)
+                return self.final_layer(x)
         x = self.block_5(x)
         # (batch_size, n_filter*(n_times//32))
         x = self.final_layer(x)

@@ -283,6 +283,8 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: hbo_encoder.time_embedding.weight is sized by n_times
     _channel_axis = "fixed"  # fixed: default_geometry is sized by n_chans
+    _supports_montage_adaptation = False
+    _fixed_time_param = "hbo_encoder.time_embedding.weight"
 
     def __init__(
         self,

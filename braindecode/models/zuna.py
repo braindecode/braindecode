@@ -220,6 +220,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     """
 
     _time_axis = "fixed"  # fixed: encoder.rotary_cosine is sized by n_times
+    _fixed_time_param = "encoder.rotary_cosine"
     _channel_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_chans
 
     def __init__(

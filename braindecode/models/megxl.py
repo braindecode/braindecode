@@ -165,6 +165,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: final_layer.weight
+    _supports_montage_adaptation = False
 
     def __init__(
         self,

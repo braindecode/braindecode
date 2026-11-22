@@ -164,6 +164,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "fixed"  # fixed: bilstm.weight_ih_l0
+    _fixed_time_param = "bilstm.weight_ih_l0"
     _channel_axis = "fixed"  # fixed: bilstm.weight_ih_l0
 
     def __init__(

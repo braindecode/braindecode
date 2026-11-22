@@ -18,7 +18,11 @@ from torch import nn
 from torch.nn import functional as F
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import has_valid_locations, positions_from_chs_info
+from braindecode.models.util import (
+    has_valid_locations,
+    positions_from_chs_info,
+    sensor_type_of,
+)
 from braindecode.modules import ChannelMerger
 from braindecode.modules.layers import SubjectLayers
 
@@ -290,6 +294,22 @@ class BrainModule(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: input_projection.weight
+
+    @torch.jit.unused
+    def _check_montage_adaptation(self, chs_info):
+        for montage in (self._chs_info, chs_info):
+            if not montage:
+                continue
+            other = [
+                ch["ch_name"]
+                for index, ch in enumerate(montage)
+                if sensor_type_of(montage, index) != "eeg"
+            ]
+            if other:
+                raise ValueError(
+                    f"BrainModule reads EEG and MEG, but adapt_input maps electrodes "
+                    f"only and chs_info has other sensors ({other})."
+                )
 
     def __init__(
         self,

@@ -10,23 +10,28 @@ import functools
 import inspect
 import json
 import logging
+import math
 import os
 import re
 import sys
 import warnings
 from collections import OrderedDict
+from copy import deepcopy
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, Iterable, Optional, Union
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
+from torchaudio.transforms import Resample
 from torchinfo import ModelStatistics, summary
 
 from braindecode.functional.patches import snap_time_axis
 from braindecode.models.util import (
     _EEG_PARAMS,
+    _in_model_resample,
     build_model_config,
     resolve_config_type,
     resolve_type_kwargs,
@@ -56,6 +61,57 @@ _GEOMETRY_KWARGS = (
     "input_window_seconds",
     "sfreq",
 )
+
+# Stateless channel strategies allowed in adapt_input() (never add state_dict keys).
+_ADAPT_STRATEGIES: tuple[str, ...] = (
+    "exact",
+    "zero",
+    "nearest",
+    "idw",
+    "spline",
+    "field",
+    "source",
+    "region",
+)
+
+
+def _resample_out_length(length: int, orig_freq: int, new_freq: int) -> int:
+    """Output sample count produced by ``torchaudio.transforms.Resample``."""
+    g = math.gcd(orig_freq, new_freq)
+    return math.ceil((new_freq // g) * length / (orig_freq // g))
+
+
+def _apply_resample(
+    resample: Resample, x: torch.Tensor, time_dim: int = -1
+) -> torch.Tensor:
+    """Apply ``resample`` along ``time_dim`` cleanly across dtypes and views.
+
+    Avoids torchaudio's ``view()`` (fails on non-contiguous inputs),
+    ``torch.as_tensor(...).long()`` slicing (host sync), and float32-only kernel
+    assumptions under ``bfloat16`` / autocast.
+    """
+    if resample.orig_freq == resample.new_freq:
+        return x
+    if not x.is_floating_point():
+        raise TypeError(
+            f"Expected floating point type for waveform tensor, but received {x.dtype}."
+        )
+    moved = x if time_dim == -1 else x.movedim(time_dim, -1)
+    orig_freq = int(resample.orig_freq) // int(resample.gcd)
+    new_freq = int(resample.new_freq) // int(resample.gcd)
+    width = int(resample.width)
+    shape = moved.shape
+    flat = moved.reshape(-1, shape[-1])
+    num_wavs, length = flat.shape
+    padded = F.pad(flat, (width, width + orig_freq))
+    kernel = resample.kernel.to(device=flat.device, dtype=flat.dtype)
+    resampled = F.conv1d(padded[:, None], kernel, stride=orig_freq)
+    resampled = resampled.transpose(1, 2).reshape(num_wavs, -1)
+    target_length = _resample_out_length(
+        length, int(resample.orig_freq), int(resample.new_freq)
+    )
+    out = resampled[..., :target_length].reshape(*shape[:-1], target_length)
+    return out if time_dim == -1 else out.movedim(-1, time_dim)
 
 
 def _validate_weights_filename(filename):
@@ -457,8 +513,15 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     #: before ``forward`` is ever compiled.
     __jit_ignored_attributes__ = [
         *sorted(_EEG_PARAMS),
+        "_adapt_channel_layer",
+        "_adapt_channel_strategy",
+        "_adapt_channel_strategy_kwargs",
+        "_adapt_chs_info",
+        "_adapted_n_times",
         "_channel_axis",
         "_chs_info",
+        "_ctor_chs_info",
+        "_input_sfreq",
         "_min_n_times",
         "_time_axis",
         "_time_input_steps",
@@ -626,6 +689,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self._time_input_steps = {}
         self._defer_step_snap = False
         self._warned_length_snap = False
+        self._input_sfreq = None
+        self._adapted_n_times = None
+        self._adapt_channel_layer = False
+        self._adapt_chs_info = None
+        self._adapt_channel_strategy = None
+        self._adapt_channel_strategy_kwargs = None
+        self._ctor_chs_info = layer.chs_info if layer is not None else None
         if "on_non_divisible" not in self.__dict__ or self.on_non_divisible is None:
             self.on_non_divisible = "crop"
         if not hasattr(self, "_explicit_on_non_divisible"):
@@ -637,11 +707,31 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             # Instance attribute: model(x) and model.forward(x) both map x.
             setattr(self, "forward", self._channel_forward)
 
-    def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
-        """``forward`` under a channel strategy: map ``x`` (recorded with
-        ``chs_info``, default the model's) onto the target, then run the backbone."""
-        # pad_channels_collate / set_return_ch_pos: pos and ch_mask describe the
-        # input montage of each sample; the backbone gets the full target one.
+    @torch.jit.unused
+    def _forward_backbone(self, *args, **kwargs):
+        """Run the backbone forward pass, skipping adaptation submodules."""
+        if type(self).forward is torch.nn.Sequential.forward:
+            x = args[0] if args else next(iter(kwargs.values()))
+            for name, module in self._modules.items():
+                if module is not None and name not in (
+                    "channel_layer",
+                    "input_resample",
+                ):
+                    x = module(x)
+            return x
+        return type(self).forward(self, *args, **kwargs)
+
+    @torch.jit.unused
+    def _apply_channel_layer(
+        self,
+        args: tuple,
+        kwargs: dict,
+        *,
+        chs_info=None,
+        ch_names=None,
+    ) -> tuple[tuple, dict]:
+        """Map channel-bearing inputs through ``self.channel_layer``."""
+        kwargs = dict(kwargs)
         ch_mask, pos = kwargs.pop("ch_mask", None), kwargs.pop("pos", None)
         bound = inspect.signature(type(self).forward).bind_partial(
             self, *args, **kwargs
@@ -660,12 +750,386 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             )
         if chs_info is None and ch_names is not None:  # LaBraM: names of x's channels
             chs_info = [{"ch_name": n} for n in ch_names]
+
+        def _map_signal(t: torch.Tensor) -> torch.Tensor:
+            if t.ndim == 4 and t.shape[3] == 1:
+                return self.channel_layer(t.squeeze(3), chs_info, ch_mask)[0].unsqueeze(
+                    3
+                )
+            if (
+                t.ndim == 4
+                and t.shape[1] == 1
+                and type(self).__name__ == "SleepStagerChambon2018"
+            ):
+                return self.channel_layer(t.squeeze(1), chs_info, ch_mask)[0].unsqueeze(
+                    1
+                )
+            return self.channel_layer(t, chs_info, ch_mask)[0]
+
         if args:
-            args = (self.channel_layer(args[0], chs_info, ch_mask)[0], *args[1:])
+            args = (_map_signal(args[0]), *args[1:])
         else:  # x by keyword: the backbone's first input (x, X, eeg...)
-            x = list(inspect.signature(type(self).forward).parameters)[1]
-            kwargs[x] = self.channel_layer(kwargs[x], chs_info, ch_mask)[0]
-        return type(self).forward(self, *args, **kwargs)
+            x = _forward_param_names(type(self).forward)[0]
+            kwargs[x] = _map_signal(kwargs[x])
+
+        if type(self).__name__ == "CORTEG":
+            if len(args) > 1 and torch.is_tensor(args[1]):
+                args = (args[0], _map_signal(args[1]), *args[2:])
+            elif "x_hi" in kwargs and torch.is_tensor(kwargs["x_hi"]):
+                kwargs["x_hi"] = _map_signal(kwargs["x_hi"])
+        return args, kwargs
+
+    def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
+        """``forward`` under a channel strategy: map ``x`` (recorded with
+        ``chs_info``, default the model's) onto the target, then run the backbone."""
+        args, kwargs = self._apply_channel_layer(
+            args, kwargs, chs_info=chs_info, ch_names=ch_names
+        )
+        return self._forward_backbone(*args, **kwargs)
+
+    @torch.jit.unused
+    def _check_montage_adaptation(self, chs_info: Optional[list[dict]]) -> None:
+        """Hook for model-specific montage adaptation refusals."""
+        return None
+
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        """Hook for model-specific checks when adapting fixed-time heads."""
+        return None
+
+    @torch.jit.unused
+    def _pool_adapted_time(
+        self, x: torch.Tensor, target: int, dim: int = -1
+    ) -> torch.Tensor:
+        """Pool time/token axis ``dim`` to ``target`` only when ``adapt_input(n_times=...)`` is active."""
+        if self._adapted_n_times is None or x.shape[dim] == target:
+            return x
+        dim = dim % x.ndim
+        moved = x.movedim(dim, -1)
+        shape = moved.shape[:-1]
+        pooled = F.adaptive_avg_pool1d(moved.reshape(-1, 1, moved.shape[-1]), target)
+        return pooled.reshape(*shape, target).movedim(-1, dim)
+
+    @torch.jit.unused
+    def _reference_device_dtype(self) -> Optional[tuple[torch.device, torch.dtype]]:
+        """Device and floating dtype of the backbone (before adaptation submodules)."""
+        skip_ids = set()
+        for attr in ("channel_layer", "input_resample"):
+            sub = self._modules.get(attr)
+            if sub is not None:
+                for t in (*sub.parameters(), *sub.buffers()):
+                    skip_ids.add(id(t))
+        for p in self.parameters():
+            if id(p) not in skip_ids and p.is_floating_point():
+                return p.device, p.dtype
+        for b in self.buffers():
+            if id(b) not in skip_ids and b.is_floating_point():
+                return b.device, b.dtype
+        return None
+
+    @torch.jit.unused
+    def adapt_input(
+        self,
+        *,
+        chs_info: Optional[list[dict]] = None,
+        sfreq: Optional[float] = None,
+        n_times: Optional[int] = None,
+        channel_strategy: Optional[str] = None,
+        channel_strategy_kwargs: Optional[dict] = None,
+    ) -> "EEGModuleMixin":
+        """Adapt a built model in place to a new montage, sampling rate, or window length.
+
+        All adaptations keep the backbone weights and ``state_dict`` keys intact
+        and are persisted in :meth:`get_config` and Hub saves under
+        ``"input_adaptation"``.
+
+        Parameters
+        ----------
+        chs_info : list of dict or None, default=None
+            Channel metadata of the incoming recordings. Mapped onto the
+            montage the model was built with using ``channel_strategy``
+            (default ``"nearest"`` when ``chs_info`` is given).
+        sfreq : float or None, default=None
+            Sampling frequency of the incoming recordings in Hz. Inputs are
+            resampled inside forward when this differs from ``self.sfreq``.
+            Passing ``sfreq == self.sfreq`` clears any active resampler.
+        n_times : int or None, default=None
+            Expected window length in samples for incoming recordings. Free and
+            dense models accept this directly; supported fixed-time models
+            adaptively pool before their classification head while remaining
+            bit-identical at their build ``n_times``.
+        channel_strategy : str or None, default=None
+            Stateless channel mapping strategy from :data:`_ADAPT_STRATEGIES`.
+            When set with ``chs_info=None``, per-sample ``(pos, ch_mask)``
+            batches (from ``pad_channels_collate``) are mapped dynamically.
+        channel_strategy_kwargs : dict or None, default=None
+            Extra keyword arguments passed to
+            :class:`~braindecode.modules.ChannelLayer`.
+
+        Returns
+        -------
+        self : EEGModuleMixin
+            The model instance, modified in place.
+        """
+        name = type(self).__name__
+        if (
+            channel_strategy_kwargs is not None
+            and chs_info is None
+            and channel_strategy is None
+        ):
+            raise ValueError(
+                "channel_strategy_kwargs requires chs_info or channel_strategy."
+            )
+
+        ref = self._reference_device_dtype()
+
+        # --- Montage validation and ChannelLayer build ---
+        adapt_montage = chs_info is not None or channel_strategy is not None
+        new_layer = None
+        resolved_strategy = None
+        resolved_kw: Optional[dict] = None
+        parsed_chs: Optional[list[dict]] = None
+        if adapt_montage:
+            if not self._supports_montage_adaptation:
+                raise ValueError(
+                    f"{name} reads non-EEG channels, not an EEG montage: "
+                    "montage adaptation is unsupported."
+                )
+            strategy = "nearest" if channel_strategy is None else channel_strategy
+            kw = dict(channel_strategy_kwargs or {})
+            if strategy not in _ADAPT_STRATEGIES or (
+                strategy == "source" and bool(kw.get("trainable", False))
+            ):
+                raise ValueError(
+                    f"adapt_input takes {_ADAPT_STRATEGIES}: {strategy!r} "
+                    f"adds learned or fitted state to the state_dict."
+                )
+            if strategy == "source":
+                kw["trainable"] = False
+            if (
+                chs_info is not None
+                and isinstance(chs_info, list)
+                and len(chs_info) > 0
+                and isinstance(chs_info[0], dict)
+                and "loc" in chs_info[0]
+                and isinstance(chs_info[0]["loc"], list)
+            ):
+                parsed_chs = self._deserialize_chs_info(chs_info)
+            else:
+                parsed_chs = list(chs_info) if chs_info is not None else None
+            self._check_montage_adaptation(parsed_chs)
+            if self._chs_info is None:
+                raise ValueError(
+                    f"{name}.adapt_input(...) needs the montage the model was "
+                    f"built with; rebuild it with chs_info=..."
+                )
+            new_layer = ChannelLayer(self._chs_info, strategy, parsed_chs, **kw)
+            if parsed_chs is None and np.isnan(new_layer._tpos).any():
+                raise ValueError(
+                    f"{name}.adapt_input(channel_strategy={strategy!r}) needs valid "
+                    "3D channel locations ('loc' or standard 10-05 names) on the "
+                    "model montage to map per-sample batches dynamically."
+                )
+            if ref is not None:
+                new_layer = new_layer.to(device=ref[0], dtype=ref[1])
+            resolved_strategy = strategy
+            resolved_kw = (
+                dict(channel_strategy_kwargs) if channel_strategy_kwargs else None
+            )
+
+        # --- Sampling rate validation and Resample build ---
+        adapt_sfreq = sfreq is not None
+        new_resample = None
+        new_input_sfreq: Optional[float] = None
+        if adapt_sfreq:
+            if (
+                isinstance(sfreq, bool)
+                or not isinstance(sfreq, (int, float, np.integer, np.floating))
+                or not math.isfinite(float(sfreq))
+                or float(sfreq) <= 0
+            ):
+                raise ValueError(
+                    f"{name}.adapt_input sfreq must be positive, got {sfreq!r}."
+                )
+            model_sfreq = self._signal_param("sfreq")
+            if model_sfreq is None:
+                raise ValueError(
+                    f"{name}.adapt_input(sfreq=...) requires the model's sfreq "
+                    "to be specified at construction."
+                )
+            if float(model_sfreq) != round(float(model_sfreq)):
+                raise ValueError(
+                    f"{name} has non-integer model sfreq={model_sfreq}; "
+                    "in-model resampling requires integer rates."
+                )
+            sfreq_val = float(sfreq)
+            if sfreq_val != float(model_sfreq):
+                new_resample, _ = _in_model_resample(
+                    name,
+                    sfreq_val,
+                    int(round(float(model_sfreq))),
+                    self._signal_param("n_times") or 0,
+                )
+                if ref is not None:
+                    new_resample = new_resample.to(device=ref[0], dtype=ref[1])
+                new_input_sfreq = sfreq_val
+
+        # --- Window length validation ---
+        adapt_times = n_times is not None
+        new_adapted_n_times: Optional[int] = None
+        if adapt_times:
+            if (
+                isinstance(n_times, bool)
+                or not isinstance(n_times, (int, np.integer))
+                or int(n_times) <= 0
+            ):
+                raise ValueError(
+                    f"{name}.adapt_input n_times must be a positive integer, got {n_times!r}."
+                )
+            target_n_times = int(n_times)
+            time_axis = self._effective_time_axis()
+            if time_axis in {"free", "dense"}:
+                if self._min_n_times is not None and target_n_times < self._min_n_times:
+                    raise ValueError(
+                        f"{name} needs at least {self._min_n_times} time samples; "
+                        f"got n_times={target_n_times}."
+                    )
+                new_adapted_n_times = target_n_times
+            elif time_axis == "fixed":
+                if not self._supports_n_times_adaptation:
+                    param = self._fixed_time_param or "internal layers"
+                    raise ValueError(
+                        f"{name} fixes {param} to n_times={self._signal_param('n_times')}; "
+                        "adapt_input(n_times=...) cannot resize fixed inner layers."
+                    )
+                if self._signal_param("n_times") is None:
+                    raise ValueError(
+                        f"{name}.adapt_input(n_times=...) needs the build n_times to be known."
+                    )
+                if self._min_n_times is not None and target_n_times < self._min_n_times:
+                    raise ValueError(
+                        f"{name} needs at least {self._min_n_times} time samples; "
+                        f"got n_times={target_n_times}."
+                    )
+                self._validate_adapted_n_times(target_n_times)
+                new_adapted_n_times = target_n_times
+            else:
+                new_adapted_n_times = target_n_times
+
+        # --- Apply validated changes in-place (clean replacement) ---
+        if adapt_montage:
+            assert new_layer is not None
+            self.channel_layer = new_layer
+            self._adapt_channel_layer = True
+            self._adapt_chs_info = parsed_chs
+            self._adapt_channel_strategy = resolved_strategy
+            self._adapt_channel_strategy_kwargs = resolved_kw
+
+        if adapt_sfreq:
+            if new_resample is None:
+                if hasattr(self, "input_resample"):
+                    del self.input_resample
+                self._input_sfreq = None
+            else:
+                self.input_resample = new_resample
+                self._input_sfreq = new_input_sfreq
+
+        if adapt_times:
+            self._adapted_n_times = new_adapted_n_times
+
+        if (
+            hasattr(self, "input_resample")
+            or self._adapt_channel_layer
+            or (self._adapted_n_times is not None and self._supports_n_times_adaptation)
+        ):
+            setattr(self, "forward", self._adapted_forward)
+        elif hasattr(self, "channel_layer"):
+            setattr(self, "forward", self._channel_forward)
+        else:
+            self.__dict__.pop("forward", None)
+        return self
+
+    def _adapted_forward(self, *args, **kwargs):
+        """``forward`` after :meth:`adapt_input`: resample, map montage, run backbone."""
+        if hasattr(self, "input_resample"):
+            kwargs = dict(kwargs)
+            time_axis = self._effective_time_axis()
+            first = self._first_input(args, kwargs)
+            bypass_time = first is not None and self._bypass_time_check(
+                first, args, kwargs
+            )
+            for idx, inp_name in enumerate(self._time_inputs):
+                if inp_name == "x_hi":
+                    continue
+                t = self._get_time_input(idx, inp_name, args, kwargs)
+                if t is None or t.ndim < 2:
+                    continue
+                time_dim = 2 if (idx == 0 and t.ndim == 4 and t.shape[3] == 1) else -1
+                t = _apply_resample(self.input_resample, t, time_dim=time_dim)
+                target = self._check_length_rule(
+                    t.shape[time_dim],
+                    idx=idx,
+                    inp_name=inp_name,
+                    shape=tuple(t.shape),
+                    time_axis=time_axis,
+                    bypass_time=bypass_time,
+                    already_resampled=True,
+                )
+                if target is not None and t.shape[time_dim] != target:
+                    t = (
+                        self._snap_tensor_time(t, target)
+                        if idx == 0
+                        else snap_time_axis(t, target)
+                    )
+                args, kwargs = self._set_time_input(idx, inp_name, t, args, kwargs)
+
+        if hasattr(self, "channel_layer"):
+            kwargs = dict(kwargs)
+            chs_info = kwargs.pop("chs_info", None)
+            ch_names = kwargs.pop("ch_names", None)
+            args, kwargs = self._apply_channel_layer(
+                args, kwargs, chs_info=chs_info, ch_names=ch_names
+            )
+        return self._forward_backbone(*args, **kwargs)
+
+    @torch.jit.unused
+    def _adaptation_config(self) -> Optional[dict[str, Any]]:
+        """Serialized ``input_adaptation`` payload, or ``None`` when unadapted."""
+        if (
+            not self._adapt_channel_layer
+            and self._input_sfreq is None
+            and self._adapted_n_times is None
+        ):
+            return None
+        return {
+            "chs_info": (
+                self._serialize_chs_info(self._adapt_chs_info)
+                if self._adapt_chs_info is not None
+                else None
+            ),
+            "sfreq": self._input_sfreq,
+            "n_times": self._adapted_n_times,
+            "channel_strategy": self._adapt_channel_strategy,
+            "channel_strategy_kwargs": deepcopy(self._adapt_channel_strategy_kwargs),
+        }
+
+    @torch.jit.unused
+    def _apply_input_adaptation_config(self, spec: dict[str, Any]) -> None:
+        """Re-apply a saved ``input_adaptation`` config dict on this model."""
+        kwargs: dict[str, Any] = {
+            k: spec[k]
+            for k in (
+                "sfreq",
+                "n_times",
+                "channel_strategy",
+                "channel_strategy_kwargs",
+            )
+            if spec.get(k) is not None
+        }
+        if spec.get("chs_info") is not None:
+            kwargs["chs_info"] = self._deserialize_chs_info(spec["chs_info"])
+        if kwargs:
+            self.adapt_input(**kwargs)
 
     @property
     def n_outputs(self) -> int:
@@ -890,6 +1354,97 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         return snap_time_axis(t, target, time_dim=time_dim)
 
     @torch.jit.unused
+    def _post_resample_length(self, t_len: int) -> int:
+        if self._input_sfreq is None:
+            return t_len
+        return _resample_out_length(
+            t_len,
+            int(round(self._input_sfreq)),
+            int(round(float(self.sfreq))),
+        )
+
+    @torch.jit.unused
+    def _check_length_rule(
+        self,
+        t_len: int,
+        *,
+        idx: int,
+        inp_name: str,
+        shape: tuple[int, ...],
+        time_axis: Optional[str],
+        bypass_time: bool,
+        already_resampled: bool = False,
+    ) -> Optional[int]:
+        """Validate ``t_len`` (after resampling if active) and return target snap length."""
+        name = type(self).__name__
+        resampling = self._input_sfreq is not None and inp_name != "x_hi"
+        eff_len = (
+            t_len
+            if (already_resampled or not resampling)
+            else self._post_resample_length(t_len)
+        )
+        suffix = (
+            f" after resampling from {self._input_sfreq:g} Hz" if resampling else ""
+        )
+        if time_axis == "fixed" and not bypass_time:
+            adapted = self._adapted_n_times is not None
+            expected = (
+                self._adapted_n_times if adapted else self._signal_param("n_times")
+            )
+            if expected is not None and len(shape) >= 2:
+                if eff_len == expected:
+                    return None
+                step = (self._time_input_steps or {}).get(inp_name, self._n_times_step)
+                cap = min(max(1, expected // 100), max(1, step))
+                if self.on_non_divisible != "error" and abs(eff_len - expected) <= cap:
+                    return expected
+                label = "" if idx == 0 else f" ({inp_name})"
+                verb = "adapted" if adapted else "built"
+                raise ValueError(
+                    f"{name} was {verb} for n_times={expected} and got "
+                    f"{eff_len} samples{suffix}{label} (input shape {shape}). "
+                    f"Rebuild it with n_times={eff_len}, cut the signal "
+                    f"into windows of {expected} samples, or call "
+                    f"model.adapt_input(sfreq=...) / "
+                    f"model.adapt_input(n_times=...)."
+                )
+        elif time_axis in {"free", "dense"} and (
+            self._n_times_step > 1 or self._time_input_steps
+        ):
+            step = (self._time_input_steps or {}).get(inp_name, self._n_times_step)
+            if step <= 1 or len(shape) < 2:
+                return None
+            if eff_len < 1:
+                min_req = 1 if self.on_non_divisible == "pad" else step
+                raise ValueError(
+                    f"{name} needs at least {min_req} time samples for "
+                    f"{inp_name} (step {step}) and got {eff_len}{suffix} "
+                    f"(input shape {shape})."
+                )
+            rem = (eff_len - self._n_times_offset) % step
+            if rem == 0:
+                return None
+            if self.on_non_divisible == "error":
+                raise ValueError(
+                    f"Time dimension ({eff_len}) of {name} is not divisible by "
+                    f"step {step}{suffix} (input shape {shape})."
+                )
+            target = (
+                eff_len + (step - rem)
+                if self.on_non_divisible == "pad"
+                else eff_len - rem
+            )
+            if not self._defer_step_snap:
+                if target < 1:
+                    raise ValueError(
+                        f"{name} needs at least {step} time samples for "
+                        f"{inp_name} (step {step}) and got {eff_len}{suffix} "
+                        f"(input shape {shape})."
+                    )
+                return target
+        return None
+
+    @torch.jit.unused
     def _check_input_shape(self, x: torch.Tensor, args: tuple, kwargs: dict) -> None:
         """Validate channel count and minimum window length before forward."""
         name = type(self).__name__
@@ -923,11 +1478,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 )
             )
         ):
-            got_times = self._input_n_times(x)
+            got_times = self._post_resample_length(self._input_n_times(x))
+            suffix = (
+                f" after resampling from {self._input_sfreq:g} Hz"
+                if self._input_sfreq is not None
+                else ""
+            )
             if got_times < self._min_n_times:
                 raise ValueError(
                     f"{name} needs at least {self._min_n_times} time samples and got "
-                    f"{got_times} (input shape {tuple(x.shape)})."
+                    f"{got_times}{suffix} (input shape {tuple(x.shape)})."
                 )
 
     @torch.jit.unused
@@ -941,56 +1501,49 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         bypass_time = self._bypass_time_check(x, args, kwargs)
         time_axis = self._effective_time_axis()
 
-        if time_axis == "fixed" and not bypass_time:
-            n_times = self._signal_param("n_times")
-            if n_times is not None and x.ndim >= 2:
-                snaps: list[tuple[int, str, torch.Tensor, int]] = []
-                for idx, inp_name in enumerate(self._time_inputs):
-                    t = self._get_time_input(idx, inp_name, args, kwargs)
-                    if t is None or t.ndim < 2:
-                        continue
-                    t_len = self._input_n_times(t) if idx == 0 else t.shape[-1]
-                    if t_len == n_times:
-                        continue
-                    step = (self._time_input_steps or {}).get(
-                        inp_name, self._n_times_step
+        if time_axis == "fixed" and not bypass_time and x.ndim >= 2:
+            snaps: list[tuple[int, str, torch.Tensor, int, int]] = []
+            for idx, inp_name in enumerate(self._time_inputs):
+                t = self._get_time_input(idx, inp_name, args, kwargs)
+                if t is None or t.ndim < 2:
+                    continue
+                t_len = self._input_n_times(t) if idx == 0 else t.shape[-1]
+                target = self._check_length_rule(
+                    t_len,
+                    idx=idx,
+                    inp_name=inp_name,
+                    shape=tuple(t.shape),
+                    time_axis=time_axis,
+                    bypass_time=bypass_time,
+                )
+                if target is not None:
+                    eff_len = (
+                        t_len
+                        if (self._input_sfreq is None or inp_name == "x_hi")
+                        else self._post_resample_length(t_len)
                     )
-                    cap = min(max(1, n_times // 100), max(1, step))
-                    if self.on_non_divisible != "error" and abs(t_len - n_times) <= cap:
-                        snaps.append((idx, inp_name, t, t_len))
-                    else:
-                        label = "" if idx == 0 else f" ({inp_name})"
-                        raise ValueError(
-                            f"{name} was built for n_times={n_times} and got "
-                            f"{t_len} samples{label} (input shape {tuple(t.shape)}). "
-                            f"Rebuild it with n_times={t_len}, cut the signal "
-                            f"into windows of {n_times} samples, or call "
-                            f"model.adapt_input(sfreq=...) / "
-                            f"model.adapt_input(n_times=...)."
-                        )
-                if snaps:
-                    for idx, inp_name, t, _ in snaps:
+                    snaps.append((idx, inp_name, t, eff_len, target))
+            if snaps:
+                if self._input_sfreq is None:
+                    for idx, inp_name, t, _, target in snaps:
                         snapped = (
-                            self._snap_tensor_time(t, n_times)
+                            self._snap_tensor_time(t, target)
                             if idx == 0
-                            else snap_time_axis(t, n_times)
+                            else snap_time_axis(t, target)
                         )
                         args, kwargs = self._set_time_input(
                             idx, inp_name, snapped, args, kwargs
                         )
-                    if (
-                        not self._warned_length_snap
-                        and not self._explicit_on_non_divisible
-                    ):
-                        self._warned_length_snap = True
-                        first_len = snaps[0][3]
-                        warnings.warn(
-                            f"{name} snapped input length from {first_len} to "
-                            f"{n_times} samples. Pass on_non_divisible='error' "
-                            f"to reject mismatched window lengths.",
-                            UserWarning,
-                            stacklevel=3,
-                        )
+                if not self._warned_length_snap and not self._explicit_on_non_divisible:
+                    self._warned_length_snap = True
+                    first_len, first_target = snaps[0][3], snaps[0][4]
+                    warnings.warn(
+                        f"{name} snapped input length from {first_len} to "
+                        f"{first_target} samples. Pass on_non_divisible='error' "
+                        f"to reject mismatched window lengths.",
+                        UserWarning,
+                        stacklevel=3,
+                    )
         elif time_axis in {"free", "dense"} and (
             self._n_times_step > 1 or self._time_input_steps
         ):
@@ -999,37 +1552,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 t = self._get_time_input(idx, inp_name, args, kwargs)
                 if t is None or t.ndim < 2:
                     continue
-                step = (self._time_input_steps or {}).get(inp_name, self._n_times_step)
-                if step <= 1:
-                    continue
                 t_len = self._input_n_times(t) if idx == 0 else t.shape[-1]
-                if t_len < 1:
-                    min_req = 1 if self.on_non_divisible == "pad" else step
-                    raise ValueError(
-                        f"{name} needs at least {min_req} time samples for "
-                        f"{inp_name} (step {step}) and got {t_len} "
-                        f"(input shape {tuple(t.shape)})."
-                    )
-                rem = (t_len - self._n_times_offset) % step
-                if rem == 0:
-                    continue
-                if self.on_non_divisible == "error":
-                    raise ValueError(
-                        f"Time dimension ({t_len}) of {name} is not divisible by "
-                        f"step {step} (input shape {tuple(t.shape)})."
-                    )
-                target = (
-                    t_len + (step - rem)
-                    if self.on_non_divisible == "pad"
-                    else t_len - rem
+                target = self._check_length_rule(
+                    t_len,
+                    idx=idx,
+                    inp_name=inp_name,
+                    shape=tuple(t.shape),
+                    time_axis=time_axis,
+                    bypass_time=bypass_time,
                 )
-                if not self._defer_step_snap:
-                    if target < 1:
-                        raise ValueError(
-                            f"{name} needs at least {step} time samples for "
-                            f"{inp_name} (step {step}) and got {t_len} "
-                            f"(input shape {tuple(t.shape)})."
-                        )
+                if target is None:
+                    continue
+                resampling = self._input_sfreq is not None and inp_name != "x_hi"
+                eff_len = self._post_resample_length(t_len) if resampling else t_len
+                if not resampling:
                     snapped = (
                         self._snap_tensor_time(t, target)
                         if idx == 0
@@ -1038,19 +1574,22 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     args, kwargs = self._set_time_input(
                         idx, inp_name, snapped, args, kwargs
                     )
-                    if (
-                        not self._warned_length_snap
-                        and not self._explicit_on_non_divisible
-                        and (idx > 0 or t_len != build_n_times)
-                    ):
-                        self._warned_length_snap = True
-                        warnings.warn(
-                            f"{name} snapped input length from {t_len} to {target} "
-                            f"samples (step {step}, "
-                            f"on_non_divisible={self.on_non_divisible!r}).",
-                            UserWarning,
-                            stacklevel=3,
-                        )
+                if (
+                    not self._warned_length_snap
+                    and not self._explicit_on_non_divisible
+                    and (idx > 0 or eff_len != build_n_times)
+                ):
+                    self._warned_length_snap = True
+                    step = (self._time_input_steps or {}).get(
+                        inp_name, self._n_times_step
+                    )
+                    warnings.warn(
+                        f"{name} snapped input length from {eff_len} to {target} "
+                        f"samples (step {step}, "
+                        f"on_non_divisible={self.on_non_divisible!r}).",
+                        UserWarning,
+                        stacklevel=3,
+                    )
         return args, kwargs
 
     def __call__(self, *args, **kwargs):
@@ -1086,7 +1625,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 self._n_chans = self._input_n_chans(x)
                 self._n_chans_for_jit = self._n_chans
             if self._time_axis == "fixed" and self._signal_param("n_times") is None:
-                self._n_times = self._input_n_times(x)
+                raw_times = self._input_n_times(x)
+                self._n_times = (
+                    self._post_resample_length(raw_times)
+                    if self._input_sfreq is not None
+                    else raw_times
+                )
         return out
 
     def get_output_shape(self) -> tuple[int, ...]:
@@ -1110,14 +1654,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     device=next(self.parameters()).device,  # type: ignore
                 )
                 self._check_input_shape(probe, (probe,), {})
-                return tuple(
-                    type(self)
-                    .forward(  # the backbone, on its own channels
-                        self,
-                        probe,
-                    )
-                    .shape
-                )
+                return tuple(self._forward_backbone(probe).shape)
             finally:
                 for module, training in modes.items():
                     module.training = training
@@ -1189,9 +1726,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """
         config = dict(config)  # shallow copy
         config.pop("braindecode_version", None)
+        input_adaptation = config.pop("input_adaptation", None)
         cls._fill_legacy_defaults(config)
         resolve_type_kwargs(cls, config)
-        return cls(**config)
+        model = cls(**config)
+        if input_adaptation is not None:
+            model._apply_input_adaptation_config(input_adaptation)
+        return model
 
     @classmethod
     def _fill_legacy_defaults(cls, kwargs: dict) -> None:
@@ -1346,6 +1887,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _warned_length_snap = False
     on_non_divisible = "crop"
     _explicit_on_non_divisible = False
+    _supports_montage_adaptation: ClassVar[bool] = True
+    _supports_n_times_adaptation: ClassVar[bool] = False
+    _fixed_time_param: ClassVar[Optional[str]] = None
+    _input_sfreq: Optional[float] = None
+    _adapted_n_times: Optional[int] = None
+    _adapt_channel_layer: bool = False
+    _adapt_chs_info: Optional[list[dict]] = None
+    _adapt_channel_strategy: Optional[str] = None
+    _adapt_channel_strategy_kwargs: Optional[dict] = None
+    _ctor_chs_info: Optional[list[dict]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         own = super().state_dict()
@@ -1941,6 +2492,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             **model_kwargs,
         ):
             model_kwargs.pop("braindecode_version", None)
+            input_adaptation = model_kwargs.pop("input_adaptation", None)
             filename = model_kwargs.pop("filename", None)
             if filename is not None:
                 _validate_weights_filename(filename)
@@ -1965,6 +2517,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             if config_file is not None:
                 with open(config_file, "r") as f:
                     saved_config = json.load(f)
+            if input_adaptation is None:
+                input_adaptation = saved_config.get("input_adaptation")
 
             # A save spells its window with any two of these three quantities.
             # When only one is known, complete the pair from the save, preferring
@@ -2057,5 +2611,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         f"n_outputs={saved_n_outputs}, but "
                         f"n_outputs={requested_n_outputs} was requested."
                     ) from None
+
+            if input_adaptation is not None:
+                model._apply_input_adaptation_config(input_adaptation)
 
             return model

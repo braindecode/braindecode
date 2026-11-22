@@ -133,6 +133,8 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "fixed"  # fixed: conv1.weight
     _channel_axis = "fixed"  # fixed: conv2.depth_conv.weight
+    _supports_montage_adaptation = False
+    _fixed_time_param = "conv1.weight"
 
     def __init__(
         self,

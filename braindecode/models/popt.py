@@ -133,6 +133,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "fixed"  # fixed: input_embedding.in_proj.weight is sized by n_times
+    _fixed_time_param = "input_embedding.in_proj.weight"
     _channel_axis = "fixed"  # fixed: electrode_coords is sized by n_chans
 
     def __init__(

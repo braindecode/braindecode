@@ -204,6 +204,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: channel_embedding
+    _supports_montage_adaptation = False
 
     def __init__(
         self,

@@ -144,6 +144,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: spatial_conv.weight
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -204,6 +205,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
         self.kernel_size_pool = max(1, pool_kernel_samples)
 
         num_features = self._calc_num_features()
+        self._pool_t_target = num_features // self.n_spatial_filters_smooth
 
         # Layers
         self.ensure_dim = Rearrange("batch nchan times -> batch 1 nchan times")
@@ -242,6 +244,15 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
         self.final_layer = nn.Linear(num_features, self.n_outputs)
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        w_out_conv2 = n_times - self.samples_100ms + 1
+        w_out_pool = (w_out_conv2 - self.kernel_size_pool) // self.samples_100ms + 1
+        if w_out_conv2 < 1 or w_out_pool < 1:
+            raise ValueError(
+                f"SCCNet convolutions/pooling leave no time sample for n_times={n_times}."
+            )
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Shape: (batch_size, n_chans, n_times)
         x = self.ensure_dim(x)
@@ -263,6 +274,8 @@ class SCCNet(EEGModuleMixin, nn.Module):
         x = self.temporal_smoothing(x)
         # Shape: (batch_size, n_filters_filt, 1, n_times_reduced_avg_pool)
         x = self.activation(x)
+        if not torch.jit.is_scripting():
+            x = self._pool_adapted_time(x, self._pool_t_target, dim=-1)
         # Shape: (batch_size, n_filters_filt, 1, n_times_reduced_avg_pool)
         x = x.view(x.size(0), -1)
         # Shape: (batch_size, n_filters_filt*n_times_reduced_avg_pool)

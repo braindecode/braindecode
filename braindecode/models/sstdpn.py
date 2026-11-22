@@ -219,6 +219,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "fixed"  # fixed: proto_sep is sized by n_times
+    _fixed_time_param = "proto_sep"
     _channel_axis = "fixed"  # fixed: encoder.chan_conv.0.weight is sized by n_chans
 
     def __init__(

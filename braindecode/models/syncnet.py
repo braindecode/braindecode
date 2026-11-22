@@ -82,6 +82,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: amplitude
+    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -137,6 +138,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
                 f"pool_size={self.pool_size} leaves no pooled samples for "
                 f"n_times={self.n_times} and filter_width={self.filter_width}."
             )
+        self._pool_t_target = pooled_length
         self.classifier_input_size = pooled_length * self.num_filters
 
         # Initialize parameters
@@ -185,6 +187,15 @@ class SyncNet(EEGModuleMixin, nn.Module):
 
         self.final_layer = nn.Linear(self.classifier_input_size, self.n_outputs)
 
+    @torch.jit.unused
+    def _validate_adapted_n_times(self, n_times: int) -> None:
+        conv_length = n_times + sum(self.padding) - self.filter_width + 1
+        pooled_length = (conv_length + sum(self.padding)) // self.pool_size
+        if conv_length < 1 or pooled_length < 1:
+            raise ValueError(
+                f"SyncNet filters/pooling leave no pooled samples for n_times={n_times}."
+            )
+
     def forward(self, x):
         """Forward pass of the SyncNet model.
 
@@ -228,6 +239,10 @@ class SyncNet(EEGModuleMixin, nn.Module):
         # Apply padding to the convolution result
         res_padded = self.pad_res(res)
         res_pooled = self.pool(res_padded)
+        if not torch.jit.is_scripting():
+            res_pooled = self._pool_adapted_time(
+                res_pooled, self._pool_t_target, dim=-1
+            )
 
         # Flatten the result
         res_flat = res_pooled.flatten(1)
