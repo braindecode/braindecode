@@ -268,6 +268,9 @@ Requirements
 Bug fixes
 ==========
 
+- Add HTML redirects for the moved ``user_guide/channel_strategies.html`` and
+  ``user_guide/cropped_inference.html`` documentation pages and update
+  ``scripts/ci_plan.py`` (by `Bruno Aristimunha`_).
 - Suppress spurious directory-mismatch warnings when :func:`~braindecode.preprocessing.preprocess`
   saves recordings to ``save_dir`` and replace ``memory_profiler`` process spawning in
   :ref:`benchmark-preprocess-parallel-serial` so ``spawn`` and parallel gallery workers succeed (:gh:`1756` by `Bruno Aristimunha`_).
