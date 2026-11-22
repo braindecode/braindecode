@@ -74,102 +74,81 @@ tuh = TUH(
 
 
 ###############################################################################
-# We can visualize our data's statistics using the class' "description" method
+# We can visualize our data's statistics using the class' "description" method.
+# The plot below shows the age of each recording's subject, one row per sex,
+# with the group mean marked by a dark tick. The mock above holds a single
+# recording, so the plot shows one point; on the full corpus each row holds
+# thousands of recordings. A row without recordings says so instead of
+# printing an undefined mean.
+
+BLUE, VERMILION, GREY, INK = "#0072B2", "#D55E00", "#7F7F7F", "#14181F"
+# MOABB, imported by ``braindecode.datasets``, sets a seaborn style when it is
+# imported, so we go back to the matplotlib defaults before our own settings.
+plt.rcdefaults()
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
 
 
-def plt_histogram(df_of_ages_genders, alpha=0.5, fs=24, ylim=1.5, show_title=True):
-    # Dafarame containing info about gender and age of subjects
-    df = df_of_ages_genders
-    male_df = df[df["gender"] == "M"]
-    female_df = df[df["gender"] == "F"]
-
-    plt.figure(figsize=(15, 18))
-    if show_title:
-        plt.suptitle("Age information", y=0.95, fontsize=fs + 5)
-
-    # First plot: Male individuals
-    plt.subplot(121)
-    plt.hist(
-        male_df["age"],
-        bins=np.linspace(0, 100, 101),
-        alpha=alpha,
-        color="green",
-        orientation="horizontal",
-    )
-    plt.axhline(
-        np.mean(male_df["age"]),
-        color="black",
-        label=f"mean age {np.mean(male_df['age']):.1f} (±{np.std(male_df['age']):.1f})",
-    )
-    plt.barh(
-        np.mean(male_df["age"]),
-        height=2 * np.std(male_df["age"]),
-        width=ylim,
-        color="black",
-        alpha=0.25,
-    )
-
-    # Legend
-    plt.xlim(0, ylim)
-    plt.legend(fontsize=fs, loc="upper left")
-    plt.title(
-        f"male ({100 * len(male_df) / len(df):.1f}%)",
-        fontsize=fs,
-        loc="left",
-        y=1,
-        x=0.05,
-    )
-    plt.yticks(color="w")
-    plt.gca().invert_xaxis()
-    plt.yticks(np.linspace(0, 100, 11), fontsize=fs - 5)
-    plt.tick_params(labelsize=fs - 5)
-
-    # First plot: Female individuals
-    plt.subplot(122)
-    plt.hist(
-        female_df["age"],
-        bins=np.linspace(0, 100, 101),
-        alpha=alpha,
-        color="orange",
-        orientation="horizontal",
-    )
-    plt.axhline(
-        np.mean(female_df["age"]),
-        color="black",
-        linestyle="--",
-        label=f"mean age {np.mean(female_df['age']):.1f} ("
-        f"±{np.std(female_df['age']):.1f})",
-    )
-    plt.barh(
-        np.mean(female_df["age"]),
-        height=2 * np.std(female_df["age"]),
-        width=ylim,
-        color="black",
-        alpha=0.25,
-    )
-
-    # Label
-    plt.legend(fontsize=fs, loc="upper right")
-    plt.xlim(0, ylim)
-    plt.title(
-        f"female ({100 * len(female_df) / len(df):.1f}%)",
-        fontsize=fs,
-        loc="right",
-        y=1,
-        x=0.95,
-    )
-    plt.ylim(0, 100)
-    plt.subplots_adjust(wspace=0, hspace=0)
-    plt.ylabel("age [years]", fontsize=fs)
-    plt.xlabel("count", fontsize=fs, x=1, labelpad=20)
-    plt.yticks(np.linspace(0, 100, 11), fontsize=fs - 5)
-    plt.tick_params(labelsize=fs - 5)
-
+def plot_age_by_sex(description, seed=0):
+    """Strip plot of subject age per sex, with the mean of each group."""
+    rng = np.random.default_rng(seed)
+    groups = [("M", "Male", BLUE), ("F", "Female", VERMILION)]
+    fig, ax = plt.subplots(figsize=(7, 3))
+    row_labels = []
+    for row, (code, name, color) in enumerate(groups):
+        ages = description.loc[description["gender"] == code, "age"].to_numpy(float)
+        row_labels.append(f"{name}\n(n = {len(ages)})")
+        if len(ages) == 0:
+            ax.text(50, row, "no recordings", color=GREY, ha="center", va="center")
+            continue
+        jitter = rng.uniform(-0.18, 0.18, size=len(ages))
+        alpha = 0.7 if len(ages) < 200 else 0.15
+        ax.scatter(
+            ages, row + jitter, s=16, color=color, alpha=alpha, linewidths=0, zorder=3
+        )
+        mean = ages.mean()
+        ax.plot(
+            [mean, mean], [row - 0.3, row + 0.3], color=INK, linewidth=1.6, zorder=4
+        )
+        ax.text(
+            mean,
+            row + 0.34,
+            f"mean {mean:.0f} years",
+            color=INK,
+            fontsize=8.5,
+            ha="center",
+            va="bottom",
+        )
+    ax.set_yticks(range(len(groups)))
+    ax.set_yticklabels(row_labels)
+    ax.tick_params(axis="y", length=0)
+    ax.spines["left"].set_visible(False)
+    ax.set_ylim(-0.6, len(groups) - 0.2)
+    ax.set_xlim(0, 100)
+    ax.set_xticks([0, 25, 50, 75, 100])
+    ax.set_xlabel("Age (years)")
+    ax.grid(axis="x", color="#EAEAEA", linewidth=0.7)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
     plt.show()
 
 
 df = tuh.description
-plt_histogram(df)
+plot_age_by_sex(df)
 
 
 ###############################################################################

@@ -519,6 +519,113 @@ for s, e, label, conf in sorted(predicted, key=lambda ev: ev[0])[:10]:
     print(f"  [{s:5.2f}s, {e:5.2f}s]  class={label}  confidence={conf:.2f}")
 
 ######################################################################
+# The figure shows this window. Panel A draws one channel of the EEG with the
+# ground-truth flashes below it, one row per class: non-target flashes in grey
+# and target flashes in blue. Panel B draws the per-token probability of each
+# flash class from the dense head (background is left out), with the events
+# that ``detect`` predicts below it in the same rows; a more opaque bar has a
+# higher confidence.
+
+import matplotlib.pyplot as plt
+from matplotlib.transforms import blended_transform_factory
+
+BLUE, LIGHT_GREY, GREY, INK = "#0072B2", "#B0B0B0", "#7F7F7F", "#14181F"
+# MOABB, imported by ``braindecode.datasets``, sets a seaborn style when it is
+# imported, so we go back to the matplotlib defaults before our own settings.
+plt.rcdefaults()
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+class_style = {1: ("NonTarget", LIGHT_GREY), 2: ("Target", BLUE)}
+
+
+def draw_event_rows(ax, events, alphas=None):
+    """Draw ``(start_s, end_s, class)`` events as bars in one row per class."""
+    to_axes_y = blended_transform_factory(ax.transData, ax.transAxes)
+    for i, (start, end, cls) in enumerate(events):
+        ax.broken_barh(
+            [(start, end - start)],
+            (0.03 + 0.12 * (int(cls) - 1), 0.09),
+            transform=to_axes_y,
+            facecolor=class_style[int(cls)][1],
+            alpha=1.0 if alphas is None else alphas[i],
+            linewidth=0,
+        )
+    for cls, (name, color) in class_style.items():
+        ax.text(
+            1.005,
+            0.075 + 0.12 * (cls - 1),
+            name,
+            transform=ax.transAxes,
+            color=color if cls == 2 else GREY,
+            fontsize=8.5,
+            va="center",
+        )
+
+
+eeg, target = test_samples[0]
+ch_names = windows_ds.datasets[0].raw.ch_names
+ch_idx = ch_names.index("Pz") if "Pz" in ch_names else 0
+times = np.arange(eeg.shape[-1]) / SFREQ
+gt_events = [
+    (float(s) * WINDOW_S, float(e) * WINDOW_S, int(c))
+    for s, e, c in zip(target["start"], target["end"], target["class"])
+    if int(c) != 0
+]
+dense_prob = torch.softmax(out["dense"][0], dim=-1).cpu().numpy()  # (tokens, classes)
+token_times = (np.arange(dense_prob.shape[0]) + 0.5) * WINDOW_S / dense_prob.shape[0]
+
+fig, (ax_eeg, ax_pred) = plt.subplots(2, 1, figsize=(8.5, 5.6), sharex=True)
+
+# Panel A: the trace fills the top of the panel and the event rows sit below.
+trace = eeg[ch_idx].numpy()
+ax_eeg.plot(times, trace, color=INK, linewidth=0.5)
+low, high = trace.min(), trace.max()
+ax_eeg.set_ylim(low - 0.45 * (high - low), high)
+ax_eeg.spines["left"].set_bounds(low, high)
+ax_eeg.set_yticks([t for t in ax_eeg.get_yticks() if low <= t <= high])
+draw_event_rows(ax_eeg, gt_events)
+ax_eeg.set_ylabel(f"{ch_names[ch_idx]} (IQR units)")
+ax_eeg.set_title("A  EEG and true flashes", loc="left", fontweight="bold", color=INK)
+
+# Panel B: dense class probabilities on top, predicted events below.
+for cls, (name, color) in class_style.items():
+    ax_pred.plot(
+        token_times, 0.3 + 0.7 * dense_prob[:, cls], color=color, linewidth=1.2
+    )
+ax_pred.set_ylim(0, 1.02)
+ax_pred.set_yticks([0.3, 0.65, 1.0])
+ax_pred.set_yticklabels(["0", "0.5", "1"])
+ax_pred.spines["left"].set_bounds(0.3, 1.0)
+draw_event_rows(
+    ax_pred,
+    [(s, e, c) for s, e, c, _ in predicted],
+    alphas=[0.2 + 0.8 * conf for *_, conf in predicted],
+)
+ax_pred.set_ylabel("Class probability")
+ax_pred.set_xlabel("Time in the window (s)")
+ax_pred.set_xlim(0, WINDOW_S)
+ax_pred.set_title(
+    "B  Predicted probabilities and events", loc="left", fontweight="bold", color=INK
+)
+fig.tight_layout()
+plt.show()
+
+######################################################################
 # .. _dance-event-detection-conclusion:
 #
 # Conclusion
