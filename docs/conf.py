@@ -120,6 +120,7 @@ extensions = [
     "gh_substitutions",
     "zoo_data_gen",
     "model_seo",
+    "html_redirects",
 ]
 
 # sphinx_sitemap spawns multiprocessing.Manager().Queue(), which deadlocks
@@ -538,6 +539,14 @@ sitemap_excludes = [
     "sg_execution_times.html",
     "*/sg_execution_times.html",
 ]
+
+html_redirects = {
+    "user_guide/channel_strategies.html": "../models/channel_strategies.html",
+    "user_guide/cropped_inference.html": (
+        "../auto_examples/model_building/"
+        "plot_bcic_iv_2a_moabb_cropped.html#cropped-inference"
+    ),
+}
 
 # --- Open Graph / Twitter Card / meta description ---
 ogp_site_url = _deploy_url
