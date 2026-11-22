@@ -90,7 +90,6 @@ _CPU_SUMMARY_MODELS: frozenset[str] = frozenset(
         "CORTEG",
         "DGCNN",
         "EEGPT",
-        "GCNsNet",
         "GeoNIRS",
         "Labram",
         "MAPA",

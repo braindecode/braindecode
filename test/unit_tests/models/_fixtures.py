@@ -331,8 +331,10 @@ def _build_case(
 
 
 def _materialize(model: nn.Module, x: Tensor) -> None:
-    """Run one no-grad forward if lazy parameters still need their shapes."""
-    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
+    """Run one no-grad forward if lazy parameters or graph buffers still need setup."""
+    if any(
+        isinstance(p, nn.UninitializedParameter) for p in model.parameters()
+    ) or not getattr(model, "graph_initialized", True):
         with torch.no_grad():
             model(x)
 

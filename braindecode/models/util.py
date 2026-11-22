@@ -838,8 +838,12 @@ models_mandatory_parameters: list[
             "chs_info": [{"ch_name": f"E{i + 1}", "kind": "eeg"} for i in range(19)],
         },
     ),
-    ("CBraMod", ["n_outputs"], None),
-    ("CSBrain", ["n_outputs"], None),
+    ("CBraMod", ["n_outputs"], {"n_chans": 3, "n_times": 1000}),
+    (
+        "CSBrain",
+        ["n_outputs"],
+        {"n_chans": 3, "n_times": 1000, "head_hidden_dim": 800},
+    ),
     (
         "CodeBrain",
         ["n_chans", "n_outputs", "n_times"],
