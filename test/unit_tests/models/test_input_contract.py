@@ -1,8 +1,12 @@
 """Declared input axes, minimum window length, length-grid snapping and eval
 determinism across every registered model."""
 
+import ast
 import inspect
+import shutil
+import time
 import warnings
+from pathlib import Path
 
 import pytest
 import torch
@@ -16,6 +20,7 @@ from braindecode.models import (
     MVPFormer,
     SensingDynamics,
 )
+from braindecode.models import util as _models_util
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
@@ -23,7 +28,7 @@ from test.unit_tests.models._fixtures import (
     _build_case,
     _materialize,
     _shapes,
-    _summary_row,  # noqa: F401
+    _summary_row,
     _tensor_leaves,
     non_classification_models,
 )
@@ -250,7 +255,7 @@ def test_secondary_time_inputs_snap_and_reject_short_crops():
         spatial_channels=8,
         mlp_hidden=16,
     ).eval()
-    sd_fixed._time_axis = "fixed"
+    sd_fixed.__dict__["_time_axis"] = "fixed"
     with torch.no_grad():
         with pytest.warns(UserWarning, match="snapped"):
             fixed_out = sd_fixed(
@@ -387,3 +392,62 @@ def test_eval_is_deterministic_and_batch_independent(
     for leaf_a, leaf_one in zip(leaves_a, leaves_one):
         if leaf_a.ndim >= 1 and leaf_a.shape[0] == x.shape[0]:
             torch.testing.assert_close(leaf_a[:1], leaf_one, atol=5e-5, rtol=1e-5)
+
+
+def test_summary_csv_matches_generator():
+    from braindecode.models._summary import check_summary_csv
+
+    diffs = check_summary_csv()
+    assert diffs == [], "\n".join(diffs)
+    for name in models_dict:
+        expr = _summary_row(name)["get_#Parameters"]
+        assert expr.startswith(f"{name}("), f"{name}: {expr!r}"
+        ast.parse(expr, mode="eval")
+
+
+def test_summary_csv_check_and_incremental_files_update(tmp_path):
+    from braindecode.models._summary import check_summary_csv, main
+
+    src_csv = Path(_models_util.__file__).resolve().with_name("summary.csv")
+    csv_copy = tmp_path / "summary.csv"
+    shutil.copyfile(src_csv, csv_copy)
+    assert check_summary_csv(csv_copy) == []
+
+    text = csv_copy.read_text(encoding="utf-8")
+    mutated_lines = []
+    for line in text.splitlines():
+        if line.startswith("EEGNet,"):
+            line = line.replace(",2146,", ",999999,", 1)
+        elif line.startswith("ShallowFBCSPNet,"):
+            line = line.replace(",dense,", ",fixed,", 1)
+        mutated_lines.append(line)
+    csv_copy.write_text("\n".join(mutated_lines) + "\n", encoding="utf-8")
+
+    diffs = check_summary_csv(csv_copy)
+    assert any("EEGNet" in d for d in diffs)
+    assert any("ShallowFBCSPNet" in d for d in diffs)
+    assert main(["--check", "--csv", str(csv_copy)]) == 1
+
+    t0 = time.perf_counter()
+    rc = main(["--files", "braindecode/models/eegnet.py", "--csv", str(csv_copy)])
+    elapsed = time.perf_counter() - t0
+    assert rc == 0
+    assert elapsed < 0.5, f"Incremental --files update took {elapsed:.3f}s"
+
+    remaining = check_summary_csv(csv_copy)
+    assert not any("EEGNet" in d for d in remaining)
+    assert any("ShallowFBCSPNet" in d for d in remaining)
+
+    assert (
+        main(
+            [
+                "--files",
+                "braindecode/models/shallow_fbcsp.py",
+                "--csv",
+                str(csv_copy),
+            ]
+        )
+        == 0
+    )
+    assert check_summary_csv(csv_copy) == []
+    assert main(["--check", "--csv", str(csv_copy)]) == 0
