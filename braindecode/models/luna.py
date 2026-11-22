@@ -138,6 +138,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Retrieved from https://openreview.net/forum?id=uazfjnFL0G
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         # Braindecode EEGModuleMixin parameters
@@ -292,6 +295,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
 
         self._init_parameters()
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
+        self._n_times_step = self.patch_size
+        self._defer_step_snap = True
 
     def _init_parameters(self) -> None:
         self.cross_attn.initialize_weights()

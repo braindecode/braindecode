@@ -170,6 +170,9 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
        transformers.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_positions
+
     def __init__(
         self,
         n_outputs=None,

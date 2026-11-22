@@ -252,6 +252,9 @@ class ATCNet(EEGModuleMixin, nn.Module):
         https://github.com/Altaheri/EEG-ATCNet/blob/main/models.py
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: conv_block.conv2.weight
+
     def __init__(
         self,
         n_chans=None,

@@ -199,6 +199,9 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     .. footbibliography::
     """
 
+    _time_axis = "fixed"  # fixed: knowledge_embedding.0.weight
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         # Braindecode parameters

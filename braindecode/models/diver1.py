@@ -192,6 +192,9 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2512.19097
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -353,6 +356,16 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             self.n_chans * self.n_patches * d_model if pooling == "flatten" else d_model
         )
         self.final_layer = nn.Linear(head_in_features, self.n_outputs)
+        self.on_non_divisible = "pad"
+        self._n_times_step = patch_size
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return self._call_arg("chan_metadata", args, kwargs) is not None
+
+    @torch.jit.unused
+    def _bypass_time_check(self, x, args, kwargs) -> bool:
+        return self.pooling == "mean"
 
     def reset_head(self, n_outputs):
         """Replace the linear classification head for a new ``n_outputs``."""

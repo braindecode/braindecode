@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 from functools import partial
 
 import torch
@@ -198,6 +199,9 @@ class NeuroPose(EEGModuleMixin, nn.Module):
        and Benchmarks. arXiv:2412.02725
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -327,6 +331,7 @@ class NeuroPose(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
         )
         self._init_parameters()
+        self._min_n_times = math.prod(pool_t for pool_t, _ in encoder_pool_sizes)
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

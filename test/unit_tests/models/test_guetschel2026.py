@@ -403,7 +403,7 @@ def test_rejects_short_windows():
     with pytest.raises(ValueError, match="n_times"):
         _model(n_times=199)
     model = _model()
-    with pytest.raises(ValueError, match="patch_size"):
+    with pytest.raises(ValueError, match="needs at least 200 time samples"):
         model(_windows(150))
 
 
@@ -1474,7 +1474,7 @@ def test_logits_require_the_configured_window_length():
     model = _model(random_projection=None).eval()
     n_times = model.n_times
     x = torch.randn(2, model.n_chans, n_times + 200) * 1e-5
-    with pytest.raises(ValueError, match="return_features=True"):
+    with pytest.raises(ValueError, match=f"built for n_times={n_times}"):
         model(x)
     with torch.no_grad():
         features = model(x, return_features=True)["features"]

@@ -211,7 +211,7 @@ COMPAT = {
         canon=TEN_TWENTY,
         channels="names",
         min_n_times=160,
-        short_match="Kernel size",
+        short_match="needs at least",
     ),
     # Downstream heads that load the SignalJEPA checkpoint (strict=False).
     **{
@@ -222,7 +222,7 @@ COMPAT = {
             canon=TEN_TWENTY,
             channels="names",
             min_n_times=160,
-            short_match="Kernel size",
+            short_match="needs at least",
         )
         for cls in (SignalJEPA_Contextual, SignalJEPA_PostLocal, SignalJEPA_PreLocal)
     },
@@ -516,7 +516,7 @@ def expected(spec, gname, gkw):
     has_loc = any(np.any(ch["loc"][:3]) for ch in gkw["chs_info"])
     # length
     if n_times < spec.get("min_n_times", 0):
-        return spec.get("short_match", "n_times|window")
+        return spec.get("short_match", "n_times|window|needs at least")
     if n_times % spec.get("n_times_multiple", 1):
         return "divisible"
     # channels

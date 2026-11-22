@@ -71,6 +71,22 @@ def patch_count(
     )
 
 
+def snap_time_axis(x: torch.Tensor, target: int, time_dim: int = -1) -> torch.Tensor:
+    """Right zero-pad or crop ``x`` along ``time_dim`` to ``target`` samples."""
+    current = x.shape[time_dim]
+    if current == target:
+        return x
+    if time_dim == -1 or time_dim == x.ndim - 1:
+        if target > current:
+            return F.pad(x, (0, target - current))
+        return x[..., :target]
+    if time_dim == 2 and x.ndim == 4:
+        if target > current:
+            return F.pad(x, (0, 0, 0, target - current))
+        return x[:, :, :target, :]
+    raise ValueError(f"Unsupported time_dim={time_dim} for shape {x.shape}.")
+
+
 def pad_or_crop_to_patches(
     x: torch.Tensor,
     patch_size: int,
@@ -108,6 +124,6 @@ def pad_or_crop_to_patches(
         left = (min_patches - n_patches) // 2 * step if center else 0
         n_patches = min_patches
     target = patch_size + (n_patches - 1) * step
-    if target > x.shape[-1]:
+    if left:
         return F.pad(x, (left, target - x.shape[-1] - left))
-    return x if target == x.shape[-1] else x[..., :target]
+    return snap_time_axis(x, target)

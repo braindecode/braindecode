@@ -281,6 +281,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     .. footbibliography::
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: default_geometry
+
     def __init__(
         self,
         # Braindecode parameters
@@ -475,6 +478,14 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         # Head: dropout and a linear layer
         self.head_dropout = nn.Dropout(head_drop_prob)
         self.final_layer = nn.Linear(n_features, self.n_outputs)
+        self._n_times_step = patch_size
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return (
+            self._call_arg("geometry", args, kwargs) is not None
+            or self.geometry_encoder is None
+        )
 
     def forward(
         self,

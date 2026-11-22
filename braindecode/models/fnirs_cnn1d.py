@@ -122,6 +122,9 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
     .. footbibliography::
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: temporal_conv1.conv.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -206,6 +209,7 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
             in_features=n_filters_conv2,
             out_features=self.n_outputs,
         )
+        self._min_n_times = pool_size
 
     def forward(
         self,

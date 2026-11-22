@@ -171,6 +171,9 @@ class USleep(EEGModuleMixin, nn.Module):
        https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: encoder_blocks.0.block_prepool.0.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -296,6 +299,15 @@ class USleep(EEGModuleMixin, nn.Module):
             nn.Identity(),
             # output is (B, n_classes, S)
         )
+        self._min_n_times = self.n_times
+
+    @torch.jit.unused
+    def _input_n_chans(self, x) -> int:
+        return x.shape[2] if x.ndim == 4 else x.shape[1]
+
+    @torch.jit.unused
+    def _input_n_times(self, x) -> int:
+        return x.shape[1] * x.shape[3] if x.ndim == 4 else x.shape[-1]
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:

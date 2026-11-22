@@ -92,6 +92,9 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
        Online: http://dx.doi.org/10.1002/hbm.23730
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: conv_time_spat.conv_spat.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -348,6 +351,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self._init_parameters()
 
         self.train()
+        self._min_n_times = self._get_min_n_times(exact=True)
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

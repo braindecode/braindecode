@@ -339,6 +339,11 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         https://doi.org/10.5281/zenodo.593816
     """
 
+    _time_axis = "free"
+    _channel_axis = (
+        "fixed"  # fixed: rotation_invariant_mlp.fully_connected_layers.0.weight
+    )
+
     mapping = {
         "featurizer.window": "featurizer.stft.window",
         "featurizer.window_normalization_factor": "featurizer.stft.window_norm",
@@ -464,6 +469,17 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         # ``reset_head`` and braindecode's "last child is final_layer" convention
         # work uniformly).
         self.final_layer = nn.Linear(conformer_input_dim, self.n_outputs)
+        _lo, _hi = 1, 1 << 20
+        while _lo < _hi:
+            _mid = (_lo + _hi) // 2
+            if (
+                int(self.compute_output_lengths(torch.tensor([_mid], device="cpu"))[0])
+                >= 1
+            ):
+                _hi = _mid
+            else:
+                _lo = _mid + 1
+        self._min_n_times = _lo
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run the full pipeline.

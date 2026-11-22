@@ -97,6 +97,9 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
 
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: conv.weight
+
     def __init__(
         self,
         # Base arguments
@@ -177,6 +180,14 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
             old_feature_maps = new_feature_maps
         self.blocks = torch.nn.ModuleList(self.blocks)
         self.final_layer = torch.nn.Linear(old_feature_maps, self.n_outputs)
+        if kernel_size % 2 == 0 or n_convs == 0:
+            self._min_n_times = 1
+        elif int(self.sfreq) == int(resampling_freq):
+            self._min_n_times = 2**n_convs
+        else:
+            self._min_n_times = ((2**n_convs - 1) * int(self.sfreq)) // int(
+                resampling_freq
+            ) + 1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

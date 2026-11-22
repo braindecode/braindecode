@@ -466,16 +466,11 @@ def test_get_output_shape():
 
 
 def test_raised_runtimeerror_kernel_size_get_output_shape(dummy_module: DummyModule):
-
+    # Undeclared third-party subclasses raise the layer's own RuntimeError directly.
     dummy_module.add_module("too_big_conv", nn.Conv2d(1, 1, kernel_size=(1, 201)))
-    err_msg = (
-        r"During model prediction RuntimeError was thrown showing that at some "
-        r"layer ` Kernel size can't be greater than actual input size` \(see above "
-        r"in the stacktrace\). This could be caused by providing too small "
-        r"`n_times`\/`input_window_seconds`. Model may require longer chunks of signal "
-        r"in the input than \(1, 1, 200\)."
-    )
-    with pytest.raises(ValueError, match=err_msg):
+    with pytest.raises(
+        RuntimeError, match="Kernel size can't be greater than actual input size"
+    ):
         dummy_module.get_output_shape()
 
 
@@ -530,19 +525,45 @@ def test_get_config_roundtrip_without_hub_config(
 
 
 def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyModule):
-
     dummy_module.add_module("good_conv", nn.Conv2d(1, 1, kernel_size=(1, 100)))
     dummy_module.add_module("too_big_pool", nn.AvgPool2d(kernel_size=(1, 200)))
-
-    err_msg = (
-        r"During model prediction RuntimeError was thrown showing that at some "
-        r"layer ` Output size is too small` \(see above "
-        r"in the stacktrace\). This could be caused by providing too small "
-        r"`n_times`\/`input_window_seconds`. Model may require longer chunks of signal "
-        r"in the input than \(1, 1, 200\)."
-    )
-    with pytest.raises(ValueError, match=err_msg):
+    with pytest.raises(RuntimeError, match="Output size is too small"):
         dummy_module.get_output_shape()
+
+
+def test_declared_subclass_checks_min_n_times_and_fixed_n_times():
+    class FreeDeclared(EEGModuleMixin, nn.Module):
+        _time_axis = "free"
+        _channel_axis = "fixed"
+
+        def __init__(self, n_chans=2, n_outputs=2, n_times=100):
+            super().__init__(n_chans=n_chans, n_outputs=n_outputs, n_times=n_times)
+            self._min_n_times = 64
+            self.p = nn.Parameter(torch.zeros(1))
+
+        def forward(self, x):
+            return x.mean(dim=-1) + self.p
+
+    class FixedDeclared(EEGModuleMixin, nn.Module):
+        _time_axis = "fixed"
+        _channel_axis = "fixed"
+
+        def __init__(self, n_chans=2, n_outputs=2, n_times=100):
+            super().__init__(n_chans=n_chans, n_outputs=n_outputs, n_times=n_times)
+            self.p = nn.Parameter(torch.zeros(1))
+
+        def forward(self, x):
+            return x.mean(dim=-1) + self.p
+
+    free_model = FreeDeclared(n_chans=2, n_outputs=2, n_times=50)
+    with pytest.raises(ValueError, match="needs at least 64 time samples and got 50"):
+        free_model(torch.randn(2, 2, 50))
+    with pytest.raises(ValueError, match="needs at least 64 time samples and got 50"):
+        free_model.get_output_shape()
+
+    fixed_model = FixedDeclared(n_chans=2, n_outputs=2, n_times=100)
+    with pytest.raises(ValueError, match="built for n_times=100 and got 150 samples"):
+        fixed_model(torch.randn(2, 2, 150))
 
 
 @pytest.mark.parametrize("name", ["CTNet", "SleepStagerChambon2018", "SignalJEPA_PreLocal"])
@@ -550,7 +571,10 @@ def test_window_shorter_than_the_layers_raises_value_error(name):
     from braindecode.models.util import models_dict
 
     model = models_dict[name](n_chans=2, n_outputs=2, n_times=50, sfreq=100.0)
-    with pytest.raises(ValueError, match=r"too small `n_times`.*\(2, 2, 50\)"):
+    with pytest.raises(
+        ValueError,
+        match=r"needs at least \d+ time samples and got 50 \(input shape \(2, 2, 50\)\)",
+    ):
         model(torch.randn(2, 2, 50))
 
 

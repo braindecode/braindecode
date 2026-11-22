@@ -155,6 +155,9 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
        Code: https://github.com/czlwang/BrainBERT
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         # --- BrainBERT hyper-parameters (modest defaults; "large" in docstring) ---
@@ -201,6 +204,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
                 "Pass None to average every frame instead."
             )
         _check_on_non_divisible(on_non_divisible)
+        self.on_non_divisible = on_non_divisible
         self.pool_n_frames = pool_n_frames
         self.min_frames = 1 if pool_n_frames is None else pool_n_frames
         warn_if_sfreq_differs("BrainBERT", self._sfreq, 2048)
@@ -266,6 +270,11 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         # Upstream's downstream probe is a bare linear layer
         # (``models/linear_wav_baseline.py``), with no normalisation in front.
         self.final_layer = nn.Linear(hidden_dim, self.n_outputs)
+        self._min_n_times = (
+            1
+            if self.on_non_divisible == "pad"
+            else max(1, self.spectrogram.min_n_times(max(1, self.min_frames)))
+        )
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
@@ -315,11 +324,6 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         n_frames = spec.shape[1]
         # An input shorter than the model was built for must still give enough
         # frames, otherwise the centre slice below silently shrinks.
-        if n_frames < self.min_frames:
-            raise ValueError(
-                f"Input of {x.shape[-1]} samples gives {n_frames} spectrogram "
-                f"frames; at least {self.min_frames} are needed."
-            )
 
         # 2. input encoding + Transformer over the sequence of frames.
         h = self.input_embedding(spec)  # (n_real, n_frames, hidden_dim)

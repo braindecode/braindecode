@@ -142,6 +142,9 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: spatial_conv.weight
+
     def __init__(
         self,
         # Signal related parameters

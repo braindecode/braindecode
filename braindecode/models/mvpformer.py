@@ -226,6 +226,9 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://openreview.net/forum?id=5M1YOW3bRq
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         # braindecode signal parameters
@@ -320,6 +323,9 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.final_layer = nn.Linear(head_in, self.n_outputs, bias=False)
 
         self._init_parameters()
+        self.on_non_divisible = "pad"
+        self._min_n_times = 1
+        self._n_times_step = self.segment_len
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

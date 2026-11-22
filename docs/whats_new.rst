@@ -202,6 +202,14 @@ Enhancements
 API and behavior changes
 ========================
 
+- Every registered model declares its time and channel input axes on the class
+  (``_time_axis`` in ``{"fixed", "free", "dense"}`` and ``_channel_axis`` in
+  ``{"fixed", "free"}``) and checks input channel counts and minimum window lengths
+  in :class:`braindecode.models.EEGModuleMixin` before ``forward`` runs. On
+  fixed-length models, off-by-one window lengths within 1% of ``n_times`` (and at
+  most one patch or stride step) snap to ``n_times`` with a one-time ``UserWarning``
+  unless ``on_non_divisible="error"``; larger mismatches raise a ``ValueError``
+  naming both lengths before ``forward`` runs (`Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).

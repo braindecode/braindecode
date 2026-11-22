@@ -422,6 +422,9 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
        Project page: https://pierregtch.github.io/eeg-fm-masking/.
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -595,6 +598,12 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             ),
         )
         self.final_layer: nn.Sequential = self._build_head(self.n_outputs)
+        self._min_n_times = self.patch_size
+        self._n_times_step = self.patch_step
+
+    @torch.jit.unused
+    def _bypass_time_check(self, x, args, kwargs) -> bool:
+        return bool(self._call_arg("return_features", args, kwargs, False))
 
     @classmethod
     def hub_repo_id(cls, pretext: str, mask_radius: str, mask_length: int) -> str:
@@ -749,26 +758,6 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             ``return_features=True``, ``{"features": z, "cls_token": None}``
             with ``z`` of shape ``(batch, n_chans, n_patches, embed_dim)``.
         """
-        if x.shape[-1] < self.patch_size:
-            raise ValueError(
-                f"Input has {x.shape[-1]} samples, fewer than patch_size "
-                f"({self.patch_size})."
-            )
-        if x.shape[-2] != self.n_chans:
-            # one channel would otherwise broadcast over every configured electrode
-            raise ValueError(
-                f"The model was built for {self.n_chans} channels, but the input has "
-                f"{x.shape[-2]}. Pass the matching chs_info at construction, or use a "
-                "channel_strategy to map another montage."
-            )
-        n_patches = (x.shape[-1] - self.patch_size) // self.patch_step + 1
-        if not return_features and n_patches != self.n_patches:
-            raise ValueError(
-                f"The head expects {self.n_patches} patches (n_times={self.n_times}), "
-                f"but the input has {x.shape[-1]} samples ({n_patches} patches). "
-                "Use return_features=True for other window lengths, or build the "
-                f"model with n_times={x.shape[-1]}."
-            )
         z = self.model(self.feature_encoder(self._scale(x)))  # (B, C, P, embed_dim)
         if return_features:
             return {"features": z, "cls_token": None}  # nosec B105

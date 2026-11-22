@@ -349,6 +349,9 @@ class DGCNN(EEGModuleMixin, nn.Module):
         https://doi.org/10.1109/TAFFC.2018.2817622
     """
 
+    _time_axis = "fixed"  # fixed: graph_conv.projection.weight
+    _channel_axis = "fixed"  # fixed: classifier.0.weight
+
     def __init__(
         self,
         n_outputs: int | None = None,

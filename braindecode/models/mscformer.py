@@ -133,6 +133,9 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         https://github.com/snailpt/MSCFormer
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: cnn.branches.0.1.weight
+
     def __init__(
         self,
         # Base arguments
@@ -246,6 +249,7 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             nn.Dropout(final_drop_prob),
             nn.Linear(self.embed_dim, self.n_outputs),
         )
+        self._min_n_times = pooling_size
 
     def forward(self, x: Tensor) -> Tensor:
         """

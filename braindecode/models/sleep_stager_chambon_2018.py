@@ -56,6 +56,9 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
            26(4), 758-769.
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -128,6 +131,10 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
                 nn.Dropout(p=drop_prob),
                 nn.Linear(in_features=self.len_last_layer, out_features=self.n_outputs),
             )
+        _need_1 = max(1, max_pool_size + time_conv_size - 1 - 2 * pad_size)
+        self._min_n_times = max(
+            1, max_pool_size * _need_1 + time_conv_size - 1 - 2 * pad_size
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

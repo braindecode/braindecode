@@ -68,6 +68,9 @@ class TIDNet(EEGModuleMixin, nn.Module):
         doi: 10.1088/1741-2552/abb7a7.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: dscnn.spatial.channel_collapse.conv.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -119,6 +122,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
         self.flatten = nn.Flatten(start_dim=1)
 
         self.final_layer = self._create_classifier(self.num_features, self.n_outputs)
+        self._min_n_times = pooling
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``); the

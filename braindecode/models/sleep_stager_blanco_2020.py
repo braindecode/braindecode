@@ -4,10 +4,9 @@
 
 import math
 
-import torch
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin, _too_short_input_error
+from braindecode.models.base import EEGModuleMixin
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
@@ -54,6 +53,9 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         neural networks for sleep stage scoring on a two-channel EEG signal.
         Soft Comput 24, 4067–4079 (2020). https://doi.org/10.1007/s00500-019-04174-1
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: feature_extractor.0.weight
 
     def __init__(
         self,
@@ -132,6 +134,8 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             nn.MaxPool2d((1, max_pool_size)),
         )
 
+        self.n_conv_chans = n_conv_chans
+        self.max_pool_size = max_pool_size
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
         self.return_feats = return_feats
 
@@ -144,16 +148,16 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             )
 
     def _len_last_layer(self, n_channels, input_size):
-        self.feature_extractor.eval()
-        with torch.no_grad():
-            try:
-                out = self.feature_extractor(
-                    torch.Tensor(1, n_channels, 1, input_size)
-                )  # batch_size,n_channels,height,width
-            except RuntimeError as exc:
-                raise _too_short_input_error(exc, self.input_shape) or exc
-        self.feature_extractor.train()
-        return len(out.flatten())
+        width = int(input_size)
+        for kernel_size in (7, 7, 5, 5, 5, 3, 3):
+            width = width - kernel_size + 1
+            if width < self.max_pool_size:
+                raise ValueError(
+                    "The convolutions and poolings leave no time sample: too small "
+                    f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+                )
+            width //= self.max_pool_size
+        return self.n_conv_chans * width
 
     def forward(self, x):
         """Forward pass.

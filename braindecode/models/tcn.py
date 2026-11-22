@@ -44,6 +44,9 @@ class BDTCN(EEGModuleMixin, nn.Module):
        diagnostics of EEG pathology. NeuroImage, 220, 117021.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: base_tcn.temporal_blocks.temporal_block_0.conv1.parametrizations.weight.original1
+
     def __init__(
         self,
         # Braindecode parameters
@@ -88,6 +91,7 @@ class BDTCN(EEGModuleMixin, nn.Module):
         self.final_layer = torch.nn.Sequential(
             torch.nn.AdaptiveAvgPool1d(1), torch.nn.Flatten()
         )
+        self._min_n_times = self.base_tcn.min_len
 
     def forward(self, x):
         x = self.base_tcn(x)

@@ -490,6 +490,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     .. [neurorvqcode] https://github.com/KonstantinosBarmpas/NeuroRVQ
     """
 
+    _time_axis = "fixed"  # fixed: fc_norm.bias
+    _channel_axis = "fixed"  # fixed: fc_norm.bias
+
     def __init__(
         self,
         n_outputs: int | None = None,
@@ -636,6 +639,11 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.fc_norm = nn.LayerNorm(head_dim)
         self.final_layer = nn.Linear(head_dim, self.n_outputs)
         self._init_parameters()
+        self._n_times_step = (
+            math.ceil(self.patch_size * in_sfreq / preset["sfreq"])
+            if in_sfreq is not None
+            else self.patch_size
+        )
 
     def _init_parameters(self):
         nn.init.trunc_normal_(self.cls_token, std=0.02)
@@ -650,12 +658,6 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 block.mlp[2].weight.div_(math.sqrt(2.0 * i))
 
     def _features(self, x: Tensor) -> Tensor:
-        if x.ndim != 3 or x.shape[1] != self.n_chans or x.shape[2] != self.n_times:
-            raise ValueError(
-                "Expected input shape (batch, {}, {}), got {}.".format(
-                    self.n_chans, self.n_times, list(x.shape)
-                )
-            )
         if self._drops_channels:
             x = x.index_select(1, self.channel_keep_ix)
         x = self.resample(x)

@@ -235,6 +235,10 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
        (NeurIPS 2026). https://arxiv.org/abs/2605.10337
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: default_pos
+    _time_inputs = ("x", "x_hi")
+
     def __init__(
         self,
         # braindecode parameters
@@ -387,6 +391,13 @@ class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
         self._init_parameters()
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else patch_size
+        self._n_times_step = patch_size
+        self._time_input_steps = {"x_hi": hi_patch_size}
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return self._call_arg("pos", args, kwargs) is not None
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

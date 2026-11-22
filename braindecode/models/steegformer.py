@@ -230,6 +230,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
        https://openreview.net/forum?id=5Xwm8e6vbh
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_indices
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -382,6 +385,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # submodule, then the faithful-port specials: a normal(std=0.02) CLS token
         # (the channel embedding keeps its zero init from _ChannelPositionalEmbed).
         self._init_parameters()
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else patch_size
+        self._n_times_step = patch_size
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
@@ -503,11 +508,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
-        if x.shape[1] != self.n_chans:
-            raise ValueError(
-                f"STEEGFormer was built for {self.n_chans} channels but got input "
-                f"with {x.shape[1]}; rebuild the model for this montage."
-            )
         # Tokens + positional embeddings, kept on the (seq, channel) grid.
         # Pads, crops or rejects a non-multiple of patch_size (on_non_divisible).
         tokens = self.patch_embed(x)  # (batch, seq, n_chans, embed_dim)

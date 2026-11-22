@@ -622,8 +622,11 @@ _CH_MASK_EXTRAS = {
 
 # Channels tied to slots of the configuration: a recording keeps all of them and
 # masks the missing ones, so it has no shorter input to run alone
-# (test_sleepfm_masked_input_is_ignored covers its ch_mask).
-_CH_MASK_SLOTS = {"SleepFMStager": "channels are grouped by channel_modalities slot"}
+# (test_ch_mask and test_sleepfm_masked_input_is_ignored cover their ch_mask).
+_CH_MASK_SLOTS = {
+    "BIOT": "channels are tied to encoder.channel_tokens slots",
+    "SleepFMStager": "channels are grouped by channel_modalities slot",
+}
 
 
 def _ch_mask_case(model_name, required_params, signal_params):
@@ -710,11 +713,7 @@ _FOUNDATION_MODELS = set(
     ]
 )
 # Clear errors that predate check_n_chans and word the mismatch otherwise.
-_N_CHANS_ERRORS = {
-    "GeoNIRS": r"channel counts",
-    "NeuroRVQ": r"Expected input shape",
-    "NeuroRVQTokenizer": r"Expected input shape",
-}
+_N_CHANS_ERRORS: dict[str, str] = {}
 
 
 @pytest.mark.parametrize(

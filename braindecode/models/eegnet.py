@@ -125,6 +125,9 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
 
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: conv_spatial.parametrizations.weight.original
+
     def __init__(
         self,
         # signal's parameters
@@ -367,6 +370,10 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         self._init_parameters()
+        _t3 = self.pool2_kernel_size * int(self.final_conv_length)
+        _t2 = max(1, _t3 - (1 - self.depthwise_kernel_length % 2))
+        _t1 = self.pool1_kernel_size * _t2
+        self._min_n_times = max(1, _t1 - (1 - self.kernel_length % 2))
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

@@ -97,6 +97,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         https://github.com/Want2Vanish/FBMSNet
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
+
     def __init__(
         self,
         # Braindecode parameters
@@ -216,6 +219,8 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             max_norm=linear_max_norm,
         )
+        self.on_non_divisible = "pad"
+        self._n_times_step = self.stride_factor
 
     def forward(self, x):
         """

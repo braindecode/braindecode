@@ -192,6 +192,9 @@ class Labram(EEGModuleMixin, nn.Module):
        arXiv:2208.06366 [cs.CV]
     """
 
+    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _channel_axis = "fixed"  # fixed: LABRAM_CHANNEL_ORDER
+
     # Constant, so TorchScript compiles only the mode in use (the decoder-only
     # locals do not exist in tokenizer mode).
     __constants__ = ["neural_tokenizer"]
@@ -429,6 +432,15 @@ class Labram(EEGModuleMixin, nn.Module):
         self.reset_classifier(self.n_outputs)
 
         self._init_parameters()
+        self._n_times_step = patch_size
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return self._call_arg("ch_names", args, kwargs) is not None
+
+    @torch.jit.unused
+    def _bypass_time_check(self, x, args, kwargs) -> bool:
+        return x.ndim == 4
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

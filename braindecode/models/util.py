@@ -195,6 +195,9 @@ def track_model_init_kwargs(cls) -> None:
                     "natively (see the channel strategies page of the models documentation)."
                 ) from None
             raise TypeError(f"{name}: {error}") from None
+        self._explicit_on_non_divisible = (
+            bound.arguments.get("on_non_divisible") is not None
+        )
         bound.apply_defaults()
 
         captured_kwargs = {}

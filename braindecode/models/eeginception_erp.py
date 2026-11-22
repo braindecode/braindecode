@@ -170,6 +170,9 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
 
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.fc.weight
+    _channel_axis = "fixed"  # fixed: inception_block_1.branches.0.4.weight
+
     def __init__(
         self,
         n_chans=None,

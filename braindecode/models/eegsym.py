@@ -162,6 +162,9 @@ class EEGSym(EEGModuleMixin, nn.Module):
        IEEE Transactions on Neural Systems and Rehabilitation Engineering, 28, 2773-2782.
     """
 
+    _time_axis = "fixed"  # fixed: temporal_merging.grouped_conv.0.weight
+    _channel_axis = "fixed"  # fixed: channel_merging.grouped_conv.0.weight
+
     def __init__(
         self,
         # braidecode parameters

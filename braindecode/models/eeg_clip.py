@@ -42,7 +42,6 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
-from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
@@ -141,6 +140,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     .. versionadded:: 2.0
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: eeg_encoder.conv_time_spat.conv_spat.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -206,15 +208,15 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         self.logit_scale = nn.Parameter(
             torch.tensor(math.log(1.0 / initial_temperature))
         )
+        self._min_n_times = getattr(self.eeg_encoder, "_min_n_times", 1) or 1
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return not isinstance(self.eeg_encoder, Deep4Net)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, X):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
-        # Only a Deep4Net is known to be built for a number of channels. Eager mode
-        # only: TorchScript resolves Deep4Net just when a Deep4Net is a submodule.
-        if not torch.jit.is_scripting():
-            if isinstance(self.eeg_encoder, Deep4Net):
-                check_n_chans(X, self.eeg_encoder.n_chans, "EEGCLIP")
         features = self.eeg_encoder(X)
         if features.ndim == 2:
             features = features.unsqueeze(-1)

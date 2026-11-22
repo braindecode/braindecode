@@ -245,6 +245,9 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     .. footbibliography::
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -387,6 +390,19 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
         # Classification head: one linear layer on the pooled features
         self.final_layer = nn.Linear(self.feature_dim, self.n_outputs)
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.window_samples
+        self._n_times_step = self.window_samples
+
+    @torch.jit.unused
+    def _effective_time_axis(self):
+        return "fixed" if self.pool == "flatten" else "free"
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return (
+            self._call_arg("coordinates", args, kwargs) is not None
+            and self.pool == "channel_temporal_mean"
+        )
 
     def encode(
         self,

@@ -94,7 +94,7 @@ def test_bendr_gradient_flow(encoder_only):
 
 
 def test_bendr_encoder_only_short_input_raises():
-    """RuntimeError when input is too short for 4-chunk pooling."""
+    """ValueError when input is too short for 4-chunk pooling."""
     model = BENDR(n_times=None, encoder_only=True, **_SMALL_BENDR)
-    with pytest.raises(RuntimeError, match="too few"):
+    with pytest.raises(ValueError, match="needs at least"):
         model(torch.randn(2, 4, 96))

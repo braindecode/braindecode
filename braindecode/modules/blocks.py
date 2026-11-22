@@ -143,6 +143,8 @@ class PatchTokenizer(nn.Module):
             ``x`` with a time axis that is a multiple of ``patch_size``,
             handled as set by ``on_non_divisible``.
         """
+        if x.shape[-1] >= self.patch_size and x.shape[-1] % self.patch_size == 0:
+            return x
         return pad_or_crop_to_patches(x, self.patch_size, self.on_non_divisible)
 
     def forward(self, x):

@@ -68,6 +68,9 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         https://ieeexplore.ieee.org/abstract/document/9889159
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         n_outputs: int | None = None,
@@ -124,6 +127,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.LazyLinear(self.n_outputs)
 
         self.register_load_state_dict_pre_hook(self._prepare_graph_state)
+        self._min_n_times = 1
 
     @torch.no_grad()
     def fit_graph(self, X: torch.Tensor) -> None:

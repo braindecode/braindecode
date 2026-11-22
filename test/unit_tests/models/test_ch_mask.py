@@ -169,9 +169,10 @@ def _assert_matches_alone(model, x, mask, xs, batch_kwargs, alone_kwargs):
     out.sum().backward()
     assert torch.equal(x.grad[~mask], torch.zeros_like(x.grad[~mask]))
     assert all(p.grad.isfinite().all() for p in model.parameters() if p.grad is not None)
+    call_alone = model.forward if isinstance(model, BIOT) else model
     with torch.no_grad():  # inference fast paths (e.g. nested tensors)
         expected = torch.cat(
-            [model(xi[None], **kwargs) for xi, kwargs in zip(xs, alone_kwargs)]
+            [call_alone(xi[None], **kwargs) for xi, kwargs in zip(xs, alone_kwargs)]
         )
         torch.testing.assert_close(model(x, ch_mask=mask, **batch_kwargs), expected)
     torch.testing.assert_close(out.detach(), expected)
@@ -290,8 +291,9 @@ def test_reve_labram_tokens_match_each_recording_alone(name):
     model, x, mask, xs, batch_kwargs, alone_kwargs = case
     with torch.no_grad():
         tokens = model(x, ch_mask=mask, return_features=True, **batch_kwargs)["tokens"]
+        call_alone = model.forward if isinstance(model, BIOT) else model
         for i, (xi, kwargs) in enumerate(zip(xs, alone_kwargs)):
-            alone = model(xi[None], return_features=True, **kwargs)["tokens"][0]
+            alone = call_alone(xi[None], return_features=True, **kwargs)["tokens"][0]
             torch.testing.assert_close(tokens[i, : len(xi)], alone)
         scripted = torch.jit.script(model)(
             x, ch_mask=mask, return_features=True, **batch_kwargs
@@ -313,8 +315,9 @@ def test_ch_mask_tokens_match_each_recording_alone(name):
         scripted = torch.jit.script(model)(
             x, ch_mask=mask, return_features=True, **batch_kwargs
         )
+        call_alone = model.forward if isinstance(model, BIOT) else model
         for i, (xi, kwargs) in enumerate(zip(xs, alone_kwargs)):
-            alone = model(xi[None], return_features=True, **kwargs)["tokens"][0]
+            alone = call_alone(xi[None], return_features=True, **kwargs)["tokens"][0]
             torch.testing.assert_close(tokens[i, : len(xi)], alone)
     assert torch.equal(tokens[~mask], torch.zeros_like(tokens[~mask]))
     if isinstance(scripted, dict):  # most models ignore return_features when scripted

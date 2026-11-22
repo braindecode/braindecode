@@ -105,6 +105,9 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
         https://github.com/snailpt/CTNet
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: cnn.eegnet_module.2.weight
+
     def __init__(
         self,
         # Base arguments
@@ -231,6 +234,7 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
             in_features=int(self.embed_dim * self.sequence_length),
             out_features=self.n_outputs,
         )
+        self._min_n_times = self.pool_size_1 * self.pool_size_2
 
     def forward(self, x: Tensor) -> Tensor:
         """

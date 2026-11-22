@@ -177,6 +177,9 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
        NeurIPS. Code: https://github.com/yzz673/Brant (Apache-2.0).
     """
 
+    _time_axis = "fixed"  # fixed: temporal_encoder.input_embedding.positional_encoding
+    _channel_axis = "free"
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -281,6 +284,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Upstream's seizure head is an MLP trained on private data; braindecode
         # ships a bare linear layer, as for BrainBERT.
         self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
+        self._n_times_step = patch_size
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
@@ -339,11 +343,6 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             dict ``{"features", "cls_token", "tokens"}`` when ``return_features``
             is set.
         """
-        if x.shape[-1] != self.n_times:
-            raise ValueError(
-                f"Brant was configured for {self.n_times} time samples, "
-                f"but received {x.shape[-1]}."
-            )
         mask = check_ch_mask(ch_mask, x)
         n_chans = x.shape[1]
         key_padding_mask: torch.Tensor | None = None

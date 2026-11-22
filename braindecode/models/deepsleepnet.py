@@ -163,6 +163,9 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
        and Rehabilitation Engineering, 25(11), 1998-2008.
     """
 
+    _time_axis = "fixed"  # fixed: bilstm.weight_ih_l0
+    _channel_axis = "fixed"  # fixed: bilstm.weight_ih_l0
+
     def __init__(
         self,
         n_outputs=5,

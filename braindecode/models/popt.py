@@ -132,6 +132,9 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
        preprint arXiv:2406.03044.
     """
 
+    _time_axis = "fixed"  # fixed: input_embedding.in_proj.weight
+    _channel_axis = "fixed"  # fixed: electrode_coords
+
     def __init__(
         self,
         # braindecode parameters
@@ -202,6 +205,10 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         self.register_buffer(
             "electrode_coords", self._coords_from_chs_info(), persistent=False
         )
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return self._call_arg("coords", args, kwargs) is not None
 
     def _coords_from_chs_info(self) -> torch.Tensor:
         """Integer ``(n_chans, 3)`` coordinates from ``chs_info``, or sequential ones."""

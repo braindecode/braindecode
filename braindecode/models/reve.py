@@ -268,6 +268,9 @@ class REVE(EEGModuleMixin, nn.Module):
     requiring matched layouts between pretraining and downstream tasks.
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.bias
+    _channel_axis = "fixed"  # fixed: final_layer.1.bias
+
     # Constant, so TorchScript compiles only the head in use (``cls_query_token``
     # exists only with attention pooling).
     __constants__ = ["use_attention_pooling"]
@@ -408,6 +411,20 @@ class REVE(EEGModuleMixin, nn.Module):
 
         if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
+        self._n_times_step = self.patch_size - self.patch_overlap
+        self._n_times_offset = self.patch_size % self._n_times_step
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return self._call_arg("pos", args, kwargs) is not None
+
+    @torch.jit.unused
+    def _bypass_time_check(self, x, args, kwargs) -> bool:
+        return bool(
+            self.use_attention_pooling
+            or self._call_arg("return_output", args, kwargs, False)
+            or self._call_arg("return_features", args, kwargs, False)
+        )
 
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""
@@ -525,14 +542,7 @@ class REVE(EEGModuleMixin, nn.Module):
                 "ch_mask needs attention_pooling=True: the flattened head is tied "
                 "to the channels."
             )
-        if pos is None and self.default_pos is not None:  # the chs_info montage
-            check_n_chans(
-                eeg,
-                self.n_chans,
-                "REVE",
-                "pass pos for these channels, or use a channel_strategy.",
-            )
-        elif pos is not None and not (
+        if pos is not None and not (
             self.use_attention_pooling or return_output or return_features
         ):
             head_channels = self._n_pos_chans

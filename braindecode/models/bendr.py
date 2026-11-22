@@ -12,7 +12,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import check_n_chans, init_weights_
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.channels import ChannelLayer
 
@@ -254,6 +254,11 @@ class BENDR(EEGModuleMixin, nn.Module):
         ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
     """
 
+    _time_axis = "free"
+    _channel_axis = (
+        "fixed"  # fixed: encoder.conv_blocks.0.0.parametrizations.weight.original1
+    )
+
     _channel_target = BENDR_CHANNEL_ORDER
 
     def __init__(
@@ -353,6 +358,13 @@ class BENDR(EEGModuleMixin, nn.Module):
         self.final_layer = None
         if self.include_final_layer:
             self._build_head(self.n_outputs)
+        if self.encoder_only:
+            _need = 4
+            for _w, _s in reversed(list(zip(enc_width, enc_downsample))):
+                _need = max(1, _s * (_need - 1) + _w - 2 * (_w // 2))
+            self._min_n_times = _need
+        else:
+            self._min_n_times = 1
 
     def _build_head(self, n_outputs):
         linear = nn.Linear(in_features=self._head_in_features, out_features=n_outputs)
@@ -370,7 +382,6 @@ class BENDR(EEGModuleMixin, nn.Module):
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        check_n_chans(x, self.n_chans, "BENDR")
         if self.channel_tokenizer is not None:
             x = self.channel_tokenizer(x)[0]
         encoded = self.encoder(x)
@@ -378,12 +389,6 @@ class BENDR(EEGModuleMixin, nn.Module):
 
         if self.encoder_only:
             # 4-chunk temporal pooling (Kostas et al. 2021, Section 2.4)
-            n_time = encoded.shape[2]
-            if n_time < 4:
-                raise RuntimeError(
-                    f"Encoder output has {n_time} time steps, which is too few "
-                    f"for 4-chunk pooling (need at least 4). Increase input length."
-                )
             # Use tensor_split for uneven chunks so no frames are dropped
             chunks = torch.tensor_split(encoded, 4, dim=2)
             feature = torch.cat([c.mean(dim=2) for c in chunks], dim=1)

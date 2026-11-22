@@ -157,6 +157,10 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
        bioRxiv 2022.07.29.502064. doi:10.1101/2022.07.29.502064
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: mlp.1.weight
+    _time_inputs = ("x", "x_lowpass")
+
     #: Temporal receptive field of the paper's default configuration. The
     #: value actually enforced is derived per instance in ``__init__``, so a
     #: reconfigured stack validates against its own receptive field.
@@ -324,6 +328,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
             in_features=mlp_hidden, out_features=self.n_outputs
         )
         self._init_parameters()
+        self._min_n_times = self.receptive_field_samples
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

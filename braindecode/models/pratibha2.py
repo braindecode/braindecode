@@ -170,6 +170,9 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2609.13717
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_positions
+
     channel_index: Optional[torch.Tensor]
 
     def __init__(
@@ -281,6 +284,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.final_norm = norm(embed_dim)
         self.final_layer = self._build_head(self.n_outputs)
+        self._min_n_times = self.patch_size
 
     def _build_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
