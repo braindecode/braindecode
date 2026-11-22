@@ -8,7 +8,14 @@ import pytest
 import torch
 
 from braindecode.datasets import pad_channels_collate
-from braindecode.models import EEGConformer
+from braindecode.models import (
+    CORTEG,
+    LUNA,
+    EEGConformer,
+    EEGNet,
+    MVPFormer,
+    SensingDynamics,
+)
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
@@ -134,7 +141,9 @@ def test_check_reads_keyword_input(model_name, required_params, signal_params):
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
     C, T = x.shape[1:]
-    name = list(inspect.signature(type(model).forward).parameters)[1]
+    params = inspect.signature(type(model).forward).parameters
+    name = list(params)[1]
+    takes_ch_mask = "ch_mask" in params
     calls = []
     model.register_forward_pre_hook(lambda m, a: calls.append(1))
     with torch.no_grad():
@@ -142,7 +151,118 @@ def test_check_reads_keyword_input(model_name, required_params, signal_params):
             with pytest.raises(ValueError, match="channels"):
                 model(**{name: torch.randn(2, C + 1, T)})
             assert calls == []
+            if takes_ch_mask:
+                with pytest.raises(ValueError, match="channels"):
+                    model(
+                        **{
+                            "ch_mask": torch.ones(2, C + 1, dtype=torch.bool),
+                            name: torch.randn(2, C + 1, T),
+                        }
+                    )
+                assert calls == []
+        elif takes_ch_mask:
+            mask = torch.ones(2, C, dtype=torch.bool)
+            assert _shapes(model(**{"ch_mask": mask, name: x})) == _shapes(
+                model(x, ch_mask=mask)
+            )
         assert _shapes(model(**{name: x})) == _shapes(model(x))
+
+
+def test_secondary_time_inputs_snap_and_reject_short_crops():
+    corteg = CORTEG(
+        n_chans=3,
+        n_outputs=2,
+        n_times=64,
+        patch_size=16,
+        hi_patch_size=25,
+        embed_dim=32,
+        depth=1,
+        num_heads=2,
+        n_merge_blocks=1,
+    ).eval()
+    pos = 0.1 * torch.rand(3, 3)
+    seen = []
+    corteg.register_forward_pre_hook(
+        lambda m, a, kw: seen.append((a[0].shape, kw["x_hi"].shape)),
+        with_kwargs=True,
+    )
+    with torch.no_grad():
+        with pytest.warns(UserWarning, match="snapped"):
+            out = corteg(
+                torch.randn(2, 3, 66),
+                x_hi=torch.randn(2, 3, 98),
+                pos=pos,
+            )
+    assert out.shape == (2, 2)
+    assert seen == [(torch.Size([2, 3, 80]), torch.Size([2, 3, 100]))]
+
+    corteg_crop = CORTEG(
+        n_chans=3,
+        n_outputs=2,
+        n_times=64,
+        patch_size=16,
+        hi_patch_size=25,
+        embed_dim=32,
+        depth=1,
+        num_heads=2,
+        n_merge_blocks=1,
+        on_non_divisible="crop",
+    ).eval()
+    crop_calls = []
+    corteg_crop.register_forward_pre_hook(lambda m, a: crop_calls.append(1))
+    with pytest.raises(ValueError, match="x_hi"):
+        corteg_crop(torch.randn(2, 3, 64), x_hi=torch.randn(2, 3, 20), pos=pos)
+    assert crop_calls == []
+
+    sd = SensingDynamics(
+        n_chans=16,
+        n_outputs=4,
+        n_times=480,
+        sfreq=2000.0,
+        temporal_channels=16,
+        mid_channels=8,
+        spatial_channels=8,
+        mlp_hidden=16,
+    ).eval()
+    sd._n_times_step = 8
+    sd.on_non_divisible = "pad"
+    sd_seen = []
+    sd.register_forward_pre_hook(
+        lambda m, a, kw: sd_seen.append((a[0].shape, kw["x_lowpass"].shape)),
+        with_kwargs=True,
+    )
+    with torch.no_grad():
+        with pytest.warns(UserWarning, match="snapped"):
+            sd_out = sd(
+                torch.randn(2, 16, 481),
+                x_lowpass=torch.randn(2, 16, 481),
+            )
+    assert sd_out.shape == (2, 488, 4)
+    assert sd_seen == [(torch.Size([2, 16, 488]), torch.Size([2, 16, 488]))]
+
+    sd_fixed = SensingDynamics(
+        n_chans=16,
+        n_outputs=4,
+        n_times=480,
+        sfreq=2000.0,
+        temporal_channels=16,
+        mid_channels=8,
+        spatial_channels=8,
+        mlp_hidden=16,
+    ).eval()
+    sd_fixed._time_axis = "fixed"
+    with torch.no_grad():
+        with pytest.warns(UserWarning, match="snapped"):
+            fixed_out = sd_fixed(
+                torch.randn(2, 16, 481),
+                x_lowpass=torch.randn(2, 16, 481),
+            )
+    assert fixed_out.shape == (2, 480, 4)
+    fixed_calls = []
+    sd_fixed.register_forward_pre_hook(lambda m, a: fixed_calls.append(1))
+    with pytest.raises(ValueError, match="x_lowpass"):
+        sd_fixed(torch.randn(2, 16, 480), x_lowpass=torch.randn(2, 16, 495))
+    assert fixed_calls == []
 
 
 def test_padded_batch_passes_channel_check():
@@ -156,12 +276,14 @@ def test_padded_batch_passes_channel_check():
         model, x = _build_case(model_name, required_params, signal_params)
         _materialize(model, x)
         C, T = x.shape[1:]
-        c_full = max(C, 3)
+        c_full = C + 2
+        c_short = max(1, C - 1)
         batch = [
             (torch.randn(c_full, T).numpy(), 0, [0, T, 0]),
-            (torch.randn(c_full - 2, T).numpy(), 1, [0, T, 0]),
+            (torch.randn(c_short, T).numpy(), 1, [0, T, 0]),
         ]
         X, _, _, mask = pad_channels_collate(batch)
+        assert X.shape[1] != model.n_chans
         with torch.no_grad():
             out = model(X, ch_mask=mask)
         leaves = list(_tensor_leaves(out))
@@ -173,6 +295,76 @@ def test_padded_batch_passes_channel_check():
         ), model_name
         checked += 1
     assert checked >= 7
+
+    luna = LUNA(
+        n_chans=3,
+        n_outputs=2,
+        n_times=80,
+        patch_size=20,
+        embed_dim=32,
+        num_queries=2,
+        depth=1,
+    ).eval()
+    pos_batch = [
+        (torch.randn(5, 80).numpy(), 0, [0, 80, 0], (0.1 * torch.rand(5, 3)).numpy()),
+        (torch.randn(2, 80).numpy(), 1, [0, 80, 0], (0.1 * torch.rand(2, 3)).numpy()),
+    ]
+    X_pos, _, _, pos, mask_pos = pad_channels_collate(pos_batch)
+    assert X_pos.shape[1] == 5 and pos.shape == (2, 5, 3)
+    with torch.no_grad():
+        luna_out = luna(X_pos, channel_locations=pos, ch_mask=mask_pos)
+    assert luna_out.shape == (2, 2)
+    assert torch.isfinite(luna_out).all()
+
+
+def test_to_dense_prediction_model_updates_min_n_times_with_dilated_padding():
+    for pool_mode, expected_min in (("max", 1035), ("mean", 1014)):
+        net = EEGNet(
+            n_chans=3,
+            n_outputs=2,
+            n_times=1000,
+            pool_mode=pool_mode,
+            final_layer_with_constraint=False,
+        ).eval()
+        net.to_dense_prediction_model()
+        assert net._min_n_times == expected_min
+        calls = []
+        net.register_forward_pre_hook(lambda m, a: calls.append(1))
+        with torch.no_grad():
+            out = net(torch.randn(1, 3, expected_min))
+        assert torch.isfinite(out).all()
+        calls.clear()
+        with pytest.raises(
+            ValueError, match=rf"needs at least {expected_min} time samples"
+        ):
+            net(torch.randn(1, 3, expected_min - 1))
+        assert calls == []
+
+
+def test_mvpformer_concat_pooling_enforces_fixed_channels():
+    assert MVPFormer.__dict__["_channel_axis"] == "free"
+    model = MVPFormer(
+        n_chans=4,
+        n_outputs=2,
+        n_times=256,
+        segment_len=64,
+        d_model=32,
+        n_layers=1,
+        n_heads=4,
+        n_head_kv=2,
+        d_inner=64,
+        local_window=2,
+        pooling="concat",
+    ).eval()
+    assert model._effective_channel_axis() == "fixed"
+    calls = []
+    model.register_forward_pre_hook(lambda m, a: calls.append(1))
+    with pytest.raises(ValueError, match="built for n_chans=4 and got 5 channels"):
+        model(torch.randn(1, 5, 256))
+    assert calls == []
+    with torch.no_grad():
+        feats = model(torch.randn(1, 5, 256), return_features=True)
+    assert torch.isfinite(feats["features"]).all()
 
 
 @PARAMS

@@ -17,6 +17,7 @@ Braindecode Adaptation: Julien Gadonneix
 
 from __future__ import annotations
 
+import math
 import re
 from numbers import Integral
 
@@ -378,10 +379,17 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.final_layer = nn.Linear(n_features, self.n_outputs)
         if self.normalization == "session":
             self._min_n_times = None
+            self._n_times_step = 1
         elif isinstance(self.resample, nn.Identity):
             self._min_n_times = 448
+            self._n_times_step = 512
+            self._n_times_offset = self._min_n_times % self._n_times_step
+            self._defer_step_snap = True
         else:
             self._min_n_times = (447 * int(self.sfreq)) // 2048 + 1
+            self._n_times_step = math.ceil(512 * int(self.sfreq) / 2048)
+            self._n_times_offset = self._min_n_times % self._n_times_step
+            self._defer_step_snap = True
 
     @torch.jit.unused
     def _effective_time_axis(self):

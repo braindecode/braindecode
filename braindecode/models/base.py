@@ -738,6 +738,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         return False
 
     @torch.jit.unused
+    def _effective_channel_axis(self) -> Optional[str]:
+        return self._channel_axis
+
+    @torch.jit.unused
     def _effective_time_axis(self) -> Optional[str]:
         return self._time_axis
 
@@ -805,7 +809,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Validate channel count and minimum window length before forward."""
         name = type(self).__name__
         if (
-            self._channel_axis == "fixed"
+            self._effective_channel_axis() == "fixed"
             and not hasattr(self, "channel_layer")
             and x.ndim >= 2
             and not self._bypass_channel_check(x, args, kwargs)
@@ -855,41 +859,52 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if time_axis == "fixed" and not bypass_time:
             n_times = self._signal_param("n_times")
             if n_times is not None and x.ndim >= 2:
-                got_times = self._input_n_times(x)
-                if got_times != n_times:
-                    diff = abs(got_times - n_times)
-                    cap = min(max(1, n_times // 100), max(1, self._n_times_step))
-                    if self.on_non_divisible != "error" and diff <= cap:
-                        for idx, inp_name in enumerate(self._time_inputs):
-                            t = self._get_time_input(idx, inp_name, args, kwargs)
-                            if t is not None:
-                                args, kwargs = self._set_time_input(
-                                    idx,
-                                    inp_name,
-                                    self._snap_tensor_time(t, n_times),
-                                    args,
-                                    kwargs,
-                                )
-                        if (
-                            not self._warned_length_snap
-                            and not self._explicit_on_non_divisible
-                        ):
-                            self._warned_length_snap = True
-                            warnings.warn(
-                                f"{name} snapped input length from {got_times} to "
-                                f"{n_times} samples. Pass on_non_divisible='error' "
-                                f"to reject mismatched window lengths.",
-                                UserWarning,
-                                stacklevel=3,
-                            )
+                snaps: list[tuple[int, str, torch.Tensor, int]] = []
+                for idx, inp_name in enumerate(self._time_inputs):
+                    t = self._get_time_input(idx, inp_name, args, kwargs)
+                    if t is None or t.ndim < 2:
+                        continue
+                    t_len = self._input_n_times(t) if idx == 0 else t.shape[-1]
+                    if t_len == n_times:
+                        continue
+                    step = (self._time_input_steps or {}).get(
+                        inp_name, self._n_times_step
+                    )
+                    cap = min(max(1, n_times // 100), max(1, step))
+                    if self.on_non_divisible != "error" and abs(t_len - n_times) <= cap:
+                        snaps.append((idx, inp_name, t, t_len))
                     else:
+                        label = "" if idx == 0 else f" ({inp_name})"
                         raise ValueError(
                             f"{name} was built for n_times={n_times} and got "
-                            f"{got_times} samples (input shape {tuple(x.shape)}). "
-                            f"Rebuild it with n_times={got_times}, cut the signal "
+                            f"{t_len} samples{label} (input shape {tuple(t.shape)}). "
+                            f"Rebuild it with n_times={t_len}, cut the signal "
                             f"into windows of {n_times} samples, or call "
                             f"model.adapt_input(sfreq=...) / "
                             f"model.adapt_input(n_times=...)."
+                        )
+                if snaps:
+                    for idx, inp_name, t, _ in snaps:
+                        snapped = (
+                            self._snap_tensor_time(t, n_times)
+                            if idx == 0
+                            else snap_time_axis(t, n_times)
+                        )
+                        args, kwargs = self._set_time_input(
+                            idx, inp_name, snapped, args, kwargs
+                        )
+                    if (
+                        not self._warned_length_snap
+                        and not self._explicit_on_non_divisible
+                    ):
+                        self._warned_length_snap = True
+                        first_len = snaps[0][3]
+                        warnings.warn(
+                            f"{name} snapped input length from {first_len} to "
+                            f"{n_times} samples. Pass on_non_divisible='error' "
+                            f"to reject mismatched window lengths.",
+                            UserWarning,
+                            stacklevel=3,
                         )
         elif time_axis in {"free", "dense"} and (
             self._n_times_step > 1 or self._time_input_steps
@@ -903,6 +918,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 if step <= 1:
                     continue
                 t_len = self._input_n_times(t) if idx == 0 else t.shape[-1]
+                if t_len < 1:
+                    min_req = 1 if self.on_non_divisible == "pad" else step
+                    raise ValueError(
+                        f"{name} needs at least {min_req} time samples for "
+                        f"{inp_name} (step {step}) and got {t_len} "
+                        f"(input shape {tuple(t.shape)})."
+                    )
                 rem = (t_len - self._n_times_offset) % step
                 if rem == 0:
                     continue
@@ -917,6 +939,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     else t_len - rem
                 )
                 if not self._defer_step_snap:
+                    if target < 1:
+                        raise ValueError(
+                            f"{name} needs at least {step} time samples for "
+                            f"{inp_name} (step {step}) and got {t_len} "
+                            f"(input shape {tuple(t.shape)})."
+                        )
                     snapped = (
                         self._snap_tensor_time(t, target)
                         if idx == 0
@@ -948,7 +976,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             and x.ndim >= 3
             and (
                 (
-                    self._channel_axis == "fixed"
+                    self._effective_channel_axis() == "fixed"
                     and self._signal_param("n_chans") is None
                     and not hasattr(self, "channel_layer")
                 )
@@ -966,7 +994,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             assert x is not None
             if (
-                self._channel_axis == "fixed"
+                self._effective_channel_axis() == "fixed"
                 and self._signal_param("n_chans") is None
                 and not hasattr(self, "channel_layer")
             ):
@@ -1322,23 +1350,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             time_idx = (
                 0 if type(self).__name__ in ("Deep4Net", "ShallowFBCSPNet") else -1
             )
-            self._min_n_times = 1 + sum(
-                (
-                    (
-                        m.kernel_size[time_idx]
-                        if hasattr(m.kernel_size, "__len__")
-                        else m.kernel_size
-                    )
-                    - 1
+            need = 1
+            for m in reversed(
+                [mod for mod in self.modules() if hasattr(mod, "kernel_size")]
+            ):
+                k = (
+                    m.kernel_size[time_idx]
+                    if hasattr(m.kernel_size, "__len__")
+                    else m.kernel_size
                 )
-                * (
-                    m.dilation[time_idx]
-                    if hasattr(getattr(m, "dilation", 1), "__len__")
-                    else getattr(m, "dilation", 1)
-                )
-                for m in self.modules()
-                if hasattr(m, "kernel_size") and getattr(m, "padding", 0) in (0, (0, 0))
-            )
+                d_attr = getattr(m, "dilation", 1)
+                d = d_attr[time_idx] if hasattr(d_attr, "__len__") else d_attr
+                s_attr = getattr(m, "stride", 1)
+                s = s_attr[time_idx] if hasattr(s_attr, "__len__") else s_attr
+                p_attr = getattr(m, "padding", 0)
+                if p_attr == "same":
+                    need = max(1, s * (need - 1) + 1)
+                else:
+                    p = p_attr[time_idx] if hasattr(p_attr, "__len__") else p_attr
+                    need = max(1, s * (need - 1) + (k - 1) * d + 1 - 2 * p)
+            self._min_n_times = need
 
     def get_torchinfo_statistics(
         self,

@@ -236,6 +236,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             nn.Dropout(drop_prob),
             nn.Linear(out_channels, self.n_outputs),
         )
+        self._min_n_times = self.patch_size
         self._n_times_step = self.patch_size
 
     @torch.jit.unused

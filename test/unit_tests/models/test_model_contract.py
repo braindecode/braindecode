@@ -622,11 +622,8 @@ _CH_MASK_EXTRAS = {
 
 # Channels tied to slots of the configuration: a recording keeps all of them and
 # masks the missing ones, so it has no shorter input to run alone
-# (test_ch_mask and test_sleepfm_masked_input_is_ignored cover their ch_mask).
-_CH_MASK_SLOTS = {
-    "BIOT": "channels are tied to encoder.channel_tokens slots",
-    "SleepFMStager": "channels are grouped by channel_modalities slot",
-}
+# (test_sleepfm_masked_input_is_ignored covers its ch_mask).
+_CH_MASK_SLOTS = {"SleepFMStager": "channels are grouped by channel_modalities slot"}
 
 
 def _ch_mask_case(model_name, required_params, signal_params):
@@ -695,7 +692,12 @@ def test_registered_model_ch_mask_contract(model_name, required_params, signal_p
     assert torch.equal(x.grad[~mask], torch.zeros_like(x.grad[~mask]))
     with torch.no_grad():
         for i, (xi, kwargs) in enumerate(zip(xs, alone_kwargs)):
-            alone = _batched_tensor_leaves(model(xi, **kwargs), 1)
+            call_alone = (
+                model.forward
+                if model._channel_axis == "fixed" and not kwargs
+                else model
+            )
+            alone = _batched_tensor_leaves(call_alone(xi, **kwargs), 1)
             assert len(alone) == len(batched)
             for leaf, alone_leaf in zip(batched, alone):
                 torch.testing.assert_close(leaf[i : i + 1].detach(), alone_leaf)

@@ -327,6 +327,14 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._min_n_times = 1
         self._n_times_step = self.segment_len
 
+    @torch.jit.unused
+    def _effective_channel_axis(self):
+        return "free" if self.pooling == "mean" else "fixed"
+
+    @torch.jit.unused
+    def _bypass_channel_check(self, x, args, kwargs) -> bool:
+        return bool(self._call_arg("return_features", args, kwargs, False))
+
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)

@@ -11,6 +11,8 @@ The model offers competitive performances, with a low latency and is mainly comp
 #
 # License: BSD-3
 
+import math
+
 import torch
 from torch import nn
 from torchaudio.transforms import Resample
@@ -188,6 +190,13 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
             self._min_n_times = ((2**n_convs - 1) * int(self.sfreq)) // int(
                 resampling_freq
             ) + 1
+        self._n_times_step = (
+            1
+            if n_convs == 0
+            else math.ceil((2**n_convs) * int(self.sfreq) / int(resampling_freq))
+        )
+        self.on_non_divisible = "crop"
+        self._defer_step_snap = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
