@@ -666,8 +666,8 @@
             <span class="venue-subtag bd-mono">MOTOR IMAGERY</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Teams in Xi'an and Gumi ran their motor-imagery models, a multiscale filter-bank CNN and a capsule network, on the Braindecode framework.</p>
-            <p class="venue-cite">Wu et al. · Xidian Univ. (Front. Neurosci., 2019) · Ha &amp; Jeong · Kumoh National Institute of Technology (Sensors, 2019)</p>
+            <p class="venue-quote">Teams in Xi'an, Gumi and Beijing decode motor imagery with Braindecode: a multiscale filter-bank CNN, a capsule network, and same-limb baselines.</p>
+            <p class="venue-cite">Wu et al. · Xidian Univ. (Front. Neurosci., 2019) · Ha &amp; Jeong · Kumoh National Institute of Technology (Sensors, 2019) · Ma, Qiu &amp; He · CAS (IEEE TNSRE, 2022)</p>
             <span class="venue-cta bd-mono">Read Frontiers paper →</span>
           </div>
         </a>

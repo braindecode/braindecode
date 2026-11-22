@@ -3104,11 +3104,4 @@ html[data-theme="dark"] .bd-landing .inst-logos .inst-freiburg {
     min-height: 368px;
     padding: 24px 22px;
   }
-
-  /* Long subtags drop below the logo instead of running past the card edge. */
-  .bd-landing .venue-brand-head {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    row-gap: 8px;
-  }
 }
