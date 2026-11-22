@@ -82,7 +82,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         https://github.com/ravikiran-mane/FBCNet
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _time_axis = "free"
     _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
 
     def __init__(
@@ -184,6 +184,11 @@ class FBCNet(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             max_norm=linear_max_norm,
         )
+        self._n_times_step = self.stride_factor
+        self.on_non_divisible = "pad"
+        self._min_n_times = (
+            2 if temporal_layer in ("VarLayer", "StdLayer", "LogVarLayer") else 1
+        ) * self.stride_factor
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -207,14 +212,15 @@ class FBCNet(EEGModuleMixin, nn.Module):
         batch_size, channels, _, _ = x.shape
 
         # shape: (batch_size, n_filters_spat * n_bands, 1, n_times)
-        x = self.padding_layer(x)
+        if x.shape[-1] % self.stride_factor != 0:
+            x = self.padding_layer(x)
 
         # shape: (batch_size, n_filters_spat * n_bands, 1, n_times_padded)
         x = x.view(
             batch_size,
             channels,
             self.stride_factor,
-            self.n_times_padded // self.stride_factor,
+            -1,
         )
         # shape: batch_size, n_filters_spat * n_bands, stride, n_times_padded/stride
         x = self.temporal_layer(x)  # type: ignore[operator]
