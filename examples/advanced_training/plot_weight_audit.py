@@ -273,14 +273,14 @@ lowpass_30hz = butter(4, 30.0, "lowpass", fs=SFREQ, output="sos")
 bandpass_8_30hz = butter(4, [8.0, 30.0], "bandpass", fs=SFREQ, output="sos")
 first_second = np.arange(X.shape[-1]) < int(SFREQ)
 X_tests = {
-    "remove\n0.5-4 Hz": sosfiltfilt(highpass_4hz, X).astype(np.float32),
-    "remove\n30-40 Hz": sosfiltfilt(lowpass_30hz, X).astype(np.float32),
-    "keep\n8-30 Hz only": sosfiltfilt(bandpass_8_30hz, X).astype(np.float32),
-    "zero\n0-1 s": X * ~first_second,
-    "zero\n1-3 s": X * first_second,
+    "remove 0.5-4 Hz": sosfiltfilt(highpass_4hz, X).astype(np.float32),
+    "remove 30-40 Hz": sosfiltfilt(lowpass_30hz, X).astype(np.float32),
+    "keep 8-30 Hz only": sosfiltfilt(bandpass_8_30hz, X).astype(np.float32),
+    "zero 0-1 s": X * ~first_second,
+    "zero 1-3 s": X * first_second,
 }
 for i, ch in enumerate(CHANNELS):
-    X_tests[f"zero\n{ch}"] = X * (np.arange(len(CHANNELS)) != i)[:, None]
+    X_tests[f"zero {ch}"] = X * (np.arange(len(CHANNELS)) != i)[:, None]
 
 ######################################################################
 # The decoder predicts the hand with the larger of its two hand outputs.
@@ -299,32 +299,56 @@ drops = baseline - accuracy
 
 print(f"Left vs right accuracy: {baseline:.1%}")
 for name, value in drops.items():
-    print(f"  {name.replace(chr(10), ' '):>18s}: drop {value:+.1%}")
+    print(f"  {name:>18s}: drop {value:+.1%}")
 top_weights = channel_share.idxmax()
-top_data = drops[[f"zero\n{ch}" for ch in CHANNELS]].idxmax().removeprefix("zero\n")
+top_data = drops[[f"zero {ch}" for ch in CHANNELS]].idxmax().removeprefix("zero ")
 print(f"Channel ranked first by the weights: {top_weights}")
 print(f"Channel whose removal costs the most: {top_data}")
 
 ######################################################################
-# The chart groups frequency, time and channel perturbations by colour.
-# Compare the two frequency removals with the band ranked first by the
-# kernels, and the two time masks with the highest-scoring classifier window.
-# The last two printed lines compare the channel rankings.
+# The chart groups the frequency, time-window and channel perturbations,
+# each group labelled in its colour. Compare the two frequency removals with
+# the band ranked first by the kernels (printed above), and the two time masks
+# with the highest-scoring classifier window. The last two printed lines
+# compare the channel ranked first by the weights with the one whose removal
+# costs the most.
 
-fig, ax = plt.subplots(figsize=(8, 3.6))
-ax.bar(
-    drops.index,
-    100 * drops.to_numpy(),
-    color=["#D55E00"] * 3 + ["#0072B2"] * 2 + ["#999999"] * 3,
+VERMILLION, BLUE, GREY, INK = "#D55E00", "#0072B2", "#7F7F7F", "#14181F"
+groups = {
+    "Frequency": (drops.index[:3], VERMILLION),
+    "Time window": (drops.index[3:5], BLUE),
+    "Channel": (drops.index[5:], GREY),
+}
+plt.style.use("default")  # undo the seaborn style that moabb sets on import
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "font.family": "sans-serif",
+        "axes.facecolor": "white",
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
 )
-ax.axhline(0, color="black", lw=0.8)
-ax.set_ylabel("Accuracy drop (points)")
-ax.set_title(
-    f"PhysioNet EEGNet checkpoint, left vs right {baseline:.0%}; "
-    f"weights say {band_share.idxmax()}, {window}\n"
-    f"top channel: {top_weights} by the weights, {top_data} by occlusion",
-    fontsize=9,
-)
+fig, ax = plt.subplots(figsize=(6.4, 3.8))
+row, yticks, ylabels = 0, [], []
+for group, (names, color) in groups.items():
+    ax.text(0, row - 0.75, group, color=color, fontweight="bold", va="center")
+    for name in names:
+        ax.barh(row, 100 * drops[name], height=0.7, color=color)
+        yticks.append(row)
+        ylabels.append(name)
+        row += 1
+    row += 1  # gap between groups, room for the next group label
+ax.axvline(0, color=INK, lw=0.8)
+ax.set_yticks(yticks, ylabels)
+ax.invert_yaxis()
+ax.tick_params(axis="y", length=0)
+ax.grid(axis="x", color="#EAEAEA", lw=0.7)
+ax.set_axisbelow(True)
+ax.set_xlabel("Drop in left vs right accuracy (percentage points)")
 fig.tight_layout()
 
 ######################################################################

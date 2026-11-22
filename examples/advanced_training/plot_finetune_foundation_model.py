@@ -210,6 +210,73 @@ clf = EEGClassifier(
 _ = clf.fit(windows_dataset, y=metadata["target"], epochs=10)
 
 #############################################################
+# The training history shows the cross-entropy loss (**A**) and the
+# accuracy (**B**) of the new layers on the training and validation
+# windows, against the 33.3% chance level of these three classes.
+
+import matplotlib.pyplot as plt
+
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.grid": False,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+epochs = clf.history[:, "epoch"]
+fig, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(9, 3.4), sharex=True)
+for ax, columns in [
+    (ax_loss, ["train_loss", "valid_loss"]),
+    (ax_acc, ["train_accuracy", "valid_accuracy"]),
+]:
+    for column, text, color in zip(columns, ["Train", "Valid"], [GREY, BLUE]):
+        values = clf.history[:, column]
+        ax.plot(epochs, values, color=color, linewidth=1.8)
+        ax.annotate(
+            text,
+            xy=(epochs[-1], values[-1]),
+            xytext=(4, 0),
+            textcoords="offset points",
+            color=color,
+            fontsize=9,
+            fontweight="bold",
+            va="center",
+        )
+    ax.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+    ax.set_axisbelow(True)
+    ax.set_xlabel("Epoch")
+ax_acc.axhline(1 / 3, color=GREY, linestyle="--", linewidth=0.9)
+ax_acc.text(
+    epochs[-1],
+    1 / 3 - 0.02,
+    "Chance (33.3%)",
+    color=GREY,
+    fontsize=8.5,
+    ha="right",
+    va="top",
+)
+ax_loss.yaxis.set_major_locator(plt.MaxNLocator(4))
+ax_acc.set_ylim(0, 1)
+ax_loss.set_ylabel("Cross-entropy loss")
+ax_acc.set_ylabel("Accuracy")
+ax_loss.set_title("A  Loss", loc="left", fontweight="bold", color=INK)
+ax_acc.set_title("B  Accuracy", loc="left", fontweight="bold", color=INK)
+fig.tight_layout()
+
+#############################################################
 # All-in-one Implementation
 # ~~~~~~~~~~~~~~~~~~~~~~~~~
 #

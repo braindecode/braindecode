@@ -546,6 +546,9 @@ html_redirects = {
         "../auto_examples/model_building/"
         "plot_bcic_iv_2a_moabb_cropped.html#cropped-inference"
     ),
+    "auto_examples/advanced_training/bcic_iv_4_ecog_cropped.html": (
+        "plot_bcic_iv_4_ecog_cropped.html"
+    ),
 }
 
 # --- Open Graph / Twitter Card / meta description ---

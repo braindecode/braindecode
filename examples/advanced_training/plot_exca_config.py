@@ -498,3 +498,47 @@ agg_results_df = results_df.groupby("trainer.model.model_name_").agg(
     {"accuracy": ["mean", "std"]}
 )
 print(agg_results_df)
+
+##############################################################
+# We plot the test accuracy of each seed (dots) and its mean over seeds
+# (bar) for both models, against the 25% chance level of this four-class
+# task.
+import matplotlib.pyplot as plt
+import numpy as np
+
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.grid": False,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+model_names = list(agg_results_df.index)
+fig, ax = plt.subplots(figsize=(6, 2.4))
+for row, name in enumerate(model_names):
+    accuracies = results_df.loc[
+        results_df["trainer.model.model_name_"] == name, "accuracy"
+    ]
+    ax.barh(row, accuracies.mean(), height=0.5, color=BLUE, alpha=0.25)
+    ax.plot(accuracies, np.full(len(accuracies), row), "o", color=BLUE, ms=6)
+ax.axvline(0.25, color=GREY, linestyle="--", linewidth=0.9)
+ax.text(0.255, len(model_names) - 0.55, "Chance (25%)", color=GREY, fontsize=8.5)
+ax.set_yticks(range(len(model_names)), model_names)
+ax.set_xlim(0, 1)
+ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+ax.set_xlabel("Test accuracy")
+ax.grid(axis="x", color="#EAEAEA", linewidth=0.7)
+ax.set_axisbelow(True)
+fig.tight_layout()

@@ -391,39 +391,61 @@ preds_test, y_test = pad_and_select_predictions(preds_test, y_test)
 
 
 ######################################################################
-# We plot target and predicted finger flexion on training, validation, and test sets.
+# We plot target and predicted thumb flexion on the training, validation,
+# and test sets, with the Pearson correlation of each split in its heading.
 #
 import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib.lines import Line2D
 
-fig, axes = plt.subplots(3, 1, figsize=(8, 9))
-
-axes[0].set_title("Training dataset")
-axes[0].plot(np.arange(y_train.shape[0]) / target_sfreq, y_train[:, 0], label="Target")
-axes[0].plot(
-    np.arange(preds_train.shape[0]) / target_sfreq, preds_train[:, 0], label="Predicted"
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.grid": False,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
 )
-axes[0].set_ylabel("Finger flexion")
-axes[0].legend()
 
-axes[1].set_title("Validation dataset")
-axes[1].plot(np.arange(y_valid.shape[0]) / target_sfreq, y_valid[:, 0], label="Target")
-axes[1].plot(
-    np.arange(preds_valid.shape[0]) / target_sfreq, preds_valid[:, 0], label="Predicted"
-)
-axes[1].set_ylabel("Finger flexion")
-axes[1].legend()
-
-axes[2].set_title("Test dataset")
-axes[2].plot(np.arange(y_test.shape[0]) / target_sfreq, y_test[:, 0], label="Target")
-axes[2].plot(
-    np.arange(preds_test.shape[0]) / target_sfreq, preds_test[:, 0], label="Predicted"
-)
-axes[2].set_xlabel("Time [s]")
-axes[2].set_ylabel("Finger flexion")
-axes[2].legend()
-plt.tight_layout()
+splits = [
+    ("A", "Training set", y_train, preds_train),
+    ("B", "Validation set", y_valid, preds_valid),
+    ("C", "Test set", y_test, preds_test),
+]
+fig, axes = plt.subplots(3, 1, figsize=(8, 7.5))
+for ax, (letter, heading, y_split, preds_split) in zip(axes, splits):
+    times = np.arange(y_split.shape[0]) / target_sfreq
+    r = np.corrcoef(preds_split[:, 0], y_split[:, 0])[0, 1]
+    ax.plot(times, y_split[:, 0], color=GREY, linewidth=1.2)
+    ax.plot(times, preds_split[:, 0], color=BLUE, linewidth=1.2)
+    ax.set_xlim(times[0], times[-1])
+    ax.set_ylabel("Thumb flexion (a.u.)")
+    ax.set_title(
+        f"{letter}  {heading} (r = {r:.2f})", loc="left", fontweight="bold", color=INK
+    )
+axes[-1].set_xlabel("Time (s)")
+for y_text, text, color in [(0.95, "Target", GREY), (0.82, "Predicted", BLUE)]:
+    axes[0].text(
+        0.01,
+        y_text,
+        text,
+        transform=axes[0].transAxes,
+        color=color,
+        fontsize=9,
+        fontweight="bold",
+        va="top",
+    )
+fig.tight_layout()
 
 ######################################################################
 # We can compute correlation coefficients for each finger
@@ -435,8 +457,9 @@ print("Correlation coefficient for each dimension: ", np.round(corr_coeffs, 2))
 
 ######################################################################
 # Now we use the history stored by Skorch throughout training to plot
-# accuracy and loss curves.
-# Extract loss and accuracy values for plotting from history object
+# the mean squared error loss (**A**) and the R² score (**B**) on the
+# training and validation sets. An R² of 0 is what predicting the mean
+# target would score.
 results_columns = ["train_loss", "valid_loss", "r2_train", "r2_valid"]
 df = pd.DataFrame(
     regressor.history[:, results_columns],
@@ -444,33 +467,36 @@ df = pd.DataFrame(
     index=regressor.history[:, "epoch"],
 )
 
-fig, ax1 = plt.subplots(figsize=(8, 3))
-df.loc[:, ["train_loss", "valid_loss"]].plot(
-    ax=ax1, style=["-", ":"], marker="o", color="tab:blue", legend=False, fontsize=14
+fig, (ax_loss, ax_r2) = plt.subplots(1, 2, figsize=(9, 3.4), sharex=True)
+for ax, columns in [
+    (ax_loss, ["train_loss", "valid_loss"]),
+    (ax_r2, ["r2_train", "r2_valid"]),
+]:
+    for column, text, color in zip(columns, ["Train", "Valid"], [GREY, BLUE]):
+        ax.plot(df.index, df[column], color=color, linewidth=1.8)
+        ax.annotate(
+            text,
+            xy=(df.index[-1], df[column].iloc[-1]),
+            xytext=(4, 0),
+            textcoords="offset points",
+            color=color,
+            fontsize=9,
+            fontweight="bold",
+            va="center",
+        )
+    ax.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+    ax.set_axisbelow(True)
+    ax.set_xlabel("Epoch")
+    ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+ax_r2.axhline(0.0, color=GREY, linestyle="--", linewidth=0.9)
+ax_r2.text(
+    df.index[-1], 0.0, "R² = 0", color=GREY, fontsize=8.5, ha="right", va="bottom"
 )
-
-ax1.tick_params(axis="y", labelcolor="tab:blue", labelsize=14)
-ax1.set_ylabel("Loss", color="tab:blue", fontsize=14)
-
-ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-
-df.loc[:, ["r2_train", "r2_valid"]].plot(
-    ax=ax2, style=["-", ":"], marker="o", color="tab:red", legend=False
-)
-ax2.tick_params(axis="y", labelcolor="tab:red", labelsize=14)
-ax2.set_ylabel("R2 score", color="tab:red", fontsize=14)
-ax1.set_xlabel("Epoch", fontsize=14)
-
-# where some data has already been plotted to ax
-handles = []
-handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle="-", label="Train")
-)
-handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle=":", label="Valid")
-)
-plt.legend(handles, [h.get_label() for h in handles], fontsize=14, loc="center right")
-plt.tight_layout()
+ax_loss.set_ylabel("Mean squared error")
+ax_r2.set_ylabel("R²")
+ax_loss.set_title("A  Loss", loc="left", fontweight="bold", color=INK)
+ax_r2.set_title("B  R² score", loc="left", fontweight="bold", color=INK)
+fig.tight_layout()
 
 #############################################################
 #

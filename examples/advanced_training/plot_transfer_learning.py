@@ -429,6 +429,78 @@ fine_tune_score = balanced_accuracy_score(
 print(f"Target test balanced accuracy from scratch: {scratch_score:.3f}")
 print(f"Target test balanced accuracy after transfer: {fine_tune_score:.3f}")
 
+######################################################################
+# We plot the source-domain pre-training losses (**A**) and the two target
+# test scores against the 50% chance level of the two classes (**B**). With
+# one seed and synthetic data, the gap in **B** is not an estimate of the
+# benefit of transfer.
+
+import matplotlib.pyplot as plt
+
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.grid": False,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+fig, (ax_loss, ax_score) = plt.subplots(
+    1, 2, figsize=(9, 3.2), gridspec_kw={"width_ratios": [1.2, 1]}
+)
+epochs = source_clf.history[:, "epoch"]
+for column, text, color, dy in [
+    ("train_loss", "Train", GREY, 6),
+    ("valid_loss", "Valid", BLUE, -6),
+]:
+    values = source_clf.history[:, column]
+    ax_loss.plot(epochs, values, color=color, linewidth=1.8)
+    ax_loss.annotate(
+        text,
+        xy=(epochs[-1], values[-1]),
+        xytext=(4, dy),
+        textcoords="offset points",
+        color=color,
+        fontsize=9,
+        fontweight="bold",
+        va="center",
+    )
+ax_loss.set_xticks(epochs)
+ax_loss.set_xlabel("Source epoch")
+ax_loss.set_ylabel("Cross-entropy loss")
+ax_loss.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+ax_loss.set_axisbelow(True)
+ax_loss.set_title("A  Source pre-training", loc="left", fontweight="bold", color=INK)
+
+scores = [
+    ("From scratch", scratch_score, GREY),
+    ("Source-pretrained", fine_tune_score, BLUE),
+]
+for row, (text, score, color) in enumerate(scores):
+    ax_score.barh(row, score, height=0.5, color=color)
+    ax_score.text(score + 0.02, row, f"{score:.2f}", color=color, va="center")
+ax_score.axvline(0.5, color=GREY, linestyle="--", linewidth=0.9)
+ax_score.text(0.51, 1.45, "Chance (50%)", color=GREY, fontsize=8.5)
+ax_score.set_yticks(range(len(scores)), [text for text, _, _ in scores])
+ax_score.set_ylim(-0.5, 1.7)
+ax_score.set_xlim(0, 1)
+ax_score.set_xticks([0, 0.5, 1.0])
+ax_score.set_xlabel("Target test balanced accuracy")
+ax_score.set_title("B  Target test set", loc="left", fontweight="bold", color=INK)
+fig.tight_layout()
+
 
 ######################################################################
 # Conclusion
