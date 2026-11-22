@@ -146,9 +146,11 @@ jobs:
         if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'schedule' }}
         run: python .github/scripts/sync_gallery_cache.py stamp --docs-dir docs --head-sha "$GITHUB_SHA"
 
+      - name: Run docs tests
+        run: python -m pytest -q docs/tests
+
       - name: Build version-scoped agent documentation
         run: |
-          python -m pytest -q docs/tests/test_agent_docs.py
           # Render only the curated CRITICAL_PAGES from existing HTML doctrees.
           mapfile -t PAGES < <(python -c 'import sys; sys.path.insert(0, "docs"); from build_agent_docs import CRITICAL_PAGES; print("\n".join(f"docs/{p}.rst" for p in CRITICAL_PAGES))')
           sphinx-build -j auto -b markdown -d docs/_build/doctrees -D plot_gallery=0 docs docs/_build/markdown "${PAGES[@]}"
