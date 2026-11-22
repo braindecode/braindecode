@@ -29,9 +29,8 @@ from braindecode.models import (
     TinyMyo,
     USleep,
 )
-from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import models_dict, models_mandatory_parameters
-from braindecode.modules import CausalConv1d, Chomp1d, SqueezeFinalOutput
+from braindecode.modules import CausalConv1d
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
     PARAMS,
@@ -665,67 +664,11 @@ def test_dense_conversion_refusal_reasons_and_dilated_stacks():
             axis=1
         )
 
-    # Third-party 1-D strided + dilated + causal + AvgPool1d stack (undeclared _time_axis)
-    class _ThirdPartyDilatedCNN1d(EEGModuleMixin, nn.Module):
-        def __init__(self, n_chans: int = 3, n_outputs: int = 2, n_times: int = 64):
-            super().__init__(n_outputs=n_outputs, n_chans=n_chans, n_times=n_times)
-            # Receptive field before conversion:
-            # conv1 (k=3, s=2) -> pool (k=2, s=2) -> causal (k=3, d=2) -> chomp_conv (k=3, d=3, pad=6) + Chomp1d(6)
-            # T=64 -> conv1: 31 -> pool: 15 -> causal: 15 -> chomp_conv: 15 -> head (k=15): 1
-            self.conv1 = nn.Conv1d(n_chans, 8, kernel_size=3, stride=2)
-            self.pool = nn.AvgPool1d(kernel_size=2, stride=2)
-            self.causal = CausalConv1d(8, 8, kernel_size=3, dilation=2)
-            self.dilated = nn.Conv1d(8, 8, kernel_size=3, dilation=3, padding=6)
-            self.chomp = Chomp1d(6)
-            self.head = nn.Conv1d(8, n_outputs, kernel_size=15)
-            self.squeeze = SqueezeFinalOutput()
-
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            x = torch.relu(self.conv1(x))
-            x = self.pool(x)
-            x = torch.relu(self.causal(x))
-            x = torch.relu(self.chomp(self.dilated(x)))
-            x = self.head(x)
-            return self.squeeze(x.unsqueeze(-1))
-
-    torch.manual_seed(0)
-    m1d = _ThirdPartyDilatedCNN1d().eval()
-    d1d = copy.deepcopy(m1d)
-    d1d.to_dense_prediction_model()
-    assert d1d.causal.dilation == (2 * 4,)
-    assert d1d.dilated.dilation == (3 * 4,)
-    assert d1d.chomp.chomp_size == 6 * 4
-
-    long_1d = torch.randn(2, 3, 100)
-    with torch.no_grad():
-        dense_1d = d1d(long_1d)
-        assert dense_1d.shape == (2, 2, 100 - 61 + 1)
-        torch.testing.assert_close(
-            dense_1d[..., 0], m1d(long_1d[..., :64]), atol=1e-5, rtol=1e-4
+    # A 1-D average pooling after a stride would need a dilation it lacks.
+    with pytest.raises(ValueError, match="1 is an AvgPool1d after a stride"):
+        to_dense_prediction_model(
+            nn.Sequential(nn.Conv1d(3, 8, 3, stride=2), nn.AvgPool1d(2))
         )
-
-    # Unpadded 1-D strided + dilated + AvgPool1d stack: every step k matches window [k, k + 43)
-    # Receptive field: conv1 (k=3, s=2) -> pool (k=2, s=2) -> dilated (k=3, d=2) -> head (k=6):
-    # T=43 -> conv1: 21 -> pool: 10 -> dilated: 6 -> head: 1
-    valid_1d = nn.Sequential(
-        nn.Conv1d(3, 8, kernel_size=3, stride=2),
-        nn.ReLU(),
-        nn.AvgPool1d(kernel_size=2, stride=2),
-        nn.Conv1d(8, 8, kernel_size=3, dilation=2),
-        nn.ReLU(),
-        nn.Conv1d(8, 2, kernel_size=6),
-    ).eval()
-    ref_1d = copy.deepcopy(valid_1d)
-    to_dense_prediction_model(valid_1d)
-    with torch.no_grad():
-        out_valid_1d = valid_1d(long_1d)
-        for step in (0, 1, 5, 20):
-            torch.testing.assert_close(
-                out_valid_1d[..., step : step + 1],
-                ref_1d(long_1d[..., step : step + 43]),
-                atol=1e-5,
-                rtol=1e-4,
-            )
 
     # Standalone modules.util.to_dense_prediction_model on a 2-D strided + dilated stack
     net2d = nn.Sequential(

@@ -4,13 +4,10 @@
 # License: BSD (3-clause)
 
 import numpy as np
-import torch
 from scipy.special import log_softmax
 from torch import nn
-from torch.nn import functional as F
 
 from .convolution import AvgPool2dWithConv
-from .layers import Chomp1d
 
 
 def _pad_shift_array(x, stride=1):
@@ -91,37 +88,6 @@ def aggregate_probas(logits, n_windows_stride=1):
     return _pad_shift_array(log_probas, stride=n_windows_stride).sum(axis=0).T
 
 
-class _AvgPool1dWithConv(nn.Module):
-    """1-D average pooling implemented via depthwise convolution to support dilation."""
-
-    def __init__(
-        self,
-        kernel_size: tuple[int],
-        stride: tuple[int],
-        dilation: tuple[int],
-        padding: tuple[int],
-    ) -> None:
-        super().__init__()
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.dilation = dilation
-        self.padding = padding
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        in_channels = x.shape[1]
-        k = self.kernel_size[0]
-        weights = x.new_full((in_channels, 1, k), 1.0 / float(k))
-        return F.conv1d(
-            x,
-            weights,
-            bias=None,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation,
-            groups=in_channels,
-        )
-
-
 def _has_strided_layer(model: nn.Module) -> bool:
     """Return whether ``model`` contains any submodule with stride greater than 1."""
     for module in model.modules():
@@ -150,10 +116,10 @@ def to_dense_prediction_model(
     """Convert a sequential strided/dilated convolutional stack to dense predictions.
 
     Replaces strides along ``axis`` with ``1`` and multiplies downstream
-    dilations (and numeric paddings / causal chomps) by the cumulative stride
-    removed before each layer. Average pooling layers that require ``dilation > 1``
-    are replaced with dilated depthwise-convolutional equivalents. Modifies
-    ``model`` in place.
+    dilations and numeric paddings by the cumulative stride removed before each
+    convolution or pooling layer. 2-D average pooling layers that require
+    ``dilation > 1`` are replaced with :class:`AvgPool2dWithConv`; a 1-D one
+    raises ``ValueError``. Modifies ``model`` in place.
 
     Parameters
     ----------
@@ -175,45 +141,25 @@ def to_dense_prediction_model(
     # positions in a layer's (H, W) or (T,) stride tuple, and the stride removed so far
     conv_axes = {1: [0] if 2 in axes else [], 2: [ax - 2 for ax in axes]}
     stride_so_far = {1: [1], 2: [1, 1]}
-    avg_pools = {
-        1: (nn.AvgPool1d, _AvgPool1dWithConv),
-        2: (nn.AvgPool2d, AvgPool2dWithConv),
-    }
-    skip_types = (
-        nn.modules.conv._ConvTransposeNd,
-        nn.modules.pooling._AdaptiveAvgPoolNd,
-        nn.modules.pooling._AdaptiveMaxPoolNd,
-        nn.Unfold,
-    )
-    known_1d = (nn.Conv1d, nn.MaxPool1d, nn.AvgPool1d, _AvgPool1dWithConv)
-    known_2d = (nn.Conv2d, nn.MaxPool2d, nn.AvgPool2d, AvgPool2dWithConv)
     replacements: list[tuple[str, nn.Module]] = []
 
     for name, module in list(model.named_modules()):
-        if module is model or isinstance(module, skip_types):
-            continue
-        if isinstance(module, Chomp1d):
-            module.chomp_size = int(module.chomp_size * stride_so_far[1][0])
-            continue
-        if not isinstance(module, (*known_1d, *known_2d)) and any(
-            True for _ in module.children()
+        if isinstance(module, (nn.Conv1d, nn.MaxPool1d, nn.AvgPool1d)):
+            rank = 1
+        elif isinstance(
+            module, (nn.Conv2d, nn.MaxPool2d, nn.AvgPool2d, AvgPool2dWithConv)
         ):
+            rank = 2
+        else:
             continue
         dilation = getattr(module, "dilation", None)
-        stride = getattr(module, "stride", None)
-        if dilation is None and stride is None:
-            continue
-
-        sample = stride if stride is not None else dilation
-        rank = 1 if isinstance(module, known_1d) else 2
-        if not isinstance(module, (*known_1d, *known_2d)):
-            rank = 1 if isinstance(sample, tuple) and len(sample) == 1 else 2
+        stride = module.stride
         conv, so_far = conv_axes[rank], stride_so_far[rank]
         if not conv:
             continue
 
         new_d = _as_list(1 if dilation is None else dilation, rank)
-        new_s = _as_list(1 if stride is None else stride, rank)
+        new_s = _as_list(stride, rank)
         padding = getattr(module, "padding", 0)
         new_p = None if isinstance(padding, str) else _as_list(padding, rank)
         for i in conv:
@@ -223,20 +169,23 @@ def to_dense_prediction_model(
             so_far[i] *= new_s[i]
             new_s[i] = 1
 
-        pool_cls, conv_pool_cls = avg_pools[rank]
-        if isinstance(module, pool_cls) and any(d > 1 for d in new_d):
+        if isinstance(module, nn.AvgPool1d) and any(d > 1 for d in new_d):
+            raise ValueError(
+                f"{name} is an AvgPool1d after a stride; dense conversion "
+                "cannot dilate it."
+            )
+        if isinstance(module, nn.AvgPool2d) and any(d > 1 for d in new_d):
             kernel = tuple(_as_list(module.kernel_size, rank))
             pad = tuple(new_p) if new_p is not None else (0,) * rank
             replacements.append(
-                (name, conv_pool_cls(kernel, tuple(new_s), tuple(new_d), pad))
+                (name, AvgPool2dWithConv(kernel, tuple(new_s), tuple(new_d), pad))
             )
             continue
         if dilation is not None:
             module.dilation = _like(dilation, new_d)
         if new_p is not None and hasattr(module, "padding"):
             module.padding = _like(padding, new_p)  # type: ignore[assignment]
-        if stride is not None:
-            module.stride = _like(stride, new_s)
+        module.stride = _like(stride, new_s)
 
     for name, new_module in replacements:
         model.set_submodule(name, new_module)

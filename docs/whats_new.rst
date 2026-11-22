@@ -231,9 +231,9 @@ API and behavior changes
 - The constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
   ``return_features`` of 17 models emit a ``FutureWarning`` and go in 2.2; call
   ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
-- ``to_dense_prediction_model`` also converts dilated 1-D and 2-D stacks and raises ``ValueError``
-  with the reason on models it cannot convert, including EMG2QwertyNet and NeuroPose, which did
-  not raise before (by `Bruno Aristimunha`_).
+- ``to_dense_prediction_model`` also converts already dilated convolution stacks and raises
+  ``ValueError`` with the reason on models it cannot convert, including EMG2QwertyNet and NeuroPose,
+  which did not raise before (by `Bruno Aristimunha`_).
 - Every registered model declares ``_time_axis`` (``"fixed"``, ``"free"`` or
   ``"dense"``), ``_channel_axis`` (``"fixed"`` or ``"free"``) and, on ``"free"``
   and ``"dense"`` models, ``_min_n_times``; :class:`braindecode.models.EEGModuleMixin`
