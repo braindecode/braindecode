@@ -39,7 +39,7 @@ html:has(.bd-landing) .bd-article {
   padding: 0 !important;
 }
 
-html:has(.bd-landing) :is(.bd-footer, .bd-footer-content, .prev-next-footer, .bd-sidebar-primary) {
+html:has(.bd-landing) :is(.bd-footer, .bd-footer-content, .prev-next-footer, .bd-main .bd-sidebar-primary) {
   display: none !important;
 }
 
@@ -1794,20 +1794,32 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
 .bd-landing .venue-dots {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 2px;
 }
 
 .bd-landing .venue-dot {
-  width: 12px;
-  height: 12px;
+  width: 24px;
+  height: 24px;
   padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bd-landing .venue-dot::before {
+  content: "";
+  width: 11px;
+  height: 11px;
   border-radius: 999px;
   border: 1.3px solid var(--bd-brand);
   background: transparent;
-  cursor: pointer;
 }
 
-.bd-landing .venue-dot[data-active] {
+.bd-landing .venue-dot[data-active]::before {
   background: var(--bd-brand);
 }
 
@@ -2928,7 +2940,15 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
   .bd-landing .qs-stage,
   .bd-landing .pipeline-grid,
   .bd-landing .ruled-footer-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bd-landing :is(.hf-split, .numbers-split, .core-intro-split, .qs-stage, .pipeline-grid, .ruled-footer-grid, .capable-stage) > * {
+    min-width: 0;
+  }
+
+  .bd-landing .numbers-split {
+    gap: 36px;
   }
 
   .bd-landing .core-intro-split {
@@ -2948,7 +2968,7 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
   }
 
   .bd-landing .capable-stage {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
   }
 
@@ -2977,9 +2997,44 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
   }
 }
 
+@media (max-width: 768px) {
+  .bd-landing .zoo-search input {
+    font-size: 1rem;
+  }
+}
+
 @media (max-width: 680px) {
   .bd-landing .container {
     width: min(100% - 32px, 1280px);
+  }
+
+  .bd-landing .hero {
+    padding: 34px 0 36px;
+  }
+
+  .bd-landing .hero-eyebrow {
+    padding: 6px 12px;
+    border-radius: var(--bd-radius-xs);
+    font-size: 0.75rem;
+    line-height: 1.35;
+    margin-bottom: 14px;
+    max-width: 100%;
+  }
+
+  .bd-landing :is(.hero-eyebrow-mark, .hero-eyebrow-brand, .hero-eyebrow-sep, .proof-div) {
+    display: none !important;
+  }
+
+  .bd-landing .hf-cobrand {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 12px;
+    max-width: 100%;
+  }
+
+  .bd-landing .hf-cobrand img {
+    height: 24px;
+    width: auto;
   }
 
   .bd-landing .section {
@@ -2993,7 +3048,7 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
   .bd-landing .eco-grid,
   .bd-landing .tut-grid,
   .bd-landing .rf-cells {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .bd-landing .core-glance-row {
@@ -3015,7 +3070,8 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
   }
 
   .bd-landing .venue-card {
-    flex: 0 0 320px;
-    min-height: 380px;
+    flex: 0 0 min(320px, calc(100vw - 44px));
+    min-height: 368px;
+    padding: 24px 22px;
   }
 }

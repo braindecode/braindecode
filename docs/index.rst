@@ -234,8 +234,8 @@
             <img class="only-light" src="_static/braindecode_long.svg" alt="Braindecode" width="164" height="28"/>
             <img class="only-dark" src="_static/braindecode_long_dark.svg" alt="Braindecode" width="164" height="28"/>
             <span class="hf-plus" aria-hidden="true">+</span>
-            <img class="only-light" src="_static/ecosystem_logos/huggingface-hf-logo-with-title.svg" alt="Hugging Face" width="142" height="32"/>
-            <img class="only-dark" src="_static/ecosystem_logos/huggingface-hf-logo-with-title-dark.svg" alt="Hugging Face" width="142" height="32"/>
+            <img class="only-light" src="_static/ecosystem_logos/huggingface-hf-logo-with-title.svg" alt="Hugging Face" width="120" height="32"/>
+            <img class="only-dark" src="_static/ecosystem_logos/huggingface-hf-logo-with-title-dark.svg" alt="Hugging Face" width="120" height="32"/>
           </div>
 
           <div class="hf-title-row">
