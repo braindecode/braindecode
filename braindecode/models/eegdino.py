@@ -12,7 +12,7 @@ from torch import nn
 
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import warn_if_sfreq_differs
+from braindecode.models.util import warn_feature_flag_deprecated, warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer, PreNormBlock, TimmAttention
 
 
@@ -228,7 +228,13 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.global_token_layer = global_token_layer
         self.activation = activation
         self.return_features = return_features
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_features", return_features
+        )
         self.return_encoder_output = return_encoder_output
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_encoder_output", return_encoder_output
+        )
 
         self.patch_embedding = _PatchEmbedding(
             patch_size=patch_size,

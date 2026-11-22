@@ -221,6 +221,9 @@ API and behavior changes
 - :meth:`braindecode.models.EEGModuleMixin.to_dense_prediction_model` converts dilated stacks and average pooling, and
   raises a ``ValueError`` naming why a model cannot convert; ``EEGNet(pool_mode="mean")`` then needs 1035 samples,
   not 1014. The ``Cropped decoding`` column of the models summary lists the models that convert (`Bruno Aristimunha`_).
+- Constructor feature flags set to ``True`` (``return_feats``, ``return_feature``, ``return_encoder_output`` and the
+  constructor ``return_features`` of 17 models) emit a ``FutureWarning`` and still work; they are removed in 2.2 in
+  favour of ``model(x, return_features=True)`` (`Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).

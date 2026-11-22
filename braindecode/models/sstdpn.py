@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 
 
 class SSTDPN(EEGModuleMixin, nn.Module):
@@ -266,6 +267,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             mvp_kernel_sizes if mvp_kernel_sizes is not None else [50, 100, 200]
         )
         self.return_features = return_features
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_features", return_features
+        )
         self.proto_sep_maxnorm = proto_sep_maxnorm
         self.proto_cpt_std = proto_cpt_std
         self.spt_attn_global_context_kernel = spt_attn_global_context_kernel

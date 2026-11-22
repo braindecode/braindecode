@@ -8,6 +8,7 @@ import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
@@ -141,6 +142,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
         self._pool_t_target = self.len_last_layer // self.n_conv_chans
         self.return_feats = return_feats
+        warn_feature_flag_deprecated(type(self).__name__, "return_feats", return_feats)
 
         # TODO: Add new way to handle return_features == True
         if not return_feats:

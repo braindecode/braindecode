@@ -1,6 +1,7 @@
 """Tests for the unified ``return_features`` and ``reset_head`` API."""
 
 import inspect
+import warnings
 
 import mne
 import pytest
@@ -63,6 +64,8 @@ from test.unit_tests.models._fixtures import (
     _build_case,
     _get_signal_params,
     _materialize,
+    _architecture_kwargs,
+    _get_signal_params,
     _tensor_leaves,
 )
 
@@ -526,6 +529,64 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
     assert check(out)
 
 
+# -- Constructor feature flags, deprecated for model(x, return_features=True) --
+
+LEGACY_FLAGS = [
+    ("AttnSleep", "return_feats"),
+    ("DeepSleepNet", "return_feats"),
+    ("SleepStagerBlanco2020", "return_feats"),
+    ("SleepStagerChambon2018", "return_feats"),
+    ("BIOT", "return_feature"),
+    ("EEGSimpleConv", "return_feature"),
+    ("EMG2QwertyNet", "return_feature"),
+    ("CBraMod", "return_encoder_output"),
+    ("CSBrain", "return_encoder_output"),
+    ("EEGDINO", "return_encoder_output"),
+    ("EEGPT", "return_encoder_output"),
+    ("EEGConformer", "return_features"),
+    ("EEGDINO", "return_features"),
+    ("FBMSNet", "return_features"),
+    ("MEGGPT", "return_features"),
+    ("MIRepNet", "return_features"),
+    ("MSVTNet", "return_features"),
+    ("SSTDPN", "return_features"),
+]
+# Pairs whose forward flag already returns every tensor the constructor flag
+# returned, with the same weights. The others drop the head at construction
+# (return_feats, return_encoder_output), return logits the feature dict lacks
+# (BIOT, EMG2QwertyNet) or have no forward flag yet; they wait for
+# return_features on every model.
+_FORWARD_EQUIVALENT = {
+    ("EEGDINO", "return_features"),
+    ("MEGGPT", "return_features"),
+    ("MIRepNet", "return_features"),
+}
+
+
+def _registry_case(name):
+    sp = _get_signal_params(_REGISTRY[name])
+    kw = _get_signal_params(_REGISTRY[name], _REQUIRED[name])
+    x = torch.randn(BATCH, len(sp["chs_info"]), sp["n_times"])
+    return kw, x
+
+
+@pytest.mark.parametrize("model_name,flag", LEGACY_FLAGS)
+def test_constructor_flag_warns_and_matches_forward_flag(model_name, flag):
+    kw, x = _registry_case(model_name)
+    with pytest.warns(FutureWarning, match=rf"{flag}=True\) is deprecated"):
+        legacy = models_dict[model_name](**kw, **{flag: True}).eval()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        plain = models_dict[model_name](**kw).eval()  # the default stays silent
+    if (model_name, flag) not in _FORWARD_EQUIVALENT:
+        return
+    plain.load_state_dict(legacy.state_dict())
+    with torch.no_grad():
+        old = list(_tensor_leaves(legacy(x)))
+        new = list(_tensor_leaves(plain(x, return_features=True)))
+    assert all(any(o.shape == n.shape and torch.equal(o, n) for n in new) for o in old)
+
+
 # -- reset_head --
 
 # Exclude SignalJEPA (SSL model, Identity head)
@@ -549,6 +610,7 @@ def test_reset_head(cls, nc, kw, has_cls):
 
 _ALL_MODELS = dict(models_dict)
 _REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
+_REQUIRED = {name: req for name, req, _ in models_mandatory_parameters}
 # Every registered model that overrides reset_head.
 _RESET_HEAD_CASES = [
     name

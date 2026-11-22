@@ -10,6 +10,7 @@ from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -251,6 +252,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             )
 
         self.return_features = return_features
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_features", return_features
+        )
         self.activation_checkpointing = activation_checkpointing
 
         self.patch_embedding = _PatchEmbedding(

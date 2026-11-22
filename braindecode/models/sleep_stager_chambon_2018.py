@@ -8,6 +8,7 @@ import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
@@ -116,6 +117,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             nn.MaxPool2d((1, max_pool_size)),
         )
         self.return_feats = return_feats
+        warn_feature_flag_deprecated(type(self).__name__, "return_feats", return_feats)
 
         dim_conv_1 = (
             self.n_times + 2 * pad_size - (time_conv_size - 1)

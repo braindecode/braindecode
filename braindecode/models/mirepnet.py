@@ -13,7 +13,10 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
+from braindecode.models.util import (
+    _disable_batch_norm_training_if_batch_size_one,
+    warn_feature_flag_deprecated,
+)
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -230,6 +233,9 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
 
         self.embed_dim = embed_dim
         self.return_features = return_features
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_features", return_features
+        )
         self.mapping = {
             "embedding.projection.0.weight": "embedding.projection.weight",
             "embedding.projection.0.bias": "embedding.projection.bias",

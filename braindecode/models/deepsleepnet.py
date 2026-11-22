@@ -7,7 +7,10 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
+from braindecode.models.util import (
+    _disable_batch_norm_training_if_batch_size_one,
+    warn_feature_flag_deprecated,
+)
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
@@ -218,6 +221,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.return_feats = return_feats
+        warn_feature_flag_deprecated(type(self).__name__, "return_feats", return_feats)
         self.cnn1 = _CNNPath(
             n_filters_1=small_n_filters_1,
             n_filters_2=small_n_filters_2,

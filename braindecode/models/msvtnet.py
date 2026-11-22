@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
@@ -107,6 +108,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.return_features = return_features
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_features", return_features
+        )
         assert len(n_filters_list) == len(conv1_kernels_size), (
             "The length of n_filters_list and conv1_kernel_sizes should be equal."
         )

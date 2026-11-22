@@ -21,6 +21,7 @@ from torch import Tensor, nn
 from braindecode.functional import init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
+from braindecode.models.util import warn_feature_flag_deprecated
 from braindecode.modules import FeedForwardBlock
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -414,6 +415,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
         self._encoder_output = return_encoder_output
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_encoder_output", return_encoder_output
+        )
         self._init_parameters()
 
         if return_encoder_output:

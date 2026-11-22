@@ -13,6 +13,7 @@ from torch import nn
 
 from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
@@ -278,6 +279,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
         # model parameters
         self.return_encoder_output = return_encoder_output
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_encoder_output", return_encoder_output
+        )
         self.patch_size = patch_size
         self.patch_stride = patch_stride
         self.embed_num = embed_num

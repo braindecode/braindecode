@@ -20,6 +20,7 @@ from braindecode.functional import (
     spectral_input,
 )
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -233,6 +234,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
         self._patch_size = patch_size
         self._encoder_output = return_encoder_output
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_encoder_output", return_encoder_output
+        )
         self._init_parameters()
 
         if return_encoder_output:

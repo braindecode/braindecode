@@ -18,6 +18,7 @@ from torch import nn
 from torchaudio.transforms import Resample
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 
 
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
@@ -132,6 +133,9 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
         self.return_feature = return_feature
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_feature", return_feature
+        )
         self.resample = (
             Resample(orig_freq=int(self.sfreq), new_freq=int(resampling_freq))
             if self.sfreq != resampling_freq

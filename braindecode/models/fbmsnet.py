@@ -9,6 +9,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.fbcnet import _valid_layers
+from braindecode.models.util import warn_feature_flag_deprecated
 from braindecode.modules import (
     Conv2dWithConstraint,
     FilterBankLayer,
@@ -145,6 +146,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self.filter_parameters = filter_parameters or {}
         self.out_channels_spatial = self.n_filters_spat * self.dilatability
         self.return_features = return_features
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_features", return_features
+        )
 
         # Checkers
         if temporal_layer not in _valid_layers:

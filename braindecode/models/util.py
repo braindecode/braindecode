@@ -1374,6 +1374,17 @@ def warn_if_sfreq_differs(
         )
 
 
+def warn_feature_flag_deprecated(model_name: str, flag: str, value: Any) -> None:
+    """Warn that a constructor feature flag set to ``True`` is deprecated."""
+    if value:
+        warnings.warn(
+            f"{model_name}({flag}=True) is deprecated and will be removed in "
+            "braindecode 2.2; call model(x, return_features=True) instead.",
+            FutureWarning,
+            stacklevel=4,
+        )
+
+
 def _in_model_resample(
     model_name: str, sfreq: float, model_sfreq: int, n_times: int
 ) -> tuple[Resample, int]:

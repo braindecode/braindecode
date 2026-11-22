@@ -19,6 +19,7 @@ from torch import nn
 
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 from braindecode.modules import TDSConvEncoder
 
 
@@ -313,6 +314,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         self.kernel_width = kernel_width
         self.log_softmax = log_softmax
         self.return_feature = return_feature
+        warn_feature_flag_deprecated(
+            type(self).__name__, "return_feature", return_feature
+        )
 
         n_freq_bins = n_fft // 2 + 1
         in_features = electrodes_per_band * n_freq_bins

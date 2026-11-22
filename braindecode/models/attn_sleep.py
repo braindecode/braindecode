@@ -36,6 +36,7 @@ from torch import nn
 
 from braindecode.functional import scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_feature_flag_deprecated
 from braindecode.modules import CausalConv1d
 
 
@@ -218,6 +219,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = feature_length * after_reduced_cnn_size
         self.return_feats = return_feats
+        warn_feature_flag_deprecated(type(self).__name__, "return_feats", return_feats)
 
         # TODO: Add new way to handle return features
         """if return_feats:
