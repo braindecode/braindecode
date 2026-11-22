@@ -462,11 +462,9 @@ _QUANTIZER = (
     "dead-code expiry (the released EuclideanCodebook)",
 )
 _HOST_SYNC = {
-    "BaRISTA": (("_local_scalar_dense",), "eager-only spatial_indices range check"),
     "BENDR": (("_local_scalar_dense",), "LayerDrop coin flip on a CPU torch.rand(1)"),
     "BrainOmni": _QUANTIZER,
     "BrainTokenizer": _QUANTIZER,
-    "CodeBrain": (("_local_scalar_dense",), "lazy kernel-norm init flag (buffer)"),
     "EEGSimpleConv": (
         ("_local_scalar_dense",),
         "torchaudio Resample takes the output length from a CPU scalar",
