@@ -1670,7 +1670,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         for tensor in state_dict.values():
             if isinstance(tensor, UninitializedParameter):
                 return "model contains uninitialized parameters"
-            if tensor.device.type == "meta":
+            if tensor.is_meta:
                 continue
             storage = tensor.untyped_storage()
             storage_ptr = storage.data_ptr()
