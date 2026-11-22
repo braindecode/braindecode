@@ -16,6 +16,9 @@ from braindecode.models import (
     LUNA,
     BrainBERT,
     EEGConformer,
+    FBCNet,
+    FBMSNet,
+    IFNet,
     SensingDynamics,
     TinyMyo,
 )
@@ -409,6 +412,31 @@ def test_secondary_time_inputs_snap_positional_and_keyword():
     assert seen_sd[1][1]["x"].shape == (2, 16, 200)
     assert seen_sd[1][1]["x_lowpass"].shape == (2, 16, 200)
     torch.testing.assert_close(sd_pos, sd_kw)
+
+
+@pytest.mark.parametrize("cls,stride_factor", [(FBCNet, 4), (FBMSNet, 4), (IFNet, 8)])
+def test_filterbank_models_pad_after_convs_and_script_dynamic_lengths(
+    cls, stride_factor
+):
+    model_nondiv = cls(
+        n_chans=3, n_outputs=2, n_times=1003, stride_factor=stride_factor, sfreq=250
+    ).eval()
+    x_1003 = torch.randn(2, 3, 1003)
+    with torch.no_grad():
+        assert torch.equal(model_nondiv(x_1003), model_nondiv.forward(x_1003))
+
+    model_div = cls(
+        n_chans=3, n_outputs=2, n_times=1000, stride_factor=stride_factor, sfreq=250
+    ).eval()
+    scripted = torch.jit.script(model_div)
+    x_1001 = torch.randn(2, 3, 1001)
+    with torch.no_grad(), pytest.warns(UserWarning, match="snapped"):
+        eager_out = model_div(x_1001)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(x_1001), eager_out, atol=0, rtol=0)
+    model_div.on_non_divisible = "crop"
+    with torch.no_grad():
+        assert model_div(x_1001).shape == (2, 2)
 
 
 _VALID_OUTPUT_TAGS = {

@@ -191,6 +191,7 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         self.flatten = Rearrange("batch ... -> batch (...)")
         self._n_times_step = self.stride_factor
         self.on_non_divisible = "pad"
+        self._snaps_in_prepare_inputs = "crop_only"
         self._min_n_times = self.stride_factor
 
         # Initialize parameters
@@ -433,8 +434,9 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         x = self.inter_frequency(x_t)
 
         # Reshape for temporal segmentation
-        if x.shape[-1] % self.stride_factor != 0:
-            x = self.padding_layer(x)
+        rem = x.shape[-1] % self.stride_factor
+        if rem != 0:
+            x = nn.functional.pad(x, (0, self.stride_factor - rem))
         # x is now of shape (batch_size, ..., n_times_padded)
 
         # Reshape for log-power computation
