@@ -28,6 +28,11 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Redesign the documentation landing page, unify the top navigation bar and
+  sub-page palette, add a one-click Zenodo software citation hub
+  (``10.5281/zenodo.8214376``), and pre-render the native-CSS model zoo explorer
+  with API hover previews across all 103 architectures (:gh:`1750` by
+  `Bruno Aristimunha`_).
 - Speed up serialized dataset saving and lazy reloading in
   :func:`braindecode.datautil.serialization.load_concat_dataset` and
   :meth:`braindecode.datasets.BaseConcatDataset.save` by dispatching

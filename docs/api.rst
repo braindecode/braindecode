@@ -1,5 +1,3 @@
-:orphan:
-
 .. _api_reference:
 
 ###########################
@@ -14,11 +12,11 @@
  Models
 ********
 
-Model zoo availables in braindecode. The models are implemented as ``PyTorch``
-:py:class:`torch.nn.Module` and can be used for various EEG decoding ways tasks.
+All architectures in Braindecode are implemented as PyTorch :py:class:`torch.nn.Module`
+classes for classification, regression, sleep staging, seizure detection, and
+representation learning across EEG, iEEG, MEG, fNIRS, and sEMG.
 
-All the models have the convention of having the signal related parameters named the
-same way, following the braindecode's standards:
+Every model uses standardized signal-geometry parameters:
 
 - :fa:`shapes` ``n_outputs``: Number of labels or outputs of the model.
 - :fa:`wave-square` ``n_chans``: Number of EEG channels.

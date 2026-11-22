@@ -1,6 +1,8 @@
 {%- extends 'pydata_sphinx_theme/layout.html' %}
 
 {% block extrahead %}
+  <meta name="color-scheme" content="light dark">
+
   <!-- Google Tag Manager (single analytics entry point — drives any GA4 / GTAG
        configured inside the GTM container; do not add a second gtag here).
        Honors the Do-Not-Track signal so privacy-conscious users opt out. -->
@@ -15,19 +17,15 @@
 
   {{ super() }}
 
-  {% if pagename == 'index' %}
-  {# Landing-only assets. Injected here (not in conf.py's
-     html_css_files / html_js_files) so they don't ship on every doc
-     page — landing.css is ~2k lines and pulls in Google Fonts, and
-     landing.js wires interactions only the landing page uses. #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+  <script src="{{ pathto('_static/cite.js', 1) }}" defer></script>
+
+  {% if pagename == 'index' %}
+  {# Landing-only styles and progressive-enhancement module. #}
   <link rel="stylesheet" href="{{ pathto('_static/landing.css', 1) }}">
-  <script src="{{ pathto('_static/zoo-data.js', 1) }}" defer></script>
-  <script src="{{ pathto('_static/landing.js', 1) }}" defer></script>
-  {# Tag the document so landing.css can target it without relying on
-     `:has(.bd-landing)` (browsers without :has() would otherwise miss
-     the page-level overrides and render the chrome twice). #}
-  <script>document.documentElement.classList.add("bd-page-index");</script>
+  <script type="module" src="{{ pathto('_static/landing.js', 1) }}"></script>
   {# `<meta name="description">` and `<meta property="og:description">` are
      emitted by sphinxext-opengraph (see ogp_enable_meta_description in conf.py)
      using the `.. meta::` block in index.rst — don't duplicate them here. #}
@@ -39,13 +37,17 @@
     "alternateName": "braindecode",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Cross-platform",
-    "description": "Open-source PyTorch toolbox for decoding raw EEG, ECoG and MEG with deep learning. Datasets, preprocessing, augmentations, and 65+ published models.",
+    "description": "Open-source PyTorch library for decoding raw EEG, MEG, iEEG, ECoG, fNIRS, and sEMG signals. Datasets, preprocessing, montage adaptation, and 103 published architectures including 48 foundation models.",
     "url": "{{ docs_url }}",
     "license": "https://spdx.org/licenses/BSD-3-Clause.html",
     "softwareVersion": "{{ release }}",
     "programmingLanguage": "Python",
     "downloadUrl": "https://pypi.org/project/braindecode/",
     "codeRepository": "https://github.com/braindecode/braindecode",
+    "citation": [
+      "https://doi.org/10.5281/zenodo.8214376",
+      "https://doi.org/10.1002/hbm.23730"
+    ],
     "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
     "publisher": {
       "@type": "Organization",
