@@ -84,33 +84,9 @@ def _resample_out_length(length: int, orig_freq: int, new_freq: int) -> int:
 def _apply_resample(
     resample: Resample, x: torch.Tensor, time_dim: int = -1
 ) -> torch.Tensor:
-    """Apply ``resample`` along ``time_dim`` cleanly across dtypes and views.
-
-    Avoids torchaudio's ``view()`` (fails on non-contiguous inputs),
-    ``torch.as_tensor(...).long()`` slicing (host sync), and float32-only kernel
-    assumptions under ``bfloat16`` / autocast.
-    """
-    if resample.orig_freq == resample.new_freq:
-        return x
-    if not x.is_floating_point():
-        raise TypeError(
-            f"Expected floating point type for waveform tensor, but received {x.dtype}."
-        )
+    """Apply ``resample`` along ``time_dim`` (torchaudio reshapes with ``view``)."""
     moved = x if time_dim == -1 else x.movedim(time_dim, -1)
-    orig_freq = int(resample.orig_freq) // int(resample.gcd)
-    new_freq = int(resample.new_freq) // int(resample.gcd)
-    width = int(resample.width)
-    shape = moved.shape
-    flat = moved.reshape(-1, shape[-1])
-    num_wavs, length = flat.shape
-    padded = F.pad(flat, (width, width + orig_freq))
-    kernel = resample.kernel.to(device=flat.device, dtype=flat.dtype)
-    resampled = F.conv1d(padded[:, None], kernel, stride=orig_freq)
-    resampled = resampled.transpose(1, 2).reshape(num_wavs, -1)
-    target_length = _resample_out_length(
-        length, int(resample.orig_freq), int(resample.new_freq)
-    )
-    out = resampled[..., :target_length].reshape(*shape[:-1], target_length)
+    out = resample(moved.contiguous())
     return out if time_dim == -1 else out.movedim(-1, time_dim)
 
 
@@ -772,11 +748,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             x = _forward_param_names(type(self).forward)[0]
             kwargs[x] = _map_signal(kwargs[x])
 
-        if type(self).__name__ == "CORTEG":
-            if len(args) > 1 and torch.is_tensor(args[1]):
-                args = (args[0], _map_signal(args[1]), *args[2:])
-            elif "x_hi" in kwargs and torch.is_tensor(kwargs["x_hi"]):
-                kwargs["x_hi"] = _map_signal(kwargs["x_hi"])
+        # Secondary time inputs (CORTEG's x_hi) carry the same channels as x.
+        for idx, inp_name in enumerate(self._time_inputs[1:], start=1):
+            t = self._get_time_input(idx, inp_name, args, kwargs)
+            if t is not None:
+                args, kwargs = self._set_time_input(
+                    idx, inp_name, _map_signal(t), args, kwargs
+                )
         return args, kwargs
 
     def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
