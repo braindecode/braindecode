@@ -17,7 +17,7 @@ EEGConformer,General,Prediction,250,"n_chans, n_outputs, n_times",789572,"EEGCon
 EEGCLIP,General,"Embedding, Prediction",250,"n_chans, n_outputs, n_times",402603,"EEGCLIP(n_chans=21, n_outputs=64, n_times=1000)","Foundation Model,Convolution",EEG,free,fixed,"(batch, outputs)",no,no,yes,no
 EEGPT,General,Prediction,256,"n_chans, n_outputs, n_times, chs_info",25323061,"EEGPT(n_chans=58, chs_info=chs_info, n_outputs=4, n_times=1024)","Foundation Model,Attention/Transformer",EEG,fixed,fixed,"(batch, outputs)",no,no,yes,yes
 EEGInceptionERP,"ERP, SSVEP",Prediction,128,"n_chans, n_outputs, n_times, sfreq",14926,"EEGInceptionERP(n_chans=8, n_outputs=2, n_times=128, sfreq=128)",Convolution,EEG,fixed,fixed,"(batch, outputs)",no,no,no,no
-EEGInceptionMI,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",558028,"EEGInceptionMI(n_chans=22, n_outputs=4, n_times=1000, sfreq=250, n_convs=5, n_filters=12)",Convolution,EEG,fixed,fixed,"(batch, outputs)",no,no,no,no
+EEGInceptionMI,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",558028,"EEGInceptionMI(n_chans=22, n_outputs=4, n_times=1000, sfreq=250, n_convs=5, n_filters=12)",Convolution,EEG,free,fixed,"(batch, outputs)",no,no,no,no
 EEGITNet,Motor Imagery,Prediction,125,"n_chans, n_outputs, n_times",3686,"EEGITNet(n_chans=22, n_outputs=4, n_times=500)","Convolution,Recurrent",EEG,fixed,fixed,"(batch, outputs)",no,no,no,no
 EEGNet,General,Prediction,128,"n_chans, n_outputs, n_times",2484,"EEGNet(n_chans=22, n_outputs=4, n_times=512)",Convolution,EEG,dense,fixed,"(batch, outputs)",yes,no,no,no
 EEGNeX,Motor Imagery,Prediction,125,"n_chans, n_outputs, n_times",55940,"EEGNeX(n_chans=22, n_outputs=4, n_times=500)",Convolution,EEG,fixed,fixed,"(batch, outputs)",no,no,no,no
