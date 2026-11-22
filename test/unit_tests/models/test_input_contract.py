@@ -15,6 +15,7 @@ from braindecode.models import (
     DIVER1,
     LUNA,
     BrainBERT,
+    CBraMod,
     EEGConformer,
     FBCNet,
     FBMSNet,
@@ -134,6 +135,14 @@ def test_min_n_times_runs_and_one_less_refuses(
         with pytest.raises(ValueError, match=rf"needs at least {m} time samples"):
             model(torch.randn(2, x.shape[1], m - 1))
         assert calls == []
+
+
+def test_lazy_model_keeps_channel_count_of_first_call():
+    model = CBraMod(n_outputs=2, n_times=400).eval()  # no n_chans: lazy head
+    with torch.no_grad():
+        model(torch.randn(2, 3, 400))
+        with pytest.raises(ValueError, match="built for n_chans=3 and got 4"):
+            model(torch.randn(2, 4, 400))
 
 
 def test_length_grid_snaps_within_cap_and_warns_once():

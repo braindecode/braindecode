@@ -630,6 +630,18 @@ def test_custom_weights_legacy_options_do_not_reach_constructor(tmp_path, monkey
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
 
 
+def test_save_pretrained_falls_back_to_bin_for_partial_shared_tensors(tmp_path):
+    model = EEGNet(n_chans=2, n_outputs=2, n_times=128)
+    storage = torch.zeros(4)
+    model.register_buffer("head_half", storage[:2])  # neither view covers
+    model.register_buffer("tail_half", storage[2:])  # the whole storage
+    (tmp_path / "model.safetensors").write_bytes(b"stale")
+    with pytest.warns(UserWarning, match="no complete storage"):
+        model.save_pretrained(tmp_path)
+    assert (tmp_path / "pytorch_model.bin").is_file()
+    assert not (tmp_path / "model.safetensors").exists()
+
+
 def test_model_card_datasets_roundtrip(tmp_path):
     from .test_base import DummyModuleConfigRoundTrip
 
