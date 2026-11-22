@@ -1074,9 +1074,24 @@ class MultiHeadAttention(nn.Module):
             for float masks the values are **added** to the attention scores
             before softmax.
         """
-        queries = self.rearrange_stack(self.queries(x))
-        keys = self.rearrange_stack(self.keys(x))
-        values = self.rearrange_stack(self.values(x))
+        qkv_weight = torch.cat(
+            (self.queries.weight, self.keys.weight, self.values.weight), dim=0
+        )
+        qkv_bias: Optional[Tensor] = None
+        if (
+            self.queries.bias is not None
+            and self.keys.bias is not None
+            and self.values.bias is not None
+        ):
+            qkv_bias = torch.cat(
+                (self.queries.bias, self.keys.bias, self.values.bias), dim=0
+            )
+        qkv = nn.functional.linear(x, qkv_weight, qkv_bias)
+        queries, keys, values = (
+            qkv.reshape(x.shape[0], x.shape[1], 3, self.num_heads, self.head_dim)
+            .permute(2, 0, 3, 1, 4)
+            .unbind(0)
+        )
         if self.q_norm is not None:
             queries = self.q_norm(queries)
         if self.k_norm is not None:
@@ -1089,7 +1104,7 @@ class MultiHeadAttention(nn.Module):
             queries, keys, values, attn_mask=mask, dropout_p=dp
         )
 
-        out = self.rearrange_unstack(out)
+        out = out.transpose(1, 2).flatten(2)
         return self.projection(out)
 
 
