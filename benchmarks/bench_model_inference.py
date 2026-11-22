@@ -6,6 +6,13 @@ Run from the repository root, for example::
     python -m benchmarks.bench_model_inference --model EEGConformer \
         --device cuda --compile --precision bfloat16
 
+Every registered model, one JSON line per model (eager and, with
+``--compile``, compiled medians in milliseconds), each built with its test
+fixture configuration::
+
+    python -m benchmarks.bench_model_inference --models all --device cpu \
+        --dtype float32 --batch 64 --warmup 5 --repeats 20 --out bench.jsonl
+
 Uses PyTorch's benchmark Timer, with explicit accelerator synchronization also
 covering MPS. Reports first candidate execution after an eager FP32 reference
 separately from warmed-up block timings. This is NOT cold-device startup or
@@ -16,9 +23,13 @@ identical shapes, threads, precision, software versions and backend settings.
 """
 
 import argparse
+import gc
 import json
 import math
 import platform
+import statistics
+import sys
+from pathlib import Path
 from time import perf_counter
 
 import torch
@@ -42,13 +53,22 @@ def synchronize(device):
         torch.cuda.synchronize(device)
     elif device.type == "mps":
         torch.mps.synchronize()
+    elif device.type == "hpu":
+        torch.hpu.synchronize()
+
+
+def check_device(device):
+    """Refuse unsupported devices; import the Gaudi bridge only for ``hpu``."""
+    if device.type not in {"cpu", "cuda", "mps", "hpu"}:
+        raise ValueError("Supported devices are cpu, cuda, mps and hpu")
+    if device.type == "hpu":
+        import habana_frameworks.torch  # noqa: F401
 
 
 def benchmark(args):
     """Return JSON-compatible timing, numerical-check and environment data."""
     device = torch.device(args.device)
-    if device.type not in {"cpu", "cuda", "mps"}:
-        raise ValueError("Supported devices are cpu, cuda and mps")
+    check_device(device)
     if args.precision == "float16" and device.type != "cuda":
         raise ValueError("float16 is supported by this benchmark only on CUDA")
     if args.precision == "bfloat16" and device.type == "mps":
@@ -150,6 +170,69 @@ def benchmark(args):
     }
 
 
+def _median_ms(run, device, warmup, repeats):
+    """Median wall time of ``run()`` in milliseconds, after ``warmup`` calls."""
+    for _ in range(warmup):
+        run()
+    synchronize(device)
+    times = []
+    for _ in range(repeats):
+        start = perf_counter()
+        run()
+        synchronize(device)
+        times.append((perf_counter() - start) * 1e3)
+    return statistics.median(times)
+
+
+def sweep(args):
+    """Yield one timing record per registered model (test fixture shapes)."""
+    repo_root = Path(__file__).resolve().parents[1]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from braindecode.models.util import models_mandatory_parameters
+    from test.unit_tests.models._fixtures import _build_case, _materialize
+
+    device = torch.device(args.device)
+    check_device(device)
+    dtype = getattr(torch, args.precision)
+    torch.set_num_threads(args.threads)
+    cases = {case[0]: case for case in models_mandatory_parameters}
+    names = list(cases) if args.models == "all" else args.models.split(",")
+    for name in names:
+        torch.manual_seed(args.seed)
+        model, x = _build_case(*cases[name])
+        _materialize(model, x)
+        x = torch.randn(args.batch_size, *x.shape[1:]).to(device)
+        model = model.to(device)
+        record = {"model": name, "device": device.type, "dtype": args.precision}
+        record.update(batch=args.batch_size, eager_ms=None, compile_ms=None)
+
+        def timed(module, x):
+            def run():
+                with (
+                    torch.inference_mode(),
+                    torch.autocast(
+                        device.type, dtype=dtype, enabled=dtype != torch.float32
+                    ),
+                ):
+                    return module(x)
+
+            return _median_ms(run, device, args.warmup, args.repeats)
+
+        # A sweep reports a model that fails (for example in bfloat16)
+        # instead of stopping at it.
+        try:
+            record["eager_ms"] = timed(model, x)
+            if args.compile:
+                compiled = torch.compile(model, mode=args.compile_mode)
+                record["compile_ms"] = timed(compiled, x)
+        except (RuntimeError, ValueError, TypeError, AssertionError) as error:
+            record["error"] = f"{type(error).__name__}: {error}".splitlines()[0]
+        yield record
+        del model, x
+        gc.collect()
+
+
 def parser():
     """Build the standalone benchmark CLI."""
     result = argparse.ArgumentParser(description=__doc__)
@@ -158,9 +241,17 @@ def parser():
         choices=["EEGNet", "ShallowFBCSPNet", "EEGConformer"],
         default="EEGNet",
     )
+    result.add_argument(
+        "--models",
+        default=None,
+        help="'all' or comma-separated registered models: sweep mode, JSON lines",
+    )
     result.add_argument("--device", default="cpu")
     result.add_argument(
-        "--precision", choices=["float32", "float16", "bfloat16"], default="float32"
+        "--precision",
+        "--dtype",
+        choices=["float32", "float16", "bfloat16"],
+        default="float32",
     )
     result.add_argument("--compile", action="store_true")
     result.add_argument(
@@ -168,15 +259,31 @@ def parser():
         choices=["default", "reduce-overhead", "max-autotune"],
         default="default",
     )
-    result.add_argument("--batch-size", type=positive_int, default=16)
+    result.add_argument("--batch-size", "--batch", type=positive_int, default=16)
     result.add_argument("--n-chans", type=positive_int, default=22)
     result.add_argument("--n-times", type=positive_int, default=1000)
     result.add_argument("--threads", type=positive_int, default=1)
     result.add_argument("--warmup", type=positive_int, default=5)
+    result.add_argument("--repeats", type=positive_int, default=20)
+    result.add_argument("--out", type=Path, default=None, help="JSON lines file")
     result.add_argument("--min-run-time", type=float, default=1.0)
     result.add_argument("--seed", type=int, default=0)
     return result
 
 
+def main(argv=None):
+    """Run one model (pretty JSON) or a sweep (JSON lines to stdout or --out)."""
+    args = parser().parse_args(argv)
+    if args.models is None:
+        print(json.dumps(benchmark(args), indent=2, allow_nan=False))
+        return
+    out = args.out.open("w") if args.out is not None else sys.stdout
+    for record in sweep(args):
+        out.write(json.dumps(record) + "\n")
+        out.flush()
+    if args.out is not None:
+        out.close()
+
+
 if __name__ == "__main__":
-    print(json.dumps(benchmark(parser().parse_args()), indent=2, allow_nan=False))
+    main()

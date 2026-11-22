@@ -171,3 +171,17 @@ def test_cpu_benchmark_preserves_rng(tiny_benchmark):
         cuda_before, torch.cuda.get_rng_state_all() if cuda_before else []
     ):
         assert torch.equal(before, after)
+
+
+def test_registry_sweep_writes_one_line_per_model(tmp_path):
+    out = tmp_path / "bench.jsonl"
+    bench.main(
+        ["--models", "EEGNet,ShallowFBCSPNet", "--batch", "2", "--warmup", "1"]
+        + ["--repeats", "2", "--out", str(out)]
+    )
+    records = [json.loads(line) for line in out.read_text().splitlines()]
+    assert [r["model"] for r in records] == ["EEGNet", "ShallowFBCSPNet"]
+    for record in records:
+        assert record["device"] == "cpu" and record["dtype"] == "float32"
+        assert record["batch"] == 2 and record["eager_ms"] > 0
+        assert record["compile_ms"] is None and "error" not in record
