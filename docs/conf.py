@@ -546,6 +546,7 @@ html_redirects = {
         "../auto_examples/model_building/"
         "plot_bcic_iv_2a_moabb_cropped.html#cropped-inference"
     ),
+    "auto_examples/datasets_io/plot_hub_integration.html": "hub_integration.html",
 }
 
 # --- Open Graph / Twitter Card / meta description ---
