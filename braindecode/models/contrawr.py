@@ -10,7 +10,7 @@ from braindecode.models.util import _disable_batch_norm_training_if_batch_size_o
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
-    r"""Contrast with the World Representation ContraWR from Yang et al (2021) [Yang2021]_.
+    r"""Contrast with the World Representation ContraWR from Yang et al (2023) [Yang2021]_.
 
     :bdg-success:`Convolution`
 
