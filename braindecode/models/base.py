@@ -10,6 +10,7 @@ import functools
 import inspect
 import json
 import logging
+import os
 import re
 import sys
 import warnings
@@ -71,6 +72,21 @@ def _validate_weights_filename(filename):
         raise ValueError("filename must be a relative weight path without traversal")
 
 
+_NAME_MAX = os.pathconf("/", "PC_NAME_MAX") if hasattr(os, "pathconf") else 255
+_PATH_MAX = os.pathconf("/", "PC_PATH_MAX") if hasattr(os, "pathconf") else 4096
+
+
+def _is_local_dir(path_or_id: Union[str, os.PathLike]) -> bool:
+    """True when ``path_or_id`` names an existing directory without ENAMETOOLONG."""
+    raw = os.fspath(path_or_id)
+    if not raw or "\x00" in raw or len(os.fsencode(raw)) >= _PATH_MAX:
+        return False
+    p = Path(raw)
+    if any(len(os.fsencode(part)) > _NAME_MAX for part in p.parts):
+        return False
+    return p.is_dir()
+
+
 _REPO_ID_REGEX = re.compile(
     r"(\b[\w\-.]{1,96}\b/)?\b[\w\-.]{1,96}\b",
     re.ASCII,
@@ -89,58 +105,74 @@ def _is_valid_repo_id(repo_id: str) -> bool:
     )
 
 
+def _resolve_hub_or_local_file(
+    pretrained_model_name_or_path: Union[str, os.PathLike],
+    filename: str,
+    *,
+    revision: Optional[str] = None,
+    cache_dir: Optional[Union[str, Path]] = None,
+    force_download: bool = False,
+    token: Union[str, bool, None] = None,
+    local_files_only: bool = False,
+) -> Optional[Union[str, Path]]:
+    """Locate ``filename`` in a local directory, Hub cache, or remote Hub repo."""
+    if _is_local_dir(pretrained_model_name_or_path):
+        candidate = Path(pretrained_model_name_or_path) / filename
+        return candidate if candidate.is_file() else None
+    repo_id = os.fspath(pretrained_model_name_or_path)
+    if not HAS_HF_HUB or not _is_valid_repo_id(repo_id):
+        return None
+    if not force_download:
+        cached = huggingface_hub.try_to_load_from_cache(
+            repo_id,
+            filename,
+            cache_dir=cache_dir,
+            revision=revision,
+        )
+        if isinstance(cached, str):
+            return cached
+    offline = local_files_only or huggingface_hub.is_offline_mode()
+    if offline:
+        return None
+    if not huggingface_hub.file_exists(
+        repo_id,
+        filename,
+        revision=revision,
+        token=token,
+    ):
+        return None
+    return huggingface_hub.hf_hub_download(
+        repo_id,
+        filename,
+        revision=revision,
+        cache_dir=cache_dir,
+        force_download=force_download,
+        token=token,
+        local_files_only=local_files_only,
+    )
+
+
 def _load_card_data(pretrained_model_name_or_path, **kwargs):
     """Metadata of a checkpoint's model card (``README.md``), or None.
 
-    Best effort: the card is informational, so a missing or unreadable card
-    (offline, no README, bad YAML) never blocks loading the weights.
+    Reads from a local checkpoint directory, the local Hub cache when
+    ``local_files_only=True`` or ``HF_HUB_OFFLINE=1`` (or when already cached
+    with ``force_download=False``), or the Hub when online. A missing card
+    never blocks loading weights; malformed card YAML raises directly.
     """
     if not HAS_HF_HUB:
         return None
-    local_dir = Path(pretrained_model_name_or_path)
-    if local_dir.is_dir():
-        card: str | Path = local_dir / "README.md"
-        if not Path(card).is_file():
-            return None
-    else:
-        repo_id = str(pretrained_model_name_or_path)
-        if not _is_valid_repo_id(repo_id):
-            return None
-        offline = (
-            kwargs.get("local_files_only") or huggingface_hub.constants.HF_HUB_OFFLINE
-        )
-        if offline:
-            if kwargs.get("force_download"):
-                return None
-            cached = huggingface_hub.try_to_load_from_cache(
-                repo_id,
-                "README.md",
-                cache_dir=kwargs.get("cache_dir"),
-                revision=kwargs.get("revision"),
-            )
-            if not isinstance(cached, str):
-                return None
-            card = cached
-        else:
-            if not huggingface_hub.file_exists(
-                repo_id,
-                "README.md",
-                revision=kwargs.get("revision"),
-                token=kwargs.get("token"),
-            ):
-                return None
-            keys = (
-                "revision",
-                "cache_dir",
-                "force_download",
-                "token",
-                "local_files_only",
-            )
-            card = huggingface_hub.hf_hub_download(
-                repo_id,
-                "README.md",
-                **{k: kwargs[k] for k in keys if k in kwargs},
-            )
+    card = _resolve_hub_or_local_file(
+        pretrained_model_name_or_path,
+        "README.md",
+        revision=kwargs.get("revision"),
+        cache_dir=kwargs.get("cache_dir"),
+        force_download=bool(kwargs.get("force_download", False)),
+        token=kwargs.get("token"),
+        local_files_only=bool(kwargs.get("local_files_only", False)),
+    )
+    if card is None:
+        return None
     return huggingface_hub.ModelCard.load(card, ignore_metadata_errors=True).data
 
 
@@ -149,8 +181,8 @@ def _checkpoint_source(pretrained_model_name_or_path, **kwargs):
 
     The commit is read from the local Hub cache, without network access.
     """
-    source = str(pretrained_model_name_or_path)
-    if Path(source).is_dir():
+    source = os.fspath(pretrained_model_name_or_path)
+    if _is_local_dir(source):
         return {"repo_id": source, "local": True}
     info = {"repo_id": source, "revision": kwargs.get("revision")}
     if not HAS_HF_HUB or not _is_valid_repo_id(source):
@@ -1914,40 +1946,17 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
             # config.json gives n_outputs (to detect a head swap) and the saved
             # time geometry, for local directories and Hub repo IDs alike.
-            is_local = Path(model_id).is_dir()
+            is_local = _is_local_dir(model_id)
             saved_config = {}
-            config_file: Optional[Union[str, Path]] = None
-            if is_local:
-                candidate = Path(model_id) / "config.json"
-                if candidate.is_file():
-                    config_file = candidate
-            elif _is_valid_repo_id(model_id):
-                offline = local_files_only or huggingface_hub.constants.HF_HUB_OFFLINE
-                if offline:
-                    if not force_download:
-                        cached = huggingface_hub.try_to_load_from_cache(
-                            repo_id=model_id,
-                            filename="config.json",
-                            cache_dir=cache_dir,
-                            revision=revision,
-                        )
-                        if isinstance(cached, str):
-                            config_file = cached
-                elif huggingface_hub.file_exists(
-                    repo_id=model_id,
-                    filename="config.json",
-                    revision=revision,
-                    token=token,
-                ):
-                    config_file = huggingface_hub.hf_hub_download(
-                        repo_id=model_id,
-                        filename="config.json",
-                        revision=revision,
-                        cache_dir=cache_dir,
-                        force_download=force_download,
-                        token=token,
-                        local_files_only=local_files_only,
-                    )
+            config_file = _resolve_hub_or_local_file(
+                model_id,
+                "config.json",
+                revision=revision,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                token=token,
+                local_files_only=local_files_only,
+            )
             if config_file is not None:
                 with open(config_file, "r") as f:
                     saved_config = json.load(f)

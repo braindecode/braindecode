@@ -670,6 +670,31 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
     assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None
 
 
+def test_hub_file_lookup_uses_cache_without_network_and_rejects_long_names(
+    tmp_path, monkeypatch
+):
+    import huggingface_hub
+
+    from braindecode.models.base import _checkpoint_source, _load_card_data
+
+    readme = tmp_path / "README.md"
+    readme.write_text("---\ndatasets:\n- PREST\n---\ncard\n")
+    monkeypatch.setattr(
+        huggingface_hub,
+        "file_exists",
+        lambda *a, **k: pytest.fail("file_exists should not run when cached"),
+    )
+    monkeypatch.setattr(
+        huggingface_hub, "try_to_load_from_cache", lambda *a, **k: str(readme)
+    )
+    # local_files_only=False still resolves cached entries without hitting network.
+    assert _load_card_data("org/repo", local_files_only=False).datasets == ["PREST"]
+
+    too_long = "a" * 300
+    assert _load_card_data(too_long) is None
+    assert _checkpoint_source(too_long) == {"repo_id": too_long, "revision": None}
+
+
 def test_pretrained_provenance_in_repr(tmp_path):
     import copy
 
