@@ -434,7 +434,7 @@ html[data-theme="light"] .bd-landing .only-dark {
 }
 
 .bd-landing .hero-install .prompt {
-  color: var(--bd-warm);
+  color: var(--bd-warm-deep);
   font-weight: 600;
 }
 
@@ -790,6 +790,11 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
   filter: grayscale(100%) invert(0.93) brightness(1.15);
 }
 
+html[data-theme="dark"] .bd-landing .inst-logos .inst-freiburg {
+  filter: grayscale(100%) contrast(1.42) invert(0.92) brightness(1.2);
+  mix-blend-mode: screen;
+}
+
 .bd-landing .inst-contrib {
   font-size: 1.0625rem;
   font-weight: 600;
@@ -1117,6 +1122,10 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
   fill: var(--bd-ink);
   font-size: 14px;
   font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--bd-surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
 }
 
 .bd-landing .cbar-num.is-copper {
@@ -1129,9 +1138,17 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
   font-weight: 500;
 }
 
-.bd-landing .chart-caption {
-  fill: var(--bd-muted);
-  font-size: 13.5px;
+.bd-landing .numbers-chart-note {
+  display: none;
+  margin-top: 10px;
+  text-align: center;
+  font-size: 0.84375rem;
+  color: var(--bd-muted);
+}
+
+.bd-landing .numbers-chart-wrap:has(input[name="bd-num-mode"][value="fam"]:checked) .numbers-note-fam,
+.bd-landing .numbers-chart-wrap:has(input[name="bd-num-mode"][value="mod"]:checked) .numbers-note-mod {
+  display: block;
 }
 
 .bd-landing .numbers-legend {
@@ -1995,6 +2012,7 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
 }
 
 .bd-landing .pipeline-subhead p {
+  max-width: 68ch;
   font-size: 1.03125rem;
   color: var(--bd-muted);
   margin-top: 6px;
@@ -2688,7 +2706,8 @@ html[data-theme="dark"] .bd-landing .inst-logos img {
 }
 
 .bd-landing .eco-foot {
-  margin-top: 28px;
+  max-width: 68ch;
+  margin: 28px auto 0;
   text-align: center;
   font-size: 0.9875rem;
   color: var(--bd-muted);

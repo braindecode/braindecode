@@ -323,83 +323,96 @@
         <div class="numbers-split">
           <div class="numbers-chart-wrap">
             <div class="numbers-chart-card">
-              <svg class="numbers-svg numbers-svg-fam" viewBox="0 0 540 290" role="img" aria-label="103 registered Braindecode models broken down by architecture family: 69 Convolution, 50 Attention, 48 Foundation, 23 Channel-Aware, 15 Recurrent and Graph">
+              <svg class="numbers-svg numbers-svg-fam" viewBox="0 0 540 260" role="img" aria-label="103 registered Braindecode models broken down by architecture family: 69 Convolution, 50 Attention, 48 Foundation, 23 Channel-Aware, 15 Recurrent and Graph">
                 <g class="chart-grid">
                   <line x1="56" y1="36" x2="512" y2="36"/>
-                  <line x1="56" y1="88" x2="512" y2="88"/>
-                  <line x1="56" y1="140" x2="512" y2="140"/>
-                  <line x1="56" y1="192" x2="512" y2="192"/>
-                  <line x1="56" y1="226" x2="512" y2="226" class="chart-axis"/>
+                  <line x1="56" y1="84" x2="512" y2="84"/>
+                  <line x1="56" y1="132" x2="512" y2="132"/>
+                  <line x1="56" y1="180" x2="512" y2="180"/>
+                  <line x1="56" y1="36" x2="56" y2="228" class="chart-axis"/>
+                  <line x1="56" y1="228" x2="512" y2="228" class="chart-axis"/>
+                  <line x1="51" y1="36" x2="56" y2="36" class="chart-axis"/>
+                  <line x1="51" y1="84" x2="56" y2="84" class="chart-axis"/>
+                  <line x1="51" y1="132" x2="56" y2="132" class="chart-axis"/>
+                  <line x1="51" y1="180" x2="56" y2="180" class="chart-axis"/>
+                  <line x1="51" y1="228" x2="56" y2="228" class="chart-axis"/>
                 </g>
                 <g class="chart-yticks bd-mono" text-anchor="end">
                   <text x="46" y="40">80</text>
-                  <text x="46" y="92">60</text>
-                  <text x="46" y="144">40</text>
-                  <text x="46" y="196">20</text>
-                  <text x="46" y="230">0</text>
+                  <text x="46" y="88">60</text>
+                  <text x="46" y="136">40</text>
+                  <text x="46" y="184">20</text>
+                  <text x="46" y="232">0</text>
                 </g>
                 <g>
-                  <rect x="82" y="62" width="44" height="164" rx="4" class="cbar-navy"/>
-                  <text x="104" y="52" text-anchor="middle" class="cbar-num bd-mono">69</text>
-                  <text x="104" y="248" text-anchor="middle" class="cbar-lbl bd-mono">Conv</text>
+                  <rect x="82" y="62.4" width="44" height="165.6" rx="4" class="cbar-navy"/>
+                  <text x="104" y="53" text-anchor="middle" class="cbar-num bd-mono">69</text>
+                  <text x="104" y="249" text-anchor="middle" class="cbar-lbl bd-mono">Conv</text>
 
-                  <rect x="172" y="107" width="44" height="119" rx="4" class="cbar-cerulean"/>
-                  <text x="194" y="97" text-anchor="middle" class="cbar-num bd-mono">50</text>
-                  <text x="194" y="248" text-anchor="middle" class="cbar-lbl bd-mono">Attention</text>
+                  <rect x="172" y="108" width="44" height="120" rx="4" class="cbar-cerulean"/>
+                  <text x="194" y="99" text-anchor="middle" class="cbar-num bd-mono">50</text>
+                  <text x="194" y="249" text-anchor="middle" class="cbar-lbl bd-mono">Attention</text>
 
-                  <rect x="262" y="112" width="44" height="114" rx="4" class="cbar-copper"/>
-                  <text x="284" y="102" text-anchor="middle" class="cbar-num is-copper bd-mono">48</text>
-                  <text x="284" y="248" text-anchor="middle" class="cbar-lbl bd-mono">Foundation</text>
+                  <rect x="262" y="112.8" width="44" height="115.2" rx="4" class="cbar-copper"/>
+                  <text x="284" y="104" text-anchor="middle" class="cbar-num is-copper bd-mono">48</text>
+                  <text x="284" y="249" text-anchor="middle" class="cbar-lbl bd-mono">Foundation</text>
 
-                  <rect x="352" y="171" width="44" height="55" rx="4" class="cbar-cerulean"/>
-                  <text x="374" y="161" text-anchor="middle" class="cbar-num bd-mono">23</text>
-                  <text x="374" y="248" text-anchor="middle" class="cbar-lbl bd-mono">Montage</text>
+                  <rect x="352" y="172.8" width="44" height="55.2" rx="4" class="cbar-cerulean"/>
+                  <text x="374" y="164" text-anchor="middle" class="cbar-num bd-mono">23</text>
+                  <text x="374" y="249" text-anchor="middle" class="cbar-lbl bd-mono">Montage</text>
 
-                  <rect x="442" y="190" width="44" height="36" rx="4" class="cbar-sage"/>
-                  <text x="464" y="180" text-anchor="middle" class="cbar-num bd-mono">15</text>
-                  <text x="464" y="248" text-anchor="middle" class="cbar-lbl bd-mono">RNN / GNN</text>
+                  <rect x="442" y="192" width="44" height="36" rx="4" class="cbar-sage"/>
+                  <text x="464" y="183" text-anchor="middle" class="cbar-num bd-mono">15</text>
+                  <text x="464" y="249" text-anchor="middle" class="cbar-lbl bd-mono">RNN / GNN</text>
                 </g>
-                <text x="284" y="276" text-anchor="middle" class="chart-caption bd-mono">103 peer-reviewed PyTorch architectures verified in CI</text>
               </svg>
 
-              <svg class="numbers-svg numbers-svg-mod" viewBox="0 0 540 290" role="img" aria-label="Braindecode model coverage across 5 neurophysiological modalities: 77 EEG, 9 iEEG, 8 fNIRS, 7 MEG, 7 sEMG">
+              <svg class="numbers-svg numbers-svg-mod" viewBox="0 0 540 260" role="img" aria-label="Braindecode model coverage across 5 neurophysiological modalities: 77 EEG, 9 iEEG, 8 fNIRS, 7 MEG, 7 sEMG">
                 <g class="chart-grid">
                   <line x1="56" y1="36" x2="512" y2="36"/>
-                  <line x1="56" y1="88" x2="512" y2="88"/>
-                  <line x1="56" y1="140" x2="512" y2="140"/>
-                  <line x1="56" y1="192" x2="512" y2="192"/>
-                  <line x1="56" y1="226" x2="512" y2="226" class="chart-axis"/>
+                  <line x1="56" y1="84" x2="512" y2="84"/>
+                  <line x1="56" y1="132" x2="512" y2="132"/>
+                  <line x1="56" y1="180" x2="512" y2="180"/>
+                  <line x1="56" y1="36" x2="56" y2="228" class="chart-axis"/>
+                  <line x1="56" y1="228" x2="512" y2="228" class="chart-axis"/>
+                  <line x1="51" y1="36" x2="56" y2="36" class="chart-axis"/>
+                  <line x1="51" y1="84" x2="56" y2="84" class="chart-axis"/>
+                  <line x1="51" y1="132" x2="56" y2="132" class="chart-axis"/>
+                  <line x1="51" y1="180" x2="56" y2="180" class="chart-axis"/>
+                  <line x1="51" y1="228" x2="56" y2="228" class="chart-axis"/>
                 </g>
                 <g class="chart-yticks bd-mono" text-anchor="end">
                   <text x="46" y="40">80</text>
-                  <text x="46" y="92">60</text>
-                  <text x="46" y="144">40</text>
-                  <text x="46" y="196">20</text>
-                  <text x="46" y="230">0</text>
+                  <text x="46" y="88">60</text>
+                  <text x="46" y="136">40</text>
+                  <text x="46" y="184">20</text>
+                  <text x="46" y="232">0</text>
                 </g>
                 <g>
-                  <rect x="82" y="43" width="44" height="183" rx="4" class="cbar-navy"/>
-                  <text x="104" y="33" text-anchor="middle" class="cbar-num bd-mono">77</text>
-                  <text x="104" y="248" text-anchor="middle" class="cbar-lbl bd-mono">EEG / PSG</text>
+                  <rect x="82" y="43.2" width="44" height="184.8" rx="4" class="cbar-navy"/>
+                  <text x="104" y="34" text-anchor="middle" class="cbar-num bd-mono">77</text>
+                  <text x="104" y="249" text-anchor="middle" class="cbar-lbl bd-mono">EEG / PSG</text>
 
-                  <rect x="172" y="196" width="44" height="30" rx="4" class="cbar-sage"/>
-                  <text x="194" y="186" text-anchor="middle" class="cbar-num bd-mono">9</text>
-                  <text x="194" y="248" text-anchor="middle" class="cbar-lbl bd-mono">iEEG / sEEG</text>
+                  <rect x="172" y="206.4" width="44" height="21.6" rx="4" class="cbar-sage"/>
+                  <text x="194" y="198" text-anchor="middle" class="cbar-num bd-mono">9</text>
+                  <text x="194" y="249" text-anchor="middle" class="cbar-lbl bd-mono">iEEG / sEEG</text>
 
-                  <rect x="262" y="199" width="44" height="27" rx="4" class="cbar-copper"/>
-                  <text x="284" y="189" text-anchor="middle" class="cbar-num is-copper bd-mono">8</text>
-                  <text x="284" y="248" text-anchor="middle" class="cbar-lbl bd-mono">fNIRS</text>
+                  <rect x="262" y="208.8" width="44" height="19.2" rx="4" class="cbar-copper"/>
+                  <text x="284" y="200" text-anchor="middle" class="cbar-num is-copper bd-mono">8</text>
+                  <text x="284" y="249" text-anchor="middle" class="cbar-lbl bd-mono">fNIRS</text>
 
-                  <rect x="352" y="202" width="44" height="24" rx="4" class="cbar-cerulean"/>
-                  <text x="374" y="192" text-anchor="middle" class="cbar-num bd-mono">7</text>
-                  <text x="374" y="248" text-anchor="middle" class="cbar-lbl bd-mono">MEG</text>
+                  <rect x="352" y="211.2" width="44" height="16.8" rx="4" class="cbar-cerulean"/>
+                  <text x="374" y="203" text-anchor="middle" class="cbar-num bd-mono">7</text>
+                  <text x="374" y="249" text-anchor="middle" class="cbar-lbl bd-mono">MEG</text>
 
-                  <rect x="442" y="202" width="44" height="24" rx="4" class="cbar-copper"/>
-                  <text x="464" y="192" text-anchor="middle" class="cbar-num is-copper bd-mono">7</text>
-                  <text x="464" y="248" text-anchor="middle" class="cbar-lbl bd-mono">sEMG</text>
+                  <rect x="442" y="211.2" width="44" height="16.8" rx="4" class="cbar-copper"/>
+                  <text x="464" y="203" text-anchor="middle" class="cbar-num is-copper bd-mono">7</text>
+                  <text x="464" y="249" text-anchor="middle" class="cbar-lbl bd-mono">sEMG</text>
                 </g>
-                <text x="284" y="276" text-anchor="middle" class="chart-caption bd-mono">Cross-modal backbones support multiple recording types</text>
               </svg>
+
+              <p class="numbers-chart-note numbers-note-fam bd-mono">103 peer-reviewed PyTorch architectures verified in CI</p>
+              <p class="numbers-chart-note numbers-note-mod bd-mono">Cross-modal backbones support multiple recording types</p>
             </div>
 
             <fieldset class="numbers-legend bd-mono" aria-label="Switch chart breakdown">

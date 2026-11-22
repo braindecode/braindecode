@@ -23,7 +23,7 @@
     <https://app.litmaps.com/shared/43fcc2cf-9b67-48be-8c83-5e7b3764aaab>`__ **with
     attention/transformer core components for EEG architectures, last updated
     26/08/2025.** Each node is a paper; rightward means more recently published, upward
-    more cited, and links show amount of citation with logaritm scale.
+    more cited, and links show amount of citation on a logarithmic scale.
 
 .. include:: ../../links.inc
 

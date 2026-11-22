@@ -16,10 +16,10 @@ networks, denoted :math:`f`, as a composition of sequential transformations:
     f_{\mathrm{convolution}} \circ f_{\ell} \circ \cdots  \circ f_{\mathrm{linear}}\,
 
 where each :math:`f_\ell` is a specific :math:`\ell` layer in the neural network,
-focusing mostly of time in learning the mapping :math:`f_{\mathrm{method}} : \mathcal{X}
-\to \mathcal{Y}` on the training data, with parameters :math:`\theta \in \Theta`. How
-these *core* :math:`\ell` sequence transformations are structured and combined defines
-the overall focus and strength of the models.
+focusing on learning the mapping :math:`f_{\mathrm{method}} : \mathcal{X} \to
+\mathcal{Y}` on the training data, with parameters :math:`\theta \in \Theta`. How these
+*core* :math:`\ell` sequence transformations are structured and combined defines the
+overall focus and strength of the models.
 
 Here, we categorize the main families of brain decoding models based on their core
 components and design philosophies. The categories are not mutually exclusive, but an
@@ -39,7 +39,7 @@ The convolutional layer appears as the core primitive across most architectures.
 because **convolutions are filtering** operations, such as band-pass `filters
 <https://mne.tools/stable/auto_tutorials/preprocessing/25_background_filtering.html>`__,
 useful and needed to extract local features from brain signals. More details about each
-categories can be found in the respective sections below.
+category can be found in the respective sections below.
 
 .. grid:: 1 2 3 3
     :gutter: 3
@@ -146,7 +146,7 @@ categories can be found in the respective sections below.
       :alt: Diagram of channel-domain methods
       :class: no-scaled-link
 
-     Usage montage information with spatial filtering / channel / hemisphere / brain region selection strategies.
+     Uses montage information with spatial filtering / channel / hemisphere / brain region selection strategies.
 
     .. grid-item-card:: |lightbulb| Foundation Models
      :shadow: sm
@@ -216,9 +216,9 @@ We are continually expanding this collection and welcome contributions! If you h
 implemented a model relevant to EEG, ECoG, or MEG analysis, consider adding it to
 Braindecode.
 
-####################
+********************
  Submit a new model
-####################
+********************
 
 Want to contribute a new model to Braindecode? Great! You can propose a new model by
 opening an `issue <braindecode-issues_>`_ (please include a link to the relevant
