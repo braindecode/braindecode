@@ -74,11 +74,10 @@ pip install -e .[moabb,tests,docs]
 From within your local repository, run
 
 ```
-pytest test/
+pytest test/unit_tests/models/ --select-models=EEGNet -k EEGNet
 ```
 
-This may take quite some time on the first run, as some datasets will be downloaded.
-Subsequent runs will be faster.
+It runs the model tests of EEGNet and takes about a minute.
 Slow tests are deselected by default; add `--run-slow` (or `-m slow` for only those) to run them, and `--run-network` to run tests that need network access, such as the Hugging Face Hub tests.
 
 #### Build the documentation
@@ -99,10 +98,10 @@ From within your local repository, run
 
 ```
 pre-commit install
-pre-commit run pre -a
+pre-commit run --files <changed files>
 ```
 
-There should be an empty output as there should be no style mistakes.
+Every hook must pass. A hook that reformats a file fails the first run, so run it a second time.
 
 ## Make a contribution
 
@@ -177,8 +176,10 @@ For more complex functionality like an entire training pipeline, we have tests u
 You may add another file there if needed. These tests may also run a bit longer.
 Make sure your test passes by running:
 `pytest test/<yourtestfilepath>`
-Also before pushing, make sure to run all tests with:
-`pytest test`
+If you change a model, also run the model gates listed in [AGENTS.md](AGENTS.md#1-the-model-contract).
+On a pull request, CI runs the test files and models your diff can reach: commit, then run
+`python scripts/ci_plan.py --base upstream/master --head HEAD --pretty` to see them.
+CI runs the full suite on every push to `master` and every night, so you do not need to run it locally.
 
 #### Write Documentation
 
@@ -222,6 +223,11 @@ Finally, concisely describe your changes in `docs/whats_new.rst`, for example li
 This allows everybody to understand how your code improved Braindecode from the last version! :)
 The ```:gh:`198` ``` part refers to the corresponding Pull Request which we will get to further below.
 You may leave it out for now.
+
+Keep the entry to at most 3 lines. A change to code that is not released yet, for example a
+fix to a model added since the last release, needs no entry: a maintainer adds the
+`no changelog` label instead.
+
 Don't forget to add yourself to the list of authors at the end of the file, for example like this:
 
 ```
@@ -257,13 +263,7 @@ and check the built documentation under `docs/_build/html/index.html`.
 
 #### Check Style
 
-As explained above, you can run:
-
-```
-flake8
-```
-
-and ensure that there are no style errors in your code (output of this command should be empty).
+As explained above, run `pre-commit run --files <changed files>`.
 
 ### Commit and push to your fork
 
@@ -291,26 +291,20 @@ You can also later add the number of your pull request to `docs/whats_new.rst`.
 Congratulations, now you have made your first Braindecode pull request!
 In order to keep your pull request up to date when you have made further changes, simply rerun add/commit/push as above.
 
-### Rebasing from upstream master
+### Updating your branch with upstream master
 
-If you worked for a longer time in your branch and the upstream Braindecode master branch has already changed a lot,
-it may become necessary to rebase your code changes on the current Braindecode master.
-This will make the git history look as if you just started your changes from the current upstream master state.
-To do that, from your local repository, first commit all the changes inside your local branch (without pushing) and then
-run the following:
+If the upstream Braindecode master branch has changed while you worked, merge it into your branch.
+Do not force-push a branch under review. Reviewers compare each new push with the commits they
+already reviewed, and a rewrite deletes those commits.
 
 ```
-git fetch upstream master:master
+git fetch upstream
 git checkout <branch-name>
-git rebase master
+git merge upstream/master
 ```
 
-You may have to resolve some code conflicts in the rebase process, follow the instructions on the terminal to do so.
-Once for your next push,you have to add `--force` like:
-
-```
-git push -u origin <branch-name> --force
-```
+If the merge reports conflicts, resolve them, `git add` the files and run `git commit`.
+Run the tests of the files involved, then push with `git push origin <branch-name>`.
 
 ## Adding a model to Braindecode
 <a name="add_model"></a>
@@ -320,6 +314,10 @@ braindecode!
 Let's demonstrate how to implement a model for braindecode. Suppose we want to add a model called MyNewModel.
 
 First, we create a new file called `my_new_model.py` in the `braindecode/models` directory.
+
+The template below is the minimum the tests need. A model merged into braindecode also
+follows [AGENTS.md](AGENTS.md): a number that configures the model is a keyword-only parameter,
+after `*` (section 3), and the docstring follows the rubric of section 5.
 
 Then, we add the following template to the file:
 

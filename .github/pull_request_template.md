@@ -10,11 +10,11 @@ Adding a model? Use the New model template linked in CONTRIBUTING.md instead. --
 ## Testing
 
 <!-- Record exact commands, results (including failures/skips), and relevant CI links.
-State what was not run and why; distinguish focused checks from the full suite. -->
+Separate the focused checks you ran from the CI runs; state what was not run and why. -->
 
 - [ ] New or changed behavior is covered by relevant regression tests (or N/A with reason)
 - [ ] Style checks recorded, e.g. `pre-commit run --files <changed files>`
-- [ ] `docs/whats_new.rst` updated (required by the changelog CI check)
+- [ ] `docs/whats_new.rst` updated (at most 3 lines), or the `no changelog` label, which a maintainer adds, for changes to code that is not released yet (the changelog CI check requires one of the two)
 
 ## Notes for reviewers
 

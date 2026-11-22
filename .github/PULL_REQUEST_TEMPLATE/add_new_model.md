@@ -15,7 +15,7 @@ than marking unrun checks as passing. Suggested title: [models] Add <ModelName>.
 
 - **Reference implementation**: <!-- source URL and commit/tag; license and license URL, or explain unavailable -->
 - **Deviations**: <!-- architectural/numerical changes, renamed layers, reused building blocks; or none -->
-- **Checkpoint/parity evidence**: <!-- if available: checkpoint source, weight mapping, comparison setup/tolerances/results; otherwise limitations. Distinguish implementation agreement from benchmark reproduction. -->
+- **Checkpoint/parity evidence**: <!-- if available: checkpoint source and license; `convert.py` and its parity output, so that a maintainer can re-host the converted weights on the braindecode Hugging Face organization (no conversion code in the model, see AGENTS.md section 8); comparison setup/tolerances/results; otherwise limitations. Distinguish implementation agreement from benchmark reproduction. -->
 
 ## Checklist
 
@@ -26,7 +26,7 @@ than marking unrun checks as passing. Suggested title: [models] Add <ModelName>.
 - [ ] Input/output shapes documented and tested: normally `(batch_size, n_chans, n_times)` → `(batch_size, n_outputs)`; explain temporal outputs or other task-specific shapes
 - [ ] `self.final_layer` is among the last two child modules (`test_model_integration_has_final_layer`); classification head has no final softmax/log-softmax (`EEGClassifier` handles it)
 - [ ] Activation parameters use `nn.Module` class defaults (e.g. `activation=nn.ELU`) and dropout parameters use `drop_prob` names, as applicable; explain exceptions against the integration tests
-- [ ] Model docstring describes the architecture, parameters and paper (numpydoc, `[1]_` reference); deviations recorded above or linked to the docstring
+- [ ] Model docstring describes the architecture, parameters and paper (numpydoc, the rubric of AGENTS.md section 5, references as `[key]_` with a References section); deviations recorded above or linked to the docstring
 - [ ] Runtime dependency changes declared and justified, or none
 - [ ] Attention, transformer blocks, MLPs, positional encodings, norms and patch embeddings come from `braindecode.modules` / `braindecode.functional`; a private copy is listed in `test/unit_tests/models/test_private_blocks.py` with the reason in its docstring
 
@@ -37,7 +37,7 @@ than marking unrun checks as passing. Suggested title: [models] Add <ModelName>.
 - [ ] Row added to `braindecode/models/summary.csv`, including `#Parameters` and `get_#Parameters` (`test_completeness_summary_table` checks row presence)
 - [ ] API entry in `docs/api.rst`
 - [ ] Architecture figure at `docs/_static/model/<name>_arch.png`, if applicable (or N/A with reason)
-- [ ] Entry in `docs/whats_new.rst` (required by the changelog CI check)
+- [ ] Entry in `docs/whats_new.rst`, at most 3 lines (required by the changelog CI check)
 
 ### Validation and compatibility
 
@@ -50,7 +50,7 @@ than marking unrun checks as passing. Suggested title: [models] Add <ModelName>.
 ## Validation evidence
 
 <!-- Exact commands, environment/device, results (including failures/skips), and relevant CI links.
-Separate focused checks from the full suite (`pytest test/`); say what was not run and why.
+Separate the focused checks you ran from the CI runs; say what was not run and why.
 Include compatibility evidence or N/A reasons for the conditional items above. -->
 
 ## Benchmark reproduction
