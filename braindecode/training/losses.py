@@ -5,8 +5,11 @@
 #
 # License: BSD (3-clause)
 
+import math
+
 import numpy as np
 import torch
+import torch.nn.functional as F
 from scipy.optimize import linear_sum_assignment
 from torch import nn
 
@@ -127,6 +130,94 @@ def mixup_criterion(preds, target):
             loss_b = loss_b.flatten(start_dim=1).mean(dim=1)
         return (lam * loss_a + (1 - lam) * loss_b).mean()
     return torch.nn.functional.cross_entropy(preds, target)
+
+
+def info_nce(
+    z1: torch.Tensor,
+    z2: torch.Tensor,
+    temperature: float = 0.1,
+) -> torch.Tensor:
+    """Compute the symmetric NT-Xent (InfoNCE) contrastive loss.
+
+    Given two views ``z1`` and ``z2`` of shape ``(batch, dim)``, all ``2N``
+    L2-normalized embeddings are concatenated along the batch dimension.
+    For each anchor ``i`` in ``0, ..., 2N - 1`` and its positive counterpart
+    ``j = (i + N) mod 2N``, the per-anchor loss is:
+
+    .. math::
+
+        \\ell_i = -\\log \\frac{\\exp(\\mathrm{sim}(\\hat{z}_i, \\hat{z}_j) / \\tau)}
+        {\\sum_{k \\neq i} \\exp(\\mathrm{sim}(\\hat{z}_i, \\hat{z}_k) / \\tau)}
+
+    where :math:`\\hat{z}_i = z_i / \\|z_i\\|_2`, :math:`\\mathrm{sim}(u, v) = u^\\top v`,
+    and :math:`\\tau` is ``temperature``. The returned loss is the mean over
+    all ``2N`` anchors, computed in at least ``float32`` precision for
+    numerical stability under ``float16`` and ``bfloat16`` inputs.
+
+    Parameters
+    ----------
+    z1 : torch.Tensor
+        First view embeddings of shape ``(batch, dim)`` with ``batch >= 1``
+        and ``dim >= 1``.
+    z2 : torch.Tensor
+        Second view embeddings of shape ``(batch, dim)``, matching ``z1``.
+    temperature : float, default=0.1
+        Positive finite temperature scaling factor applied to cosine
+        similarities.
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar tensor containing the mean NT-Xent loss over the ``2N`` anchors.
+
+    Raises
+    ------
+    ValueError
+        If ``z1`` and ``z2`` are not 2-D tensors of identical non-empty shape,
+        or if ``temperature`` is not positive and finite.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.training import info_nce
+    >>> z1 = torch.randn(8, 32)
+    >>> z2 = torch.randn(8, 32)
+    >>> loss = info_nce(z1, z2, temperature=0.1)
+    >>> loss.ndim
+    0
+
+    References
+    ----------
+    .. [1] Ting Chen, Simon Kornblith, Mohammad Norouzi, Geoffrey Hinton.
+       A Simple Framework for Contrastive Learning of Visual Representations.
+       ICML 2020. https://arxiv.org/abs/2002.05709
+    """
+    if z1.ndim != 2 or z2.ndim != 2 or z1.shape != z2.shape:
+        raise ValueError(
+            "info_nce takes two (batch, dim) tensors of the same shape, "
+            f"got {tuple(z1.shape)} and {tuple(z2.shape)}."
+        )
+    if z1.shape[0] < 1 or z1.shape[1] < 1:
+        raise ValueError(
+            f"info_nce requires non-empty (batch, dim) tensors, got {tuple(z1.shape)}."
+        )
+    if not math.isfinite(temperature) or temperature <= 0:
+        raise ValueError(f"temperature must be positive and finite, got {temperature}.")
+
+    n = z1.shape[0]
+    two_n = 2 * n
+    z = torch.cat([z1, z2], dim=0)
+    z = F.normalize(z.to(torch.promote_types(z.dtype, torch.float32)), dim=-1)
+    sim = (z @ z.T) / temperature
+
+    # Exclude self-similarity by slicing off the diagonal rather than filling
+    # with -inf, avoiding 0 * (-inf) = NaN in cross-entropy backward.
+    off_diag = ~torch.eye(two_n, dtype=torch.bool, device=sim.device)
+    logits = sim[off_diag].view(two_n, two_n - 1)
+
+    idx = torch.arange(n, device=sim.device)
+    targets = torch.cat([idx + (n - 1), idx])
+    return F.cross_entropy(logits, targets)
 
 
 class HungarianMatcher(nn.Module):

@@ -13,6 +13,7 @@ from braindecode.training.losses import (
     CroppedLoss,
     DanceLoss,
     TimeSeriesLoss,
+    info_nce,
     mixup_criterion,
 )
 
@@ -205,3 +206,88 @@ def test_time_series_loss():
 
     torch.testing.assert_allclose(preds_out, preds_expected.flatten())
     torch.testing.assert_allclose(targets_out, targets_expected.flatten())
+
+
+def test_info_nce_value_for_orthogonal_pairs():
+    z = torch.eye(4)
+    # positive logit 1 / 0.1 = 10, six negatives at 0
+    expected = torch.log1p(6 * torch.exp(torch.tensor(-10.0)))
+    torch.testing.assert_close(info_nce(z, z, temperature=0.1), expected)
+
+
+def test_info_nce_is_symmetric():
+    torch.manual_seed(0)
+    z1, z2 = torch.randn(8, 16), torch.randn(8, 16)
+    torch.testing.assert_close(info_nce(z1, z2), info_nce(z2, z1))
+
+
+def test_info_nce_refuses_mismatched_views():
+    with pytest.raises(ValueError, match=r"same shape, got \(4, 8\) and \(4, 9\)"):
+        info_nce(torch.randn(4, 8), torch.randn(4, 9))
+
+
+@pytest.mark.parametrize(
+    "bad_shape",
+    [(4,), (2, 4, 8), (0, 8), (4, 0)],
+)
+def test_info_nce_refuses_invalid_shapes(bad_shape):
+    z = torch.randn(bad_shape)
+    with pytest.raises(ValueError):
+        info_nce(z, z)
+
+
+@pytest.mark.parametrize("temperature", [0.0, -0.1, float("nan"), float("inf")])
+def test_info_nce_refuses_invalid_temperature(temperature):
+    z1, z2 = torch.randn(4, 8), torch.randn(4, 8)
+    with pytest.raises(ValueError, match=r"temperature must be positive and finite"):
+        info_nce(z1, z2, temperature=temperature)
+
+
+def test_info_nce_backward_produces_finite_gradients():
+    torch.manual_seed(0)
+    z1 = torch.randn(6, 12, requires_grad=True)
+    z2 = torch.randn(6, 12, requires_grad=True)
+    loss = info_nce(z1, z2, temperature=0.1)
+    assert torch.isfinite(loss)
+    loss.backward()
+    for grad in (z1.grad, z2.grad):
+        assert grad is not None
+        assert torch.isfinite(grad).all()
+        assert torch.count_nonzero(grad) > 0
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_info_nce_low_precision_matches_float32(dtype):
+    torch.manual_seed(0)
+    z1_f32 = torch.randn(6, 12)
+    z2_f32 = torch.randn(6, 12)
+    z1 = z1_f32.to(dtype).detach().requires_grad_(True)
+    z2 = z2_f32.to(dtype).detach().requires_grad_(True)
+
+    loss = info_nce(z1, z2, temperature=0.1)
+    expected = info_nce(z1.float(), z2.float(), temperature=0.1)
+    assert torch.isfinite(loss)
+    torch.testing.assert_close(loss.float(), expected, rtol=1e-2, atol=1e-2)
+    loss.backward()
+    for grad in (z1.grad, z2.grad):
+        assert grad is not None
+        assert torch.isfinite(grad).all()
+        assert torch.count_nonzero(grad) > 0
+
+
+def test_info_nce_exported_from_training():
+    import braindecode.training as training
+
+    assert "info_nce" in training.__all__
+    assert training.info_nce is info_nce
+
+
+def test_info_nce_single_sample_batch():
+    z1 = torch.randn(1, 8, requires_grad=True)
+    z2 = torch.randn(1, 8, requires_grad=True)
+    loss = info_nce(z1, z2, temperature=0.1)
+    assert torch.isfinite(loss)
+    torch.testing.assert_close(loss, torch.zeros(()))
+    loss.backward()
+    assert z1.grad is not None and torch.isfinite(z1.grad).all()
+    assert z2.grad is not None and torch.isfinite(z2.grad).all()

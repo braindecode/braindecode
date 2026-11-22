@@ -995,6 +995,7 @@ models and evaluate their performance.
      CroppedTrialEpochScoring
      CroppedTimeSeriesEpochScoring
      PostEpochTrainScoring
+     info_nce
      mixup_criterion
      trial_preds_from_window_preds
      predict_trials
