@@ -97,8 +97,8 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         https://github.com/Want2Vanish/FBMSNet
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original is sized by n_chans
 
     def __init__(
         self,
@@ -199,15 +199,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             self.activation(),
         )
 
-        # Padding layer
-        if self.n_times % self.stride_factor != 0:
-            self.padding_size = stride_factor - (self.n_times % stride_factor)
-            self.n_times_padded = self.n_times + self.padding_size
-            self.padding_layer = nn.ConstantPad1d((0, self.padding_size), 0.0)
-        else:
-            self.padding_layer = nn.Identity()
-            self.n_times_padded = self.n_times
-
         # Temporal Aggregation Layer
         self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)  # type: ignore
 
@@ -219,6 +210,13 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             max_norm=linear_max_norm,
         )
+        min_segments = (
+            2
+            if temporal_layer in ("VarLayer", "StdLayer", "LogVarLayer")
+            and self.n_dim == 3
+            else 1
+        )
+        self._min_n_times = min_segments * self.stride_factor
         self.on_non_divisible = "pad"
         self._n_times_step = self.stride_factor
 
@@ -255,11 +253,19 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         # shape: (batch, self.out_channels_spatial, 1, n_times)
 
         # Apply some padding to the input to make it divisible by the stride factor
-        x = self.padding_layer(x)
+        if x.shape[-1] % self.stride_factor != 0:
+            x = nn.functional.pad(
+                x, (0, self.stride_factor - x.shape[-1] % self.stride_factor)
+            )
         # shape: (batch, self.out_channels_spatial, 1, n_times_padded)
 
         # Reshape for temporal layer
-        x = x.view(batch, self.out_channels_spatial, self.stride_factor, -1)
+        x = x.view(
+            batch,
+            self.out_channels_spatial,
+            self.stride_factor,
+            x.shape[-1] // self.stride_factor,
+        )
         # shape: (batch, self.out_channels_spatial, self.stride_factor, n_times/self.stride_factor)
 
         # Temporal aggregation
