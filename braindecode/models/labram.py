@@ -193,6 +193,7 @@ class Labram(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # a later block expects the strided length
     _channel_axis = (
         "fixed"  # fixed: position_embedding requires ch_names when n_chans != 128
     )

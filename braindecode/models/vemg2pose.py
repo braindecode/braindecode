@@ -198,6 +198,7 @@ class VEMG2Pose(
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # later blocks need the downsampled window
     _channel_axis = "fixed"  # fixed: encoder.0.conv.0.weight
     _supports_montage_adaptation = False
 

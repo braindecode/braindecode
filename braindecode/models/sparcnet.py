@@ -60,6 +60,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # later blocks need the downsampled window
     _channel_axis = "fixed"  # fixed: encoder.conv0.bias
 
     def __init__(

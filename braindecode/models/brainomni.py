@@ -140,6 +140,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # later blocks need the downsampled window
     _channel_axis = "fixed"  # fixed: pos is sized by n_chans
 
     @torch.jit.unused
@@ -420,6 +421,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # later blocks need the downsampled window
     _channel_axis = "fixed"  # fixed: tokenizer.pos is sized by n_chans
 
     @torch.jit.unused

@@ -172,6 +172,7 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # pools over the whole window
     _channel_axis = "fixed"  # fixed: conv_block.channel_dw_conv.0.weight
     _feature_axis = 1
 

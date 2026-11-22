@@ -399,6 +399,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # later blocks need the downsampled window
     _channel_axis = "fixed"  # fixed: spatial_embedding_ix is sized by n_chans
 
     @torch.jit.unused

@@ -157,6 +157,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # a later block expects the strided length
     _channel_axis = "free"
 
     _channel_target = (

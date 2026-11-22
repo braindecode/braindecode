@@ -164,6 +164,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # pools over the whole window
     _channel_axis = "fixed"  # fixed: final_layer.weight
     _supports_montage_adaptation = False
 

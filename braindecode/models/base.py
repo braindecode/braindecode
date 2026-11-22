@@ -39,6 +39,7 @@ from braindecode.models.util import (
 )
 from braindecode.modules.channels import ChannelLayer
 from braindecode.modules.parametrization import make_parametrizations_scriptable
+from braindecode.modules.util import dense_convert, has_strided_layer
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -1994,6 +1995,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     #: ``chs_info``); ``None``: the model's own ``chs_info``.
     _channel_target: Optional[list] = None
     _time_axis: ClassVar[Optional[str]] = None
+    #: ``False`` in models whose output does not grow with the input once
+    #: strides become dilations (global pooling, fixed token count).
+    _dense_conversion: ClassVar[bool] = True
+    _is_dense_converted = False
     _channel_axis: ClassVar[Optional[str]] = None
     _feature_axis: ClassVar[int] = -1
     _native_features: ClassVar[bool] = False
@@ -2087,12 +2092,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ) - from_checkpoint
         return result
 
+    def _dense_refusal(self) -> Optional[str]:
+        """Why ``to_dense_prediction_model`` refuses this model, or ``None``."""
+        if self._time_axis == "fixed":
+            return "its head needs a fixed window length"
+        if not self._dense_conversion:
+            return "it pools or tokenizes over the whole window"
+        if self._is_dense_converted:
+            return "it is already converted"
+        if self._time_axis != "dense" and not has_strided_layer(self):
+            return "it has no strided layer to convert"
+        return None
+
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """
-        Transform a sequential model with strides to a model that outputs.
+        Transform a model with strides into one that outputs dense predictions.
 
-        dense predictions by removing the strides and instead inserting dilations.
-        Modifies model in-place.
+        Removes the strides of the convolution and pooling layers and
+        multiplies their dilations by the stride accumulated before them, so a
+        longer input gives one output step per input step. Modifies the model
+        in place.
 
         Parameters
         ----------
@@ -2100,35 +2119,31 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             Axis to transform (in terms of intermediate output axes)
             can either be 2, 3, or (2,3).
 
+        Raises
+        ------
+        ValueError
+            If the model has a head sized by the window length, pools or
+            tokenizes over the whole window, is already converted, or has no
+            strided layer.
+
         Notes
         -----
-        Does not yet work correctly for average pooling.
+        Average pooling layers become dilated average pooling. Zero padding is
+        kept as is, so outputs near a window edge can differ from the output
+        of the unconverted model on that window.
         Prior to version 0.1.7, there had been a bug that could move strides
         backwards one layer.
         """
         if not hasattr(axis, "__iter__"):
             axis = (axis,)
         assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]
-        axis = np.array(axis) - 2
-        stride_so_far = np.array([1, 1])
-        for module in self.modules():  # type: ignore
-            if hasattr(module, "dilation"):
-                assert module.dilation == 1 or (module.dilation == (1, 1)), (
-                    "Dilation should equal 1 before conversion, maybe the model is "
-                    "already converted?"
-                )
-                new_dilation = [1, 1]
-                for ax in axis:  # type: ignore[union-attr]
-                    new_dilation[ax] = int(stride_so_far[ax])
-                module.dilation = tuple(new_dilation)
-            if hasattr(module, "stride"):
-                if not hasattr(module.stride, "__len__"):
-                    module.stride = (module.stride, module.stride)
-                stride_so_far *= np.array(module.stride)
-                new_stride = list(module.stride)
-                for ax in axis:  # type: ignore[union-attr]
-                    new_stride[ax] = 1
-                module.stride = tuple(new_stride)
+        reason = self._dense_refusal()
+        if reason is not None:
+            raise ValueError(
+                f"{type(self).__name__} cannot give dense predictions: {reason}."
+            )
+        dense_convert(self, axis)
+        self._is_dense_converted = True
         if self._min_n_times is not None:
             time_idx = (
                 0 if type(self).__name__ in ("Deep4Net", "ShallowFBCSPNet") else -1
@@ -2147,6 +2162,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 s_attr = getattr(m, "stride", 1)
                 s = s_attr[time_idx] if hasattr(s_attr, "__len__") else s_attr
                 p_attr = getattr(m, "padding", 0)
+                if p_attr == "valid":
+                    p_attr = 0
                 if p_attr == "same":
                     need = max(1, s * (need - 1) + 1)
                 else:

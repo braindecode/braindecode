@@ -78,6 +78,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # a later block expects the strided length
     _channel_axis = "fixed"  # fixed: eegnet_tc.depthwise_conv.weight
 
     def __init__(

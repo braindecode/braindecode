@@ -53,6 +53,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # later blocks need the downsampled window
     _channel_axis = "fixed"  # fixed: convs.0.conv1.weight
 
     def __init__(

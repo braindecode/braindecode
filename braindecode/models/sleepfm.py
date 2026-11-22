@@ -118,6 +118,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # a later block expects the strided length
     _channel_axis = "free"
     _supports_montage_adaptation = False
 
@@ -403,6 +404,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # a later block expects the strided length
     _channel_axis = "fixed"  # fixed: _channel_order is sized by n_chans
     _supports_montage_adaptation = False
 

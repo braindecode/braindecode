@@ -123,6 +123,7 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # pools over the whole window
     _channel_axis = "fixed"  # fixed: temporal_conv1.conv.weight
     _supports_montage_adaptation = False
 

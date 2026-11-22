@@ -264,46 +264,8 @@ def _instantiate_for_summary(
     return model
 
 
-def _has_strided_layer(model: nn.Module) -> bool:
-    from torch import nn
-
-    strided_types = (
-        nn.Conv1d,
-        nn.Conv2d,
-        nn.MaxPool1d,
-        nn.MaxPool2d,
-        nn.AvgPool1d,
-        nn.AvgPool2d,
-    )
-    for module in model.modules():
-        if not isinstance(module, strided_types):
-            continue
-        stride = module.stride
-        if isinstance(stride, int) and stride > 1:
-            return True
-        if isinstance(stride, tuple) and any(s > 1 for s in stride):
-            return True
-    return False
-
-
-def _cropped_decoding_value(cls: type, model: nn.Module) -> str:
-    from torch import nn
-
-    from braindecode.models.base import EEGModuleMixin
-
-    time_axis = getattr(cls, "_time_axis", None)
-    if hasattr(EEGModuleMixin, "_dense_conversion"):
-        supported = (
-            time_axis != "fixed"
-            and bool(getattr(cls, "_dense_conversion", True))
-            and (time_axis == "dense" or _has_strided_layer(model))
-        )
-        return "yes" if supported else "no"
-    supported = time_axis == "dense" and not any(
-        isinstance(m, (nn.modules.conv._ConvTransposeNd, nn.Upsample))
-        for m in model.modules()
-    )
-    return "yes" if supported else "no"
+def _cropped_decoding_value(model: nn.Module) -> str:
+    return "no" if model._dense_refusal() else "yes"
 
 
 def _adapt_input_value(cls: type, modality: str) -> str:
@@ -429,7 +391,7 @@ def generate_summary_rows(
                 "Time axis": time_axis,
                 "Channel axis": channel_axis,
                 "Output": _OUTPUT_DESCRIPTIONS.get(name, "(batch, n_outputs) logits"),
-                "Cropped decoding": _cropped_decoding_value(cls, model),
+                "Cropped decoding": _cropped_decoding_value(model),
                 "adapt_input": _adapt_input_value(cls, modality),
                 "reset_head": _reset_head_value(cls, model),
                 "return_features": _return_features_value(cls),

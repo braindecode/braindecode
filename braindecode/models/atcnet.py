@@ -253,6 +253,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # its attention windows read the strided sequence
     _channel_axis = "fixed"  # fixed: conv_block.conv2.weight is sized by n_chans
 
     def __init__(

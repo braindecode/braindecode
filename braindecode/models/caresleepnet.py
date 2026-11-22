@@ -162,6 +162,7 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
     """
 
     _time_axis = "free"
+    _dense_conversion = False  # later blocks need the downsampled window
     _channel_axis = (
         "fixed"  # fixed: eeg_encoder.0.branches.0.0.weight is sized by n_chans
     )

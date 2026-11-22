@@ -218,6 +218,9 @@ API and behavior changes
   most one patch or stride step) snap to ``n_times`` with a one-time ``UserWarning``
   unless ``on_non_divisible="error"``; larger mismatches raise a ``ValueError``
   naming both lengths before ``forward`` runs (`Bruno Aristimunha`_).
+- :meth:`braindecode.models.EEGModuleMixin.to_dense_prediction_model` converts dilated stacks and average pooling, and
+  raises a ``ValueError`` naming why a model cannot convert; ``EEGNet(pool_mode="mean")`` then needs 1035 samples,
+  not 1014. The ``Cropped decoding`` column of the models summary lists the models that convert (`Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).

@@ -44,6 +44,8 @@ from braindecode.models.util import (
 )
 from braindecode.modules import ChannelLayer
 from braindecode.modules.channels import STRATEGIES
+from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.modules.util import dense_convert
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
     PARAMS,
@@ -346,7 +348,8 @@ def test_padded_batch_passes_channel_check():
 
 
 def test_to_dense_prediction_model_updates_min_n_times_with_dilated_padding():
-    for pool_mode, expected_min in (("max", 1035), ("mean", 1014)):
+    # Average pooling is dilated too, so both pool modes need the same length.
+    for pool_mode, expected_min in (("max", 1035), ("mean", 1035)):
         net = EEGNet(
             n_chans=3,
             n_outputs=2,
@@ -367,6 +370,52 @@ def test_to_dense_prediction_model_updates_min_n_times_with_dilated_padding():
         ):
             net(torch.randn(1, 3, expected_min - 1))
         assert calls == []
+
+
+@PARAMS
+def test_dense_conversion_contract(model_name, required_params, signal_params):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    T = x.shape[-1]
+    dense = copy.deepcopy(model)
+    if _summary_row(model_name)["Cropped decoding"] == "no":
+        with pytest.raises(ValueError, match="cannot give dense predictions"):
+            dense.to_dense_prediction_model()
+        return
+    dense.to_dense_prediction_model()
+    long = torch.randn(2, x.shape[1], 3 * T)
+    with torch.no_grad():
+        out = dense(long)
+        assert out.numel() > dense(long[..., : 2 * T]).numel()  # more steps
+        window = model(long[..., :T])
+        # The first dense step is the first window's output, unless zero
+        # padding at the window edge (EEGNet) sees samples the window did not.
+        padded = any(
+            m.padding not in (0, (0,), (0, 0), "valid")
+            for m in model.modules()
+            if isinstance(m, (torch.nn.Conv1d, torch.nn.Conv2d))
+            or "Pool" in type(m).__name__
+        )
+        if window.ndim == 2 and not padded:
+            torch.testing.assert_close(out[..., 0], window, atol=1e-5, rtol=1e-4)
+
+
+def test_dense_conversion_refuses_a_second_call():
+    net = EEGNet(n_chans=3, n_outputs=2, n_times=1000)
+    net.to_dense_prediction_model()
+    with pytest.raises(ValueError, match="it is already converted"):
+        net.to_dense_prediction_model()
+
+
+def test_dense_conversion_multiplies_existing_dilation():
+    net = torch.nn.Sequential(
+        torch.nn.Conv1d(3, 4, 3, stride=2),
+        torch.nn.Conv1d(4, 4, 3, dilation=2),
+        torch.nn.Conv1d(4, 2, 3, stride=3, dilation=2),
+    )
+    dense_convert(net, axis=(2, 3))
+    assert [m.stride for m in net] == [(1,), (1,), (1,)]
+    assert [m.dilation for m in net] == [(1,), (4,), (4,)]
 
 
 def test_mvpformer_concat_pooling_enforces_fixed_channels():
