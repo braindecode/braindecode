@@ -567,15 +567,12 @@ class _SpatialEmbedding(nn.Module):
                 "(batch, n_chans, 3) for coordinates and (n_chans,) or "
                 "(batch, n_chans) for region scales."
             )
-        # Value check only for caller-passed CPU indices in eager mode:
-        # default_indices are validated at construction, and reading device
-        # tensors forces a host sync (and fails TorchScript / torch.compile).
+        # Value check only in eager mode: it branches on tensor data, which
+        # TorchScript, torch.export and torch.compile graphs cannot express.
+        # Only of caller indices (default_indices are checked at construction),
+        # before the move, so indices passed on the CPU need no host sync.
         if not torch.jit.is_scripting():
-            if (
-                caller_indices
-                and grid.device.type == "cpu"
-                and not torch.compiler.is_compiling()
-            ):
+            if caller_indices and not torch.compiler.is_compiling():
                 n_slots = self.tables[0].num_embeddings
                 if bool((grid < 0).any()) or bool((grid >= n_slots).any()):
                     raise ValueError(
