@@ -300,7 +300,6 @@ class PBT(EEGModuleMixin, nn.Module):
 
         # initialize weights
         self._init_parameters()
-        self._min_n_times = (self.n_times // self.d_input) * self.d_input
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

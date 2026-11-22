@@ -173,20 +173,6 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             activation=self.activation,
         )
 
-        # XXX The paper mentions a final average pooling but does not indicate
-        # the kernel size... The only info available is figure1 showing a
-        # final AveragePooling layer and the table3 indicating the spatial and
-        # channel dimensions are unchanged by this layer... This could indicate
-        # a stride=1 as for MaxPooling layers. Howevere, when we look at the
-        # number of parameters of the linear layer following the average
-        # pooling, we see a small number of parameters, potentially indicating
-        # that the whole time dimension is averaged on this stage for each
-        # channel. We follow this last hypothesis here to comply with the
-        # number of parameters reported in the paper.
-        self.ave_pooling = nn.AvgPool2d(
-            kernel_size=(1, self.n_times),
-        )
-
         self.flat = nn.Flatten()
 
         module = nn.Sequential()
@@ -225,6 +211,16 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         out = res2 + out
 
+        # XXX The paper mentions a final average pooling but does not indicate
+        # the kernel size... The only info available is figure1 showing a
+        # final AveragePooling layer and the table3 indicating the spatial and
+        # channel dimensions are unchanged by this layer... This could indicate
+        # a stride=1 as for MaxPooling layers. Howevere, when we look at the
+        # number of parameters of the linear layer following the average
+        # pooling, we see a small number of parameters, potentially indicating
+        # that the whole time dimension is averaged on this stage for each
+        # channel. We follow this last hypothesis here to comply with the
+        # number of parameters reported in the paper.
         out = nn.functional.avg_pool2d(out, kernel_size=(1, out.shape[-1]))
         out = self.flat(out)
         out = self.final_layer(out)
