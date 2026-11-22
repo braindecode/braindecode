@@ -82,8 +82,8 @@ class FBCNet(EEGModuleMixin, nn.Module):
         https://github.com/ravikiran-mane/FBCNet
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
-    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original is sized by n_chans
 
     def __init__(
         self,
@@ -163,15 +163,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
             self.activation(),
         )
 
-        # Padding layer
-        if self.n_times % self.stride_factor != 0:
-            self.padding_size = stride_factor - (self.n_times % stride_factor)
-            self.n_times_padded = self.n_times + self.padding_size
-            self.padding_layer = nn.ConstantPad1d((0, self.padding_size), 0.0)
-        else:
-            self.padding_layer = nn.Identity()
-            self.n_times_padded = self.n_times
-
         # Temporal aggregator
         self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)  # type: ignore
 
@@ -184,6 +175,13 @@ class FBCNet(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             max_norm=linear_max_norm,
         )
+        min_segments = (
+            2
+            if temporal_layer in ("VarLayer", "StdLayer", "LogVarLayer")
+            and self.n_dim == 3
+            else 1
+        )
+        self._min_n_times = min_segments * self.stride_factor
         self.on_non_divisible = "pad"
         self._n_times_step = self.stride_factor
 
@@ -209,14 +207,17 @@ class FBCNet(EEGModuleMixin, nn.Module):
         batch_size, channels, _, _ = x.shape
 
         # shape: (batch_size, n_filters_spat * n_bands, 1, n_times)
-        x = self.padding_layer(x)
+        if x.shape[-1] % self.stride_factor != 0:
+            x = nn.functional.pad(
+                x, (0, self.stride_factor - x.shape[-1] % self.stride_factor)
+            )
 
         # shape: (batch_size, n_filters_spat * n_bands, 1, n_times_padded)
         x = x.view(
             batch_size,
             channels,
             self.stride_factor,
-            self.n_times_padded // self.stride_factor,
+            x.shape[-1] // self.stride_factor,
         )
         # shape: batch_size, n_filters_spat * n_bands, stride, n_times_padded/stride
         x = self.temporal_layer(x)  # type: ignore[operator]
