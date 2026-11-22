@@ -23,7 +23,7 @@
     <https://app.litmaps.com/shared/be03411d-4526-4557-a9f2-ec3d99773ea1>`__ **with
     filter bank core design, last updated 26/08/2025.** Each node is a paper; rightward
     means more recently published, upward more cited, and links show amount of citation
-    with logaritm scale.
+    on a logarithmic scale.
 
 .. include:: ../../links.inc
 

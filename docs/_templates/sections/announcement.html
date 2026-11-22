@@ -6,16 +6,20 @@
     aria-label="{{ _('Version warning') }}"
   ></aside>
 </div>
-{% set cite_href = 'cite.html' if pagename == 'cite' else pathto('cite') %}
-<aside class="bd-header-announcement" aria-label="{{ _('Announcement') }}">
+{% set cite_href = '#cite' if pagename == 'cite' else pathto('cite') %}
+<aside class="bd-header-announcement" aria-label="{{ _('Cite Braindecode') }}">
   <div class="bd-header-announcement__content">
-    <strong>Using Braindecode in academic work?</strong>
-    <a class="braindecode-announcement-cta" href="{{ cite_href }}">
-      Cite Braindecode
-    </a>
+    <strong class="bd-announcement-lead">Using Braindecode in academic, clinical, or benchmark work?</strong>
+    <a class="braindecode-announcement-cta" href="{{ cite_href }}">Cite Braindecode</a>
     <span class="braindecode-announcement-secondary">
-      DOI:
-      <a href="https://doi.org/10.5281/zenodo.8214376">10.5281/zenodo.8214376</a>
+      Zenodo DOI:
+      <a href="https://doi.org/10.5281/zenodo.8214376" target="_blank" rel="noopener">10.5281/zenodo.8214376</a>
     </span>
+    <span class="bd-announcement-exports" role="group" aria-label="One-click citation export">
+      <button type="button" class="bd-cite-quick-btn" data-bd-cite-copy="zenodo-bibtex" title="Copy Zenodo software BibTeX in one click">Copy BibTeX</button>
+      <button type="button" class="bd-cite-quick-btn" data-bd-cite-copy="zenodo-apa" title="Copy APA software citation in one click">Copy APA</button>
+      <a class="bd-cite-quick-btn" href="{{ pathto('_static/braindecode.bib', 1) }}" download="braindecode.bib" title="Download BibTeX file (.bib)">.bib ↓</a>
+    </span>
+    <span class="bd-cite-live sr-only" role="status" aria-live="polite"></span>
   </div>
 </aside>

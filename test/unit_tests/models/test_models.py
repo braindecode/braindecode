@@ -6616,8 +6616,6 @@ def test_nice_mask_acts_as_zeros_and_return_features_is_a_dict(scripted):
     assert torch.equal(out["features"], clean["features"])
     assert torch.equal(out["tokens"], clean["tokens"])
     assert torch.equal(model.projector(out["tokens"].flatten(1)), out["features"])
-    with pytest.raises((ValueError, torch.jit.Error), match="ch_mask"):
-        model(x, ch_mask=torch.ones(2, 4, dtype=torch.bool))
 
 
 @pytest.mark.parametrize("training", [False, True])

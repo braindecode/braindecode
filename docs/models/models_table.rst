@@ -6,8 +6,8 @@
  Models Summary
 ################
 
-This page offers a summary of all :class:`braindecode` implemented models. For more
-information on each model, please consult the API.
+This page offers a summary of all implemented Braindecode models. For more information
+on each model, please consult the :doc:`/api`.
 
 Columns definitions:
 
@@ -25,8 +25,8 @@ Columns definitions:
     - **Sampling Frequency**: The data sampling rate (in Hertz) the model is designed
       for. Note that this might be adaptable depending on the specific dataset and
       application.
-    - **Categorization**: models categorization based on the main building blocks used
-      in the architecture. See Models Categorization page for more details.
+    - **Categorization**: Architecture categorization based on the main building blocks
+      used in the model. See :doc:`models_categorization` for details.
     - **Hyperparameters**: The mandatory hyperparameters required for instantiating the model class. These may include:
           - :fa:`wave-square` **n_chans**, number of channels/electrodes/sensors,
           - :fa:`shapes` **n_outputs**, number of output classes or regression targets,
@@ -64,6 +64,105 @@ it to Braindecode.
 .. raw:: html
 
     <style>
+    /* === Responsive DataTable wrapper, alignment & Obsidian dark theme === */
+    .dataTables_wrapper {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 1.25rem 0;
+    }
+
+    table.dataframe.sortable {
+      display: table !important;
+      width: 100% !important;
+      min-width: 920px;
+      border-collapse: collapse !important;
+      font-size: 0.875rem;
+    }
+
+    table.dataframe.sortable th,
+    table.dataframe.sortable td {
+      text-align: left !important;
+      vertical-align: middle;
+      padding: 0.5rem 0.55rem !important;
+      border-color: var(--pst-color-border) !important;
+    }
+
+    table.dataframe.sortable th:first-child,
+    table.dataframe.sortable td:first-child {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    table.dataframe.sortable th:nth-child(6),
+    table.dataframe.sortable td:nth-child(6),
+    table.dataframe.sortable th:nth-child(7),
+    table.dataframe.sortable td:nth-child(7) {
+      text-align: right !important;
+      white-space: nowrap;
+    }
+
+    table.dataframe.sortable td:nth-child(8) {
+      white-space: nowrap;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .dataTables_wrapper .dt-buttons .dt-button,
+    .dataTables_wrapper .dataTables_filter input {
+      border-radius: 8px !important;
+      border: 1px solid var(--pst-color-border) !important;
+      background: var(--pst-color-on-background) !important;
+      color: var(--pst-color-text-base) !important;
+      font-family: var(--pst-font-family-base);
+      font-size: 0.875rem !important;
+      padding: 0.35rem 0.7rem !important;
+      box-shadow: none !important;
+    }
+
+    .dataTables_wrapper .dataTables_filter label {
+      color: var(--pst-color-text-base);
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    html[data-theme="dark"] table.dataTable tbody tr,
+    html[data-theme="dark"] table.dataTable.stripe tbody tr.odd,
+    html[data-theme="dark"] table.dataTable.display tbody tr.odd {
+      background-color: #141a23 !important;
+      color: #eef2f7 !important;
+    }
+
+    html[data-theme="dark"] table.dataTable tbody tr.even,
+    html[data-theme="dark"] table.dataTable.stripe tbody tr.even,
+    html[data-theme="dark"] table.dataTable.display tbody tr.even {
+      background-color: #10161f !important;
+      color: #eef2f7 !important;
+    }
+
+    html[data-theme="dark"] table.dataTable tbody tr:hover,
+    html[data-theme="dark"] table.dataTable.hover tbody tr:hover,
+    html[data-theme="dark"] table.dataTable.display tbody tr:hover {
+      background-color: #1a2535 !important;
+    }
+
+    html[data-theme="dark"] table.dataTable thead th {
+      background-color: #18202c !important;
+      color: #eef2f7 !important;
+      border-bottom-color: #253041 !important;
+    }
+
+    html[data-theme="dark"] .dtsp-panesContainer,
+    html[data-theme="dark"] .dtsp-searchPane,
+    html[data-theme="dark"] div.dt-button-collection {
+      background-color: #141a23 !important;
+      border-color: #253041 !important;
+      color: #eef2f7 !important;
+    }
+
     /* === Tabular numerals on numeric columns & SearchPanes counts ========= */
     .sortable td:nth-child(6),
     .sortable td:nth-child(7),
@@ -254,8 +353,12 @@ it to Braindecode.
         drawCallback: function (s) { applyTagPalette(s.nTableWrapper || document); }
       });
 
-      // Initial color pass
+      // Initial color pass + accessible label on DataTables search input
       applyTagPalette(document);
+      $(table.table().container())
+        .find('div.dataTables_filter input')
+        .attr('aria-label', 'Filter models')
+        .attr('placeholder', 'Search model, modality, or tag…');
 
       function applyInitialModelFilter() {
         var model = new URLSearchParams(window.location.search).get('model');
