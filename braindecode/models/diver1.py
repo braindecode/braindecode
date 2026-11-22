@@ -501,15 +501,14 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             return out
         return self.final_layer(pooled)
 
-    @torch.jit.unused
-    @_real_dft.fp32_island
-    def _amplitude_real_dft(self, tokens):
+    def _amplitude_real_dft(self, tokens: torch.Tensor) -> torch.Tensor:
         # |rfft(tokens, norm="forward")| on the device for accelerators without
-        # complex tensors (Intel Gaudi / HPU), instead of a host FFT. The norm
-        # keeps abs()'s zero gradient at an all-zero bin.
-        real, imag = _real_dft.real_rfft(tokens)
-        magnitude = torch.linalg.vector_norm(torch.stack((real, imag)), dim=0)
-        return magnitude / tokens.shape[-1]
+        # complex tensors, instead of a host FFT. The norm keeps abs()'s zero
+        # gradient at an all-zero bin.
+        work = _real_dft._upcast_low_precision(tokens)
+        real, imag = _real_dft.real_rfft(work)
+        magnitude = torch.linalg.vector_norm(torch.stack((real, imag)), dim=[0])
+        return magnitude / work.shape[-1]
 
 
 class _PatchCNN(nn.Sequential):

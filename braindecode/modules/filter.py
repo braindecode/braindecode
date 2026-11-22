@@ -796,23 +796,20 @@ class GeneralizedGaussianFilter(nn.Module):
 
         return x
 
-    @torch.jit.unused
-    @_real_dft.fp32_island
-    def _forward_real_dft(self, x, filters):
-        # Real-valued equivalent of the torch.fft path above, for devices
-        # without complex tensors (Intel Gaudi / HPU), in float32 with autocast
-        # disabled. ``filters`` multiplies the real and imaginary parts
-        # element-wise, exactly like ``x * filters`` on the
-        # ``view_as_real`` layout above (not a complex multiplication).
-        # ``torch.jit.unused`` keeps this branch out of the scripted graph:
-        # CPU/CUDA never take it, and HPU does not run under torch.jit.script.
-        real, imag = _real_dft.real_rfft(x)
+    def _forward_real_dft(self, x: Tensor, filters: Tensor) -> Tensor:
+        # Real-valued equivalent of the torch.fft path above for accelerators
+        # without complex tensors, computed in at least float32 precision with
+        # autocast disabled on the DFT matmuls. ``filters`` multiplies the real
+        # and imaginary parts element-wise, matching ``x * filters`` on the
+        # ``view_as_real`` layout above.
+        work = _real_dft._upcast_low_precision(x)
+        real, imag = _real_dft.real_rfft(work)
         repeat = self.out_channels // self.in_channels
         real = torch.repeat_interleave(real, repeat, dim=-2)
         imag = torch.repeat_interleave(imag, repeat, dim=-2)
-        filters = filters.to(real.dtype)
-        out_real = real * filters[..., 0]
-        out_imag = imag * filters[..., 1]
+        filt = _real_dft._upcast_low_precision(filters).to(real.dtype)
+        out_real = real * filt[..., 0]
+        out_imag = imag * filt[..., 1]
         if self.inverse_fourier:
             return _real_dft.real_irfft(out_real, out_imag, n=self.sequence_length)
         return torch.stack((out_real, out_imag), dim=-1)

@@ -326,20 +326,19 @@ class _STFTModule(nn.Module):
 
         return torch.abs(spec).to(x)
 
-    @torch.jit.unused
-    @_real_dft.fp32_island
-    def _forward_real_dft(self, x):
-        # The magnitude above without complex tensors, on the device (Intel
-        # Gaudi / HPU), instead of a host STFT and a host-to-device copy of
-        # the whole spectrogram: reflect-padded frames (gathered, not a
-        # strided unfold) times the one-sided DFT basis. No annotations: with
-        # postponed annotations torch.jit.unused cannot resolve them.
+    def _forward_real_dft(self, x: torch.Tensor) -> torch.Tensor:
+        # Magnitude spectrogram without complex tensors on accelerators lacking
+        # complex FFT support: reflect-padded frames gathered and multiplied by
+        # the one-sided real DFT basis in at least float32 precision.
+        work = _real_dft._upcast_low_precision(x)
         pad = self.n_fft // 2
-        x = nn.functional.pad(x, (pad, pad), mode="reflect")
-        n_frames = 1 + (x.shape[-1] - self.n_fft) // self.hop_length
-        starts = torch.arange(n_frames, device=x.device) * self.hop_length
-        index = (starts[:, None] + torch.arange(self.n_fft, device=x.device)).flatten()
-        frames = x.index_select(-1, index).unflatten(-1, (n_frames, self.n_fft))
+        work = nn.functional.pad(work, [pad, pad], mode="reflect")
+        n_frames = 1 + (work.shape[-1] - self.n_fft) // self.hop_length
+        starts = torch.arange(n_frames, device=work.device) * self.hop_length
+        index = (
+            starts.unsqueeze(1) + torch.arange(self.n_fft, device=work.device)
+        ).flatten()
+        frames = work.index_select(-1, index).unflatten(-1, (n_frames, self.n_fft))
         real, imag = _real_dft.real_rfft(frames)
         magnitude = torch.sqrt(real * real + imag * imag)
         if self.normalized:

@@ -109,13 +109,17 @@ def fft_conv1d(
         # output columns are the (Re, Im) pairs of the result, read as complex
         # without a copy (and without a costly backward).
         w_mat = torch.view_as_real(torch.stack([w_f, w_f * 1j], 1)).flatten(1, 2)
-        y_f = torch.view_as_real(x_f).permute(2, 0, 3, 1).flatten(2) @ w_mat.flatten(2)
+        y_f = _real_dft._matmul(
+            torch.view_as_real(x_f).permute(2, 0, 3, 1).flatten(2), w_mat.flatten(2)
+        )
         y_f = torch.view_as_complex(y_f.unflatten(-1, [-1, 2]))
     else:
         # Forward only with fewer rows than twice the input channels: the
         # doubled weight costs more than combining [Re x; Im x] @ [Re w, Im w].
         x_f = x_f.permute(2, 0, 1)
-        p = torch.cat([x_f.real, x_f.imag], 1) @ torch.view_as_real(w_f).flatten(2)
+        p = _real_dft._matmul(
+            torch.cat([x_f.real, x_f.imag], 1), torch.view_as_real(w_f).flatten(2)
+        )
         p = p.unflatten(1, [2, x.shape[0]]).unflatten(3, [-1, 2])
         y_f = torch.complex(
             p[:, 0, :, :, 0] - p[:, 1, :, :, 1], p[:, 0, :, :, 1] + p[:, 1, :, :, 0]

@@ -204,7 +204,7 @@ class FCA(nn.Module):
         )
         self.fc = nn.Sequential(
             nn.Linear(in_channels, in_channels // reduction_rate, bias=False),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(in_channels // reduction_rate, in_channels, bias=False),
             nn.Sigmoid(),
         )
