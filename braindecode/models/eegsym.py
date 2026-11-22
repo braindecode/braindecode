@@ -1,17 +1,35 @@
 from __future__ import annotations
 
+import re
 from typing import Any, List, Tuple, cast
 
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.datautil.channel_utils import (
-    division_channels_idx,
-    match_hemisphere_chans,
-)
+from braindecode.datautil.channel_utils import division_channels_idx
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
+
+
+def _try_match_hemisphere_chans(
+    left_chs: list[str], right_chs: list[str]
+) -> list[tuple[str, str]] | None:
+    """Pair left/right channels by N/N+1 numbering, or return None if unmatched."""
+    if not left_chs or len(left_chs) != len(right_chs):
+        return None
+    remaining = list(right_chs)
+    out: list[tuple[str, str]] = []
+    for left in left_chs:
+        match = re.search(r"\d+", left)
+        if match is None:
+            return None
+        target_r = re.sub(r"\d+", str(1 + int(match.group())), left)
+        if target_r not in remaining:
+            return None
+        remaining.remove(target_r)
+        out.append((left, target_r))
+    return out
 
 
 class EEGSym(EEGModuleMixin, nn.Module):
@@ -220,10 +238,11 @@ class EEGSym(EEGModuleMixin, nn.Module):
         ch_names = [cast(dict[str, Any], ch)["ch_name"] for ch in self.chs_info]
         if left_right_chs is None:
             left_chs, right_chs, middle_chs = division_channels_idx(ch_names)
-            try:
-                # Try to match hemispheres based on channel naming
-                left_chs, right_chs = zip(*match_hemisphere_chans(left_chs, right_chs))
-            except (ValueError, IndexError):
+            matched = _try_match_hemisphere_chans(left_chs, right_chs)
+            if matched is not None:
+                matched_left, matched_right = zip(*matched)
+                left_chs, right_chs = list(matched_left), list(matched_right)
+            else:
                 # Fallback: if matching fails, treat all channels as one hemisphere
                 # This allows the model to work with arbitrary channel configurations
                 left_chs = ch_names

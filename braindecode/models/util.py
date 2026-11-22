@@ -8,6 +8,8 @@ import math
 import sys
 import warnings
 from collections.abc import Callable as CallableABC
+from collections.abc import Mapping
+from collections.abc import Sequence as SequenceABC
 from copy import deepcopy
 from functools import lru_cache, wraps
 from importlib.resources import files
@@ -96,10 +98,10 @@ def resolve_config_type(value):
     """
     if not isinstance(value, str):
         return value
-    try:
-        return _CONFIG_MODULE_TYPES[value]
-    except KeyError:
-        raise ValueError(f"Unsupported serialized module type: {value!r}") from None
+    resolved = _CONFIG_MODULE_TYPES.get(value)
+    if resolved is None:
+        raise ValueError(f"Unsupported serialized module type: {value!r}")
+    return resolved
 
 
 def _has_type_annotation(annotation):
@@ -178,6 +180,10 @@ def track_model_init_kwargs(cls) -> None:
         return
 
     init_signature = inspect.signature(init)
+    accepts_channel_strategy = "channel_strategy" in init_signature.parameters or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD
+        for p in init_signature.parameters.values()
+    )
 
     @wraps(init)
     def wrapped(self, *args, **kwargs):
@@ -185,16 +191,12 @@ def track_model_init_kwargs(cls) -> None:
         # and this parent sees only the ones the subclass forwards.
         if type(self).__init__ is not wrapped:
             return init(self, *args, **kwargs)
-        try:
-            bound = init_signature.bind(self, *args, **kwargs)
-        except TypeError as error:
-            name = type(self).__name__
-            if "channel_strategy" in kwargs:
-                raise TypeError(
-                    f"{name} takes no channel_strategy: it reads its input "
-                    "natively (see the channel strategies page of the models documentation)."
-                ) from None
-            raise TypeError(f"{name}: {error}") from None
+        if "channel_strategy" in kwargs and not accepts_channel_strategy:
+            raise TypeError(
+                f"{type(self).__name__} takes no channel_strategy: it reads its input "
+                "natively (see the channel strategies page of the models documentation)."
+            )
+        bound = init_signature.bind(self, *args, **kwargs)
         self._explicit_on_non_divisible = (
             bound.arguments.get("on_non_divisible") is not None
         )
@@ -986,6 +988,38 @@ def get_summary_table(dir_name=None):
         return pd.read_csv(table, index_col="Model", skipinitialspace=True)
 
 
+def _coerce_xyz(loc: Any, dtype: Any) -> Optional[np.ndarray]:
+    """Return a 1-D 3-element coordinate vector cast to ``dtype``, or None."""
+    if isinstance(loc, np.ndarray):
+        if (
+            loc.ndim == 1
+            and loc.size >= 3
+            and (
+                np.issubdtype(loc.dtype, np.number)
+                or np.issubdtype(loc.dtype, np.bool_)
+            )
+            and not np.issubdtype(loc.dtype, np.complexfloating)
+        ):
+            return np.asarray(loc[:3], dtype=dtype)
+        return None
+    if isinstance(loc, torch.Tensor):
+        if loc.ndim == 1 and loc.numel() >= 3 and not loc.is_complex():
+            target_dtype = (
+                torch.float32 if np.dtype(dtype) == np.float32 else torch.float64
+            )
+            return loc[:3].detach().cpu().to(target_dtype).numpy()
+        return None
+    if isinstance(loc, SequenceABC) and not isinstance(loc, (str, bytes, bytearray)):
+        if len(loc) >= 3 and all(
+            isinstance(v, (int, float, np.number, np.bool_))
+            and not isinstance(v, (complex, np.complexfloating))
+            for v in loc
+        ):
+            return np.asarray(loc[:3], dtype=dtype)
+        return None
+    return None
+
+
 def extract_channel_locations_from_chs_info(
     chs_info: Optional[Sequence[Dict[str, Any]]],
     num_channels: Optional[int] = None,
@@ -1050,18 +1084,14 @@ def extract_channel_locations_from_chs_info(
 
     for i in range(n_to_extract):
         ch_info = chs_info[i] if i < len(chs_info) else None
-        loc = ch_info.get("loc") if isinstance(ch_info, dict) else None
-        try:
-            coordinates = np.asarray(loc, dtype=np.float32)
-        except (ValueError, TypeError):
-            coordinates = np.asarray(np.nan, dtype=np.float32)
+        loc = ch_info.get("loc") if isinstance(ch_info, Mapping) else None
+        coordinates = _coerce_xyz(loc, np.float32)
 
-        if coordinates.ndim == 1 and coordinates.size >= 3:
-            coordinates = coordinates[:3]
-        elif fill_missing:
-            coordinates = np.full(3, np.nan, dtype=np.float32)
-        else:
-            break
+        if coordinates is None:
+            if fill_missing:
+                coordinates = np.full(3, np.nan, dtype=np.float32)
+            else:
+                break
 
         locations.append(coordinates)
 
@@ -1238,12 +1268,21 @@ def has_valid_locations(chs_info) -> bool:
             and torch.isfinite(chs_info).all()
             and chs_info.abs().max().item() > 1e-8
         )
-    if chs_info is None:
+    if (
+        not isinstance(chs_info, SequenceABC)
+        or isinstance(chs_info, (str, bytes, bytearray))
+        or len(chs_info) == 0
+    ):
         return False
-    try:
-        xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
-    except (KeyError, TypeError, ValueError):
-        return False
+    rows = []
+    for ch in chs_info:
+        if not isinstance(ch, Mapping) or "loc" not in ch:
+            return False
+        row = _coerce_xyz(ch["loc"], float)
+        if row is None:
+            return False
+        rows.append(row)
+    xyz = np.stack(rows, axis=0)
     if xyz.size == 0 or not np.isfinite(xyz).all():
         return False
     if np.allclose(xyz, 0.0):

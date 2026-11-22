@@ -331,10 +331,7 @@ class REVE(EEGModuleMixin, nn.Module):
         mode = "crop" if on_non_divisible is None else on_non_divisible
         _check_on_non_divisible(mode)
         self.on_non_divisible = mode
-        try:
-            known_n_times = self.n_times
-        except ValueError:  # unknown length: nothing to check at construction
-            known_n_times = None
+        known_n_times = self._signal_param("n_times")
         if known_n_times is not None:
             step = patch_size - patch_overlap
             # Raises for "crop" below one patch and for "error" on an untiled window.

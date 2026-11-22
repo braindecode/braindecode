@@ -77,24 +77,39 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
     ):
         electrode_positions = None
 
-    if electrode_positions is None and chs_info is not None:
+    if (
+        electrode_positions is None
+        and chs_info is not None
+        and len(chs_info) >= n_chans
+    ):
         # Try to infer positions from channel names via a standard montage
-        try:
-            ch_names = [ch["ch_name"] for ch in chs_info[:n_chans]]
+        ch_names = [
+            ch.get("ch_name") if isinstance(ch, dict) else None
+            for ch in chs_info[:n_chans]
+        ]
+        if (
+            len(ch_names) == n_chans
+            and all(isinstance(name, str) and name for name in ch_names)
+            and len(set(ch_names)) == n_chans
+        ):
             montage = mne.channels.make_standard_montage(
                 resolve_montage_name("standard_1005")
             )
-            info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
-            info.set_montage(montage, on_missing="raise")
-            electrode_positions = extract_channel_locations_from_chs_info(
-                info["chs"], num_channels=n_chans
-            )
-        except Exception:
-            raise ValueError(
-                "Could not extract valid 3-D channel locations from chs_info. "
-                "Please ensure that each entry in chs_info contains a 'loc' key "
-                "with 3-D positions or that channel names match a standard montage."
-            )
+            if set(ch_names) <= set(montage.ch_names):
+                info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
+                info.set_montage(montage, on_missing="ignore")
+                electrode_positions = extract_channel_locations_from_chs_info(
+                    info["chs"], num_channels=n_chans
+                )
+
+    if electrode_positions is None or not (
+        len(electrode_positions) == n_chans and np.isfinite(electrode_positions).all()
+    ):
+        raise ValueError(
+            "Could not extract valid 3-D channel locations from chs_info. "
+            "Please ensure that each entry in chs_info contains a 'loc' key "
+            "with 3-D positions or that channel names match a standard montage."
+        )
 
     if n_chans < 2:
         raise ValueError("DGCNN needs at least 2 channels to build its channel graph.")

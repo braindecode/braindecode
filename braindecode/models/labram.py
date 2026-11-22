@@ -249,10 +249,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         # Non-canonical chs_info is accepted with a warning so callers can
         # resolve channels per batch via forward(ch_names=...).
-        try:
-            _chs_info = self.chs_info
-        except ValueError:
-            _chs_info = None
+        _chs_info = self._signal_param("chs_info")
         if _chs_info is not None:
             user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
             if [n.upper() for n in user_names] != list(_LABRAM_CANONICAL_INDEX):

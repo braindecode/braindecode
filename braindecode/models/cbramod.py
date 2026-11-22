@@ -204,10 +204,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
         # padding/cropping a non-divisible time axis at forward time.
-        try:
-            tokenizer_n_times = self.n_times
-        except ValueError:  # unknown length: nothing to check at construction
-            tokenizer_n_times = patch_size
+        known_n_times = self._signal_param("n_times")
+        tokenizer_n_times = patch_size if known_n_times is None else known_n_times
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
             n_times=tokenizer_n_times,
@@ -291,11 +289,10 @@ class CBraMod(EEGModuleMixin, nn.Module):
         """True when n_chans and n_times are known (given or derivable), so the
         head can be a real Linear instead of a LazyLinear that cannot be saved
         or loaded before a forward pass."""
-        try:
-            self.n_chans, self.n_times
-        except ValueError:
-            return False
-        return True
+        return (
+            self._signal_param("n_chans") is not None
+            and self._signal_param("n_times") is not None
+        )
 
     def _n_patch(self):
         if self._on_non_divisible == "pad":

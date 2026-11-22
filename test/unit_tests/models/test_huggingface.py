@@ -595,11 +595,11 @@ def test_custom_weights_missing_does_not_use_default_pickle_fallback(tmp_path, m
     if filename is not None:
         with pytest.raises(EntryNotFoundError, match="missing weights"):
             DummyModuleConfigRoundTrip._from_pretrained(**kwargs)
-        assert calls == ["config.json", filename]
+        assert calls == [filename]
         assert loaded == []
     else:
         DummyModuleConfigRoundTrip._from_pretrained(**kwargs)
-        assert calls == ["config.json", "model.safetensors", "pytorch_model.bin"]
+        assert calls == ["model.safetensors", "pytorch_model.bin"]
         assert loaded == [(str(tmp_path / "pytorch_model.bin"), "cpu", True)]
 
 
@@ -657,14 +657,14 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
     readme.write_text("---\ndatasets:\n- PREST\n- SHHS\n---\ncard\n")
     calls = []
 
-    def download(*args, **kwargs):
+    def try_cache(*args, **kwargs):
         calls.append((args, kwargs))
         return str(readme)
 
-    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", try_cache)
     data = _load_card_data("org/repo", revision="v1", local_files_only=True, n_outputs=3)
     assert data.datasets == ["PREST", "SHHS"]
-    assert calls == [(("org/repo", "README.md"), {"revision": "v1", "local_files_only": True})]
+    assert calls == [(("org/repo", "README.md"), {"cache_dir": None, "revision": "v1"})]
 
     monkeypatch.undo()  # real hub, nothing cached, no network: None, no error
     assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None

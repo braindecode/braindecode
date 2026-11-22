@@ -306,10 +306,7 @@ class BENDR(EEGModuleMixin, nn.Module):
         # No chs_info (incl. from_pretrained) or the canonical order: no
         # tokenizer, so released checkpoints stay bit-identical. Any other
         # montage is projected onto the 20 canonical channels.
-        try:
-            _chs_info = self.chs_info
-        except ValueError:
-            _chs_info = None
+        _chs_info = self._signal_param("chs_info")
         self.channel_tokenizer = None
         backbone_n_chans = self.n_chans
         if _chs_info is not None:
