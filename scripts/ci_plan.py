@@ -1076,6 +1076,7 @@ def compute_plan(
                 )
             impacted_tests.add("test/unit_tests/models/test_util.py")
             impacted_tests.add("test/unit_tests/models/test_model_rules.py")
+            impacted_tests.add("test/unit_tests/test_no_error_catching.py")
             impacted_tests.add("test/unit_tests/test_dependencies.py")
             if util_models:
                 impacted_models.update(util_models)
@@ -1094,6 +1095,14 @@ def compute_plan(
             mod = _path_to_module(path)
             if mod:
                 dirty_modules.add(mod)
+            if path.startswith(
+                (
+                    "braindecode/models/",
+                    "braindecode/modules/",
+                    "braindecode/functional/",
+                )
+            ):
+                impacted_tests.add("test/unit_tests/test_no_error_catching.py")
             impacted_tests.add("test/unit_tests/test_dependencies.py")
             continue
 

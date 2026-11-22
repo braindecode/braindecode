@@ -417,10 +417,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         unknown channel lacks a valid position. Raises an actionable error if
         the identity mapping exceeds the embedding capacity.
         """
-        try:
-            chs_info = self.chs_info
-        except ValueError:
-            chs_info = None
+        chs_info = self._signal_param("chs_info")
         if not chs_info:
             identity = self._identity_channel_indices()
             warnings.warn(

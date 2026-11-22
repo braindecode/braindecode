@@ -96,10 +96,9 @@ def resolve_config_type(value):
     """
     if not isinstance(value, str):
         return value
-    try:
-        return _CONFIG_MODULE_TYPES[value]
-    except KeyError:
-        raise ValueError(f"Unsupported serialized module type: {value!r}") from None
+    if value not in _CONFIG_MODULE_TYPES:
+        raise ValueError(f"Unsupported serialized module type: {value!r}")
+    return _CONFIG_MODULE_TYPES[value]
 
 
 def _has_type_annotation(annotation):
@@ -178,6 +177,9 @@ def track_model_init_kwargs(cls) -> None:
         return
 
     init_signature = inspect.signature(init)
+    accepts_channel_strategy = "channel_strategy" in init_signature.parameters or any(
+        p.kind is p.VAR_KEYWORD for p in init_signature.parameters.values()
+    )
 
     @wraps(init)
     def wrapped(self, *args, **kwargs):
@@ -185,16 +187,13 @@ def track_model_init_kwargs(cls) -> None:
         # and this parent sees only the ones the subclass forwards.
         if type(self).__init__ is not wrapped:
             return init(self, *args, **kwargs)
-        try:
-            bound = init_signature.bind(self, *args, **kwargs)
-        except TypeError as error:
+        if "channel_strategy" in kwargs and not accepts_channel_strategy:
             name = type(self).__name__
-            if "channel_strategy" in kwargs:
-                raise TypeError(
-                    f"{name} takes no channel_strategy: it reads its input "
-                    "natively (see the channel strategies page of the models documentation)."
-                ) from None
-            raise TypeError(f"{name}: {error}") from None
+            raise TypeError(
+                f"{name} takes no channel_strategy: it reads its input "
+                "natively (see the channel strategies page of the models documentation)."
+            )
+        bound = init_signature.bind(self, *args, **kwargs)
         explicit_keys = frozenset(bound.arguments.keys() - {"self"})
         bound.apply_defaults()
 
@@ -979,6 +978,24 @@ def get_summary_table(dir_name=None):
         return pd.read_csv(table, index_col="Model", skipinitialspace=True)
 
 
+def _is_real_scalar(val: Any) -> bool:
+    return isinstance(val, (int, float, np.number)) and not isinstance(
+        val, (bool, np.bool_)
+    )
+
+
+def _extract_xyz_row(loc: Any) -> Optional[np.ndarray]:
+    if isinstance(loc, np.ndarray):
+        if loc.ndim == 1 and loc.size >= 3 and loc.dtype.kind in "iuf":
+            return np.asarray(loc[:3], dtype=np.float32)
+        return None
+    if isinstance(loc, (list, tuple)) and len(loc) >= 3:
+        head = loc[:3]
+        if all(_is_real_scalar(v) for v in head):
+            return np.asarray(head, dtype=np.float32)
+    return None
+
+
 def extract_channel_locations_from_chs_info(
     chs_info: Optional[Sequence[Dict[str, Any]]],
     num_channels: Optional[int] = None,
@@ -1044,13 +1061,9 @@ def extract_channel_locations_from_chs_info(
     for i in range(n_to_extract):
         ch_info = chs_info[i] if i < len(chs_info) else None
         loc = ch_info.get("loc") if isinstance(ch_info, dict) else None
-        try:
-            coordinates = np.asarray(loc, dtype=np.float32)
-        except (ValueError, TypeError):
-            coordinates = np.asarray(np.nan, dtype=np.float32)
-
-        if coordinates.ndim == 1 and coordinates.size >= 3:
-            coordinates = coordinates[:3]
+        row = _extract_xyz_row(loc)
+        if row is not None:
+            coordinates = row
         elif fill_missing:
             coordinates = np.full(3, np.nan, dtype=np.float32)
         else:
@@ -1231,12 +1244,17 @@ def has_valid_locations(chs_info) -> bool:
             and torch.isfinite(chs_info).all()
             and chs_info.abs().max().item() > 1e-8
         )
-    if chs_info is None:
+    if not isinstance(chs_info, (list, tuple)) or len(chs_info) == 0:
         return False
-    try:
-        xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
-    except (KeyError, TypeError, ValueError):
-        return False
+    rows = []
+    for ch in chs_info:
+        if not isinstance(ch, dict):
+            return False
+        row = _extract_xyz_row(ch.get("loc"))
+        if row is None:
+            return False
+        rows.append(row.astype(float))
+    xyz = np.stack(rows, axis=0)
     if xyz.size == 0 or not np.isfinite(xyz).all():
         return False
     if np.allclose(xyz, 0.0):

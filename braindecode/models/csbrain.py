@@ -336,10 +336,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
-        try:
-            tokenizer_n_times = self.n_times
-        except ValueError:  # unknown length: nothing to check at construction
-            tokenizer_n_times = patch_size
+        known_n_times = self._signal_param("n_times")
+        tokenizer_n_times = patch_size if known_n_times is None else known_n_times
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
             n_times=tokenizer_n_times,
@@ -436,16 +434,10 @@ class CSBrain(EEGModuleMixin, nn.Module):
         return bool(self._encoder_output or ret_feat)
 
     def _n_chans_or_none(self) -> int | None:
-        try:
-            return self.n_chans
-        except ValueError:
-            return None
+        return self._signal_param("n_chans")
 
     def _n_times_or_none(self) -> int | None:
-        try:
-            return self.n_times
-        except ValueError:
-            return None
+        return self._signal_param("n_times")
 
     def _n_patch(self) -> int | None:
         n_times = self._n_times_or_none()
