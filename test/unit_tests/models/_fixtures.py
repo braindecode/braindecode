@@ -52,6 +52,8 @@ non_classification_models = [
     # forward returns (batch, n_outputs, n_times) per-sample logits, not
     # window logits.
     "SeizureTransformer",
+    # forward returns (batch, n_outputs, n_patches), one logit per second.
+    "DeepSOZ",
 ]
 
 # Head-frame positions in metres for the default synthetic EEG input, inlined

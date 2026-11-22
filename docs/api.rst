@@ -208,6 +208,7 @@ interface for all EEG models and can derive variable names when needed.
      DuIN
      Deep4Net
      DeepSleepNet
+     DeepSOZ
      EEGConformer
      EEGCLIP
      EEGDINO

@@ -37,6 +37,9 @@ Enhancements
   read the temporal window length from the input tensor in ``forward`` instead of
   using the length stored at construction, accepting variable-length windows with
   unchanged weights and build-shape outputs (by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
+  with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
+  DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).
 - Linearize the landing-page architecture and modality bar charts, add live
   dark/light theme synchronization to the Plotly models visualization, align and
   format the interactive models summary DataTable, and resolve WCAG 2.2 AA
@@ -670,6 +673,9 @@ Bug fixes
 - :meth:`braindecode.datasets.BaseConcatDataset.split` raises a ``ValueError`` when the
   description column given as ``by`` has missing values, instead of silently leaving these
   recordings out of every split (:gh:`1762` by `Axel Coiffard-Donaty`_).
+- :func:`braindecode.preprocessing.create_fixed_length_windows` raises a ``ValueError`` when
+  the window does not fit between ``start_offset_samples`` and ``stop_offset_samples``,
+  instead of an ``IndexError`` or an empty dataset (:gh:`1763` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============

@@ -66,7 +66,7 @@ _TOKENIZERS: frozenset[str] = frozenset(
     {"BrainTokenizer", "NeuroRVQTokenizer", "TFMTokenizer"}
 )
 _OUTPUT_B_OUT_TIME: frozenset[str] = frozenset(
-    {"CareSleepNet", "SeizureTransformer", "SleepFMStager"}
+    {"CareSleepNet", "DeepSOZ", "SeizureTransformer", "SleepFMStager"}
 )
 _OUTPUT_B_TIME_OUT: frozenset[str] = frozenset(
     {
@@ -386,6 +386,7 @@ _SUMMARY_KWARGS: dict[str, dict[str, Any]] = {
     "MIRepNet": {"n_chans": 45, "n_outputs": 4, "n_times": 1000},
     "NeuroRVQ": {"n_chans": 64, "n_outputs": 4, "n_times": 800, "sfreq": 200},
     "SeizureTransformer": {"n_chans": 19, "n_outputs": 1, "n_times": 15360},
+    "DeepSOZ": {"n_chans": 19, "n_outputs": 2, "n_times": 153600},
     "NeuroRVQTokenizer": {
         "n_chans": 3,
         "chs_info": ("_chs", "eeg", 3),
