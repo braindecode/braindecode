@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
+  with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
+  DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).
 - Redesign the documentation landing page, unify the top navigation bar and
   sub-page palette, add a one-click Zenodo software citation hub
   (``10.5281/zenodo.8214376``), and pre-render the native-CSS model zoo explorer

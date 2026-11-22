@@ -922,6 +922,12 @@ models_mandatory_parameters: list[
             "num_layers": 2,  # 2 of 8 Transformer layers
         },
     ),
+    (
+        "DeepSOZ",
+        ["n_chans", "n_outputs"],
+        # 10 one-second tokens of the released model's 19 channels at 256 Hz
+        {"n_chans": 19, "n_times": 2560, "sfreq": 256.0},
+    ),
     ("Guetschel2026", ["chs_info", "n_outputs", "n_times"], {"sfreq": 200.0}),
     (
         "FNIRSNet",

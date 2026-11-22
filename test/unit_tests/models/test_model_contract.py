@@ -219,6 +219,7 @@ _UNUSED_IN_FORWARD = {
     "CSBrain": r"^proj_out\.",  # pretraining reconstruction layer
     "CodeBrain": r"residual_blocks\.7\.(rms_norm|res_conv)|^lm_head_",  # skip-only last block, tokenizer heads
     "DANCE": r"^decoder\.",  # event decoder of detect()
+    "DeepSOZ": r"^soz_layer\.",  # onset zone head (return_soz=True)
     "EEGCLIP": r"^(text_projection\.|logit_scale$)",  # text side, trained via forward_paired()
     "MSVTNet": r"^branch_head\.",  # auxiliary branch heads (return_features)
     "PopulationTransformer": r"^spec_prediction_head\.",  # pretraining head
