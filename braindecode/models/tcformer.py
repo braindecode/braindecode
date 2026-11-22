@@ -174,6 +174,7 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: conv_block.channel_dw_conv.0.weight
     _dense_conversion = False
+    _feature_axis = 1
 
     def __init__(
         self,
@@ -302,6 +303,13 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
         decoded = self.tcn(fused)
         last_step = decoded[:, :, -1:]  # (batch, d_fused, 1)
         return self.final_layer(last_step)  # (batch, n_outputs)
+
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        head = self.final_layer
+        self.final_layer = _ClassificationHead(
+            head.conv.in_channels, head.n_groups, n_outputs, self.classifier_max_norm
+        )
 
 
 # ----------------------------------------------------------------------------- #

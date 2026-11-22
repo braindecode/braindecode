@@ -17,6 +17,7 @@ from braindecode.functional import (
     check_ch_mask,
     init_weights_,
     masked_group_norm,
+    patch_count,
     spectral_input,
 )
 from braindecode.models.base import EEGModuleMixin
@@ -271,8 +272,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self._encoder_output = isinstance(self.final_layer, nn.Identity)
 
     def reset_head(self, n_outputs):
-        self._n_outputs = n_outputs
-        self._update_init_kwargs(n_outputs=n_outputs)
+        self._set_n_outputs(n_outputs)
         # A head implies a classifier, also when built with return_encoder_output.
         self._update_init_kwargs(return_encoder_output=False)
         self._encoder_output = False
@@ -296,19 +296,18 @@ class CBraMod(EEGModuleMixin, nn.Module):
         )
 
     def _n_patch(self):
-        if self._on_non_divisible == "pad":
-            return -(-self.n_times // self._patch_size)
-        return self.n_times // self._patch_size
+        return patch_count(self.n_times, self._patch_size, self._on_non_divisible)
 
     def _init_parameters(self):
         kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
-        self.apply(
-            partial(
-                init_weights_,
-                weights={(nn.Linear, nn.Conv1d): (kaiming, None)},
-                norms=(nn.BatchNorm1d,),
-            )
+        fn = partial(
+            init_weights_,
+            weights={(nn.Linear, nn.Conv1d): (kaiming, None)},
+            norms=(nn.BatchNorm1d,),
         )
+        for name, child in self.named_children():
+            if name != "final_layer":
+                child.apply(fn)
 
     def forward(
         self,

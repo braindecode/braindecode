@@ -255,6 +255,9 @@ def _new_head_follows_model(reset_head):
         # Hold the old tensors until the end, so that their ids cannot be
         # reused by the new ones.
         old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
+        head = self.__dict__.pop("_head_spec", None)
+        if head is not None:  # headless build: put back its head, then resize it
+            self.final_layer = head[0]
         self._materialized_n_chans = None
         self._materialized_n_times = None
         out = reset_head(self, *args, **kwargs)
@@ -380,12 +383,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         import torch
 
         x = torch.randn(1, model.n_chans, model.n_times)
-        # Extract encoder features (consistent dict across all models)
+        # Extract encoder features and a mean-pooled 2-D embedding
         out = model(x, return_features=True)
+        embedding = out["embedding"]  # (batch, dim)
         features = out["features"]
 
         # Replace the classification head
         model.reset_head(n_outputs=10)
+
+    Note that ``torch.jit.script`` returns features only on models whose
+    ``forward`` declares ``return_features``.
 
     **Saving and restoring full configuration:**
 
@@ -406,6 +413,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     See :ref:`load-pretrained-models` for a complete tutorial.
     """
 
+    _feature_axis: ClassVar[int] = -1
+    _native_features: ClassVar[bool] = False
+    #: Head of a model built with ``n_outputs=None``, kept off the module tree
+    #: until :meth:`reset_head` attaches it.
+    _head_spec: Optional[tuple] = None
+
     #: Attributes that :func:`torch.jit.script` must not introspect. The
     #: signal-related properties raise :class:`ValueError` when their value was
     #: neither given nor inferable, and ``mapping`` carries a postponed
@@ -418,6 +431,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "mapping",
         "_time_axis",
         "_channel_axis",
+        "_feature_axis",
+        "_native_features",
+        "_head_spec",
         "_time_inputs",
         "_min_n_times",
         "_n_times_step",
@@ -437,6 +453,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def __init_subclass__(cls, **kwargs):
         license = kwargs.pop("license", "bsd-3-clause")
+        forward = getattr(cls, "forward", None)
+        cls._native_features = (
+            forward is not None
+            and "return_features" in inspect.signature(forward).parameters
+        )
 
         if "reset_head" in cls.__dict__:
             cls.reset_head = _new_head_follows_model(cls.__dict__["reset_head"])
@@ -564,6 +585,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
         self._chs_info = chs_info  # type: ignore[assignment]
         self._n_outputs = n_outputs  # type: ignore[assignment]
+        # False: built without n_outputs; True once the constructor reads it.
+        self._headless_build = False if n_outputs is None else None
         self._n_chans = n_chans  # type: ignore[assignment]
         # TorchScript cannot represent the rich MNE dictionaries in _chs_info.
         # Keep the original eager state above and expose only the derived scalar
@@ -644,8 +667,22 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     @property
     def n_outputs(self) -> int:
         if self._n_outputs is None:
+            if self.__dict__.get("_headless_build") is not None:
+                # Headless build: size the head for one output, then
+                # _drop_headless_head takes it off the model.
+                self._headless_build = True
+                return 1
             raise ValueError("n_outputs not specified.")
         return self._n_outputs
+
+    def _drop_headless_head(self) -> None:
+        """Replace the head of a model built with ``n_outputs=None`` by
+        ``nn.Identity``, so the model has no unused head parameters."""
+        if self.__dict__.pop("_headless_build", None) and isinstance(
+            getattr(self, "final_layer", None), torch.nn.Module
+        ):
+            self._head_spec = (self.final_layer,)
+            self.final_layer = torch.nn.Identity()
 
     @property
     def n_chans(self) -> int:
@@ -1002,7 +1039,51 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             )
         return args, kwargs
 
+    def _head_linear(self) -> torch.nn.Module | None:
+        """Return the last linear or convolutional layer inside ``final_layer``."""
+        final_layer = getattr(self, "final_layer", None)
+        if not isinstance(final_layer, torch.nn.Module):
+            return None
+        last: torch.nn.Module | None = None
+        for module in final_layer.modules():
+            if isinstance(module, (torch.nn.Linear, torch.nn.Conv1d, torch.nn.Conv2d)):
+                last = module
+        return last
+
+    def _pool_embedding(self, features: torch.Tensor) -> torch.Tensor:
+        """Mean-pool ``features`` to a 2-D ``(batch, dim)`` embedding."""
+        if features.ndim == 2:
+            return features
+        axis = self._feature_axis % features.ndim
+        if axis != features.ndim - 1:
+            features = features.movedim(axis, -1)
+        return features.mean(dim=tuple(range(1, features.ndim - 1)))
+
+    def _record_materialized_axes(
+        self,
+        args: tuple,
+        kwargs: dict,
+        had_lazy: bool,
+        need_chans: bool,
+        need_times: bool,
+    ) -> None:
+        if had_lazy and not any(
+            isinstance(p, UninitializedParameter) for p in self.parameters()
+        ):
+            x = self._first_input(args, kwargs)
+            if x is not None and x.ndim >= 3:
+                if need_chans and not self._accepts_any_n_chans(args, kwargs):
+                    self._materialized_n_chans = x.shape[1]
+                if need_times and not self._accepts_any_n_times(args, kwargs):
+                    self._materialized_n_times = x.shape[-1]
+
     def __call__(self, *args, **kwargs):
+        if self._head_spec is not None and not kwargs.get("return_features"):
+            raise ValueError(
+                f"{type(self).__name__} was built with n_outputs=None (headless); "
+                "call model(x, return_features=True) or attach a head with "
+                "model.reset_head(n_outputs)."
+            )
         args, kwargs = self._prepare_inputs(args, kwargs)
         need_chans = (
             getattr(self, "_channel_axis", None) == "fixed"
@@ -1015,16 +1096,58 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         had_lazy = (need_chans or need_times) and any(
             isinstance(p, UninitializedParameter) for p in self.parameters()
         )
+        if not self._native_features and "return_features" in kwargs:
+            kwargs = dict(kwargs)
+            want_features = bool(kwargs.pop("return_features"))
+            if want_features:
+                name = type(self).__name__
+                captured: list[Any] = []
+
+                def _capture(
+                    _module: torch.nn.Module, hook_args: tuple[Any, ...]
+                ) -> None:
+                    captured.append(hook_args[0] if hook_args else None)
+
+                handle = self.final_layer.register_forward_pre_hook(_capture)
+                try:
+                    super().__call__(*args, **kwargs)
+                finally:
+                    handle.remove()
+                self._record_materialized_axes(
+                    args, kwargs, had_lazy, need_chans, need_times
+                )
+                if len(captured) != 1:
+                    raise ValueError(
+                        f"{name}: final_layer ran {len(captured)} times in one "
+                        "forward; return_features needs a native implementation "
+                        "for this model."
+                    )
+                feat = captured[0]
+                x = self._first_input(args, kwargs)
+                if (
+                    not isinstance(feat, torch.Tensor)
+                    or feat.ndim < 2
+                    or (x is not None and feat.shape[0] != x.shape[0])
+                ):
+                    raise ValueError(
+                        f"{name}: the head does not read one batched tensor; "
+                        "return_features needs a native implementation for this "
+                        "model."
+                    )
+                return {
+                    "features": feat,
+                    "embedding": self._pool_embedding(feat),
+                    "cls_token": None,
+                }
+
         out = super().__call__(*args, **kwargs)
-        if had_lazy and not any(
-            isinstance(p, UninitializedParameter) for p in self.parameters()
-        ):
-            x = self._first_input(args, kwargs)
-            if x is not None and x.ndim >= 3:
-                if need_chans and not self._accepts_any_n_chans(args, kwargs):
-                    self._materialized_n_chans = x.shape[1]
-                if need_times and not self._accepts_any_n_times(args, kwargs):
-                    self._materialized_n_times = x.shape[-1]
+        self._record_materialized_axes(args, kwargs, had_lazy, need_chans, need_times)
+        if self._native_features and isinstance(out, dict) and "features" in out:
+            out.setdefault("cls_token", None)
+            if out.get("embedding") is None and isinstance(
+                out["features"], torch.Tensor
+            ):
+                out["embedding"] = self._pool_embedding(out["features"])
         return out
 
     def get_output_shape(self) -> tuple[int, ...]:
@@ -1242,16 +1365,28 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         layers are built and by :meth:`reset_parameters`. The default keeps the
         layers' PyTorch initialization."""
 
-    def reset_head(self, n_outputs):
+    def _can_reset_head(self) -> bool:
+        """Whether :meth:`reset_head` can attach a new head to this model."""
+        return (
+            type(self).reset_head is not EEGModuleMixin.reset_head
+            or self._head_linear() is not None
+            or self._head_spec is not None
+        )
+
+    @_new_head_follows_model
+    def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new number of outputs.
 
         This is called automatically by :meth:`from_pretrained` when the
-        user passes an ``n_outputs`` that differs from the saved config.
-        Override in subclasses that need a model-specific head structure.
-        Implementations keep changed constructor arguments in sync with
-        ``self._update_init_kwargs``, so that a saved model can be loaded
-        back. Implementations requiring positive outputs can also use
-        ``self._set_n_outputs`` to validate and record the new value.
+        user passes an ``n_outputs`` that differs from the saved config, and
+        attaches a head to a model built with ``n_outputs=None``. The default
+        replaces the last linear or convolutional layer of ``final_layer`` by
+        a new one with ``n_outputs`` outputs. Override in subclasses that need
+        a model-specific head structure. Implementations keep changed
+        constructor arguments in sync with ``self._update_init_kwargs``, so
+        that a saved model can be loaded back. Implementations requiring
+        positive outputs can also use ``self._set_n_outputs`` to validate and
+        record the new value.
 
         Parameters
         ----------
@@ -1268,11 +1403,37 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         .. versionadded:: 1.4
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement reset_head(). "
-            "Override this method to support changing n_outputs after "
-            "loading pretrained weights."
-        )
+        old = self._head_linear()
+        if old is None:
+            raise ValueError(
+                f"{type(self).__name__} has no linear or convolutional layer in "
+                "final_layer; override reset_head() to change n_outputs."
+            )
+        bias = old.bias is not None
+        if isinstance(old, torch.nn.LazyLinear):  # not sized yet (GCNsNet)
+            new = torch.nn.LazyLinear(n_outputs, bias=bias)
+        elif isinstance(old, torch.nn.Linear):
+            new = torch.nn.Linear(old.in_features, n_outputs, bias=bias)
+        else:
+            conv = (
+                torch.nn.Conv1d if isinstance(old, torch.nn.Conv1d) else torch.nn.Conv2d
+            )
+            new = conv(
+                old.in_channels,
+                n_outputs,
+                old.kernel_size,
+                stride=old.stride,
+                padding=old.padding,
+                dilation=old.dilation,
+                bias=bias,
+            )
+        name = next(n for n, m in self.final_layer.named_modules() if m is old)
+        if name:
+            parent, _, child = name.rpartition(".")
+            setattr(self.final_layer.get_submodule(parent), child, new)
+        else:
+            self.final_layer = new
+        self._set_n_outputs(n_outputs)
 
     mapping: Optional[Dict[str, str]] = None
     #: Channels the backbone consumes under a ``channel_strategy`` (names or
@@ -1926,14 +2087,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 and requested_n_outputs is not None
                 and requested_n_outputs != saved_n_outputs
             ):
-                try:
-                    model.reset_head(requested_n_outputs)
-                except NotImplementedError:
+                if not model._can_reset_head():
                     raise ValueError(
                         f"{type(model).__name__} does not support changing "
                         f"n_outputs after loading. Saved model has "
                         f"n_outputs={saved_n_outputs}, but "
                         f"n_outputs={requested_n_outputs} was requested."
-                    ) from None
+                    )
+                model.reset_head(requested_n_outputs)
 
             return model

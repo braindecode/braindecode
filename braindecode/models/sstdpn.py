@@ -330,17 +330,25 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             Input tensor. Supported shapes:
               - (batch, n_chans, n_times)
         return_features : bool, default=False
-            If True, return ``{"features": features, "cls_token": None, "logits": logits}``.
+            If True, return a dictionary with ``"features"``, ``"embedding"``,
+            and ``"cls_token"`` before the prototype readout.
 
         Returns
         -------
         logits : torch.Tensor or dict or tuple
             If input was 3D: (batch, n_outputs)
-        Or if self.return_features is True:
+            Or if ``return_features=True``: dict with encoder features and embedding.
+            Or if ``self.return_features`` is True:
             (features, logits) where features shape is (batch, feat_dim)
         """
 
         features = self.encoder(x)  # (b, feat_dim)
+        if not torch.jit.is_scripting() and return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": features,
+                "cls_token": None,
+            }
+            return out
         # Project each class prototype before computing its dot-product gradient.
         # ``proto_sep`` is (n_outputs, feat_dim): renorm along dim=0 bounds each
         # class row (``||s_i|| <= S``). The in-place copy into a detached alias
@@ -352,18 +360,17 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
 
-        if return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {
-                "features": features,
-                "cls_token": None,
-                "logits": logits,
-            }
-            return out
-
         if self.return_features:
             return features, logits
 
         return logits
+
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        shape = (n_outputs, self.proto_sep.shape[1])
+        self.proto_sep = nn.Parameter(self.proto_sep.new_empty(shape))
+        self.proto_cpt = nn.Parameter(self.proto_cpt.new_empty(shape))
+        self._reset_parameters()
 
     def _compute_feature_dim(self) -> int:
         """Compute encoder feature dimensionality without a forward pass."""

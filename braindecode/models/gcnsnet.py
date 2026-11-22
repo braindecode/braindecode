@@ -121,11 +121,22 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             ChebyshevGraphConv(f_in, f_out, k)
             for f_in, f_out, k in zip(in_features, n_features, cheb_orders)
         )
-        self.biases = nn.ModuleList([_NodeBias() for _ in n_features])
+        # A given graph fixes the node counts, so the per-node biases and the
+        # head are built now; otherwise they stay lazy until the graph is fitted.
+        node_counts = [
+            None if m.matrix is None else len(m.matrix) for m in self.laplacians
+        ]
+        self.biases = nn.ModuleList(
+            _NodeBias(n_nodes, f) for n_nodes, f in zip(node_counts, n_features)
+        )
         self.batch_norms = nn.ModuleList([nn.BatchNorm1d(f) for f in n_features])
         self.activation = activation()
         self.dropout = nn.Dropout(drop_prob)
-        self.final_layer = nn.LazyLinear(self.n_outputs)
+        if node_counts[-1] is None:
+            self.final_layer = nn.LazyLinear(self.n_outputs)
+        else:
+            pooled = -(-node_counts[-1] // pool_sizes[-1])
+            self.final_layer = nn.Linear(pooled * n_features[-1], self.n_outputs)
         self._min_n_times = 1
 
         self.register_load_state_dict_pre_hook(self._prepare_graph_state)
@@ -238,17 +249,21 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             )
         self.graph_initialized = True
 
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x, return_features: bool = False):
         """
         Parameters
         ----------
         x : torch.Tensor
             Input tensor of shape (batch_size, n_chans, n_times).
+        return_features : bool, default=False
+            If True, return a dictionary with ``"features"``, ``"embedding"``,
+            and ``"cls_token"`` before the linear readout.
 
         Returns
         -------
-        torch.Tensor
-            Output tensor of shape (batch_size, n_outputs).
+        torch.Tensor or dict
+            Output tensor of shape (batch_size, n_outputs), or feature dictionary
+            when ``return_features=True``.
         """
         if torch.jit.is_scripting():
             if not self.graph_initialized:
@@ -283,17 +298,26 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
                 x = F.max_pool1d(x, pool_size, ceil_mode=True)
             x = x.transpose(1, 2)
 
-        x = self.final_layer(self.dropout(x.flatten(1)))
+        x = self.dropout(x.flatten(1))
+        if not torch.jit.is_scripting() and return_features:
+            features = x.reshape(batch_size, n_times, -1)
+            return {"features": features, "cls_token": None}
+        x = self.final_layer(x)
         # Average the per-sample logits over time.
         return x.reshape(batch_size, n_times, self.n_outputs).mean(dim=1)
 
 
 class _NodeBias(LazyModuleMixin, nn.Module):
-    """One bias per node per filter (EEG-DL ``b2relu``), sized at first call."""
+    """One bias per node per filter (EEG-DL ``b2relu``), sized at first call
+    unless ``n_nodes`` is given."""
 
-    def __init__(self):
+    def __init__(self, n_nodes: int | None, n_features: int):
         super().__init__()
-        self.bias = nn.UninitializedParameter()
+        self.bias = (
+            nn.UninitializedParameter()
+            if n_nodes is None
+            else nn.Parameter(torch.full((1, n_nodes, n_features), 0.1))
+        )
 
     def initialize_parameters(self, x):
         if self.has_uninitialized_params():

@@ -28,6 +28,20 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Every non-tokenizer model accepts ``model(x, return_features=True)`` and returns
+  a dictionary with ``"features"``, a mean-pooled 2-D ``"embedding"`` of shape
+  ``(batch, dim)``, and ``"cls_token"``; :class:`~braindecode.models.CBraMod`,
+  :class:`~braindecode.models.CSBrain`, and :class:`~braindecode.models.GCNsNet`
+  also build their classification heads at construction when input shapes are known
+  (by `Bruno Aristimunha`_).
+- Models built with ``n_outputs=None`` have no head (``final_layer`` is
+  ``nn.Identity``) and return features only; ``model.reset_head(n_outputs)``
+  attaches one. ``reset_head`` works on every model with a head: by default it
+  replaces the last linear or convolutional layer of ``final_layer``
+  (by `Bruno Aristimunha`_).
+- Add :func:`braindecode.training.info_nce`, the InfoNCE (NT-Xent) contrastive
+  loss, and the example :ref:`contrastive-pretraining-eeg`, which pretrains a
+  headless model and then probes and fine-tunes it (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.CareSleepNet`,
   :class:`~braindecode.models.EEGInceptionMI`, :class:`~braindecode.models.FBCNet`,
   :class:`~braindecode.models.FBMSNet`, :class:`~braindecode.models.IFNet`,

@@ -2,7 +2,6 @@
 #
 # License: BSD (3-clause)
 import warnings
-from typing import Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -302,9 +301,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             raise RuntimeError("activation_checkpointing requires eager execution")
         return super().compile(*args, **kwargs)
 
-    def forward(
-        self, x: Tensor, return_features: bool = False
-    ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
+    def forward(self, x: Tensor, return_features: bool = False):
         if self.activation_checkpointing:
             if torch.jit.is_scripting():
                 raise RuntimeError("activation_checkpointing requires eager execution")
@@ -316,12 +313,13 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         else:
             feature = self.transformer(x)
 
-        if return_features:
-            out: Dict[str, Optional[Tensor]] = {
-                "features": feature,
+        if not torch.jit.is_scripting() and return_features:
+            pooled = self.fc(feature)
+            return {
+                "features": pooled,
                 "cls_token": None,
+                "tokens": feature,
             }
-            return out
 
         if self.return_features:
             return feature
