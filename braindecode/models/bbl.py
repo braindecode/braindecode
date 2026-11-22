@@ -24,6 +24,14 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-danger:`Foundation Model` :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
+    .. figure:: ../_static/model/bbl_arch.png
+       :align: center
+       :alt: BBL architecture
+       :width: 1000px
+
+       Architecture overview with the dataset-conditional layer, the cortex encoder
+       and the pre-training and fine-tuning heads, reproduced from [bbl]_ (CC BY 4.0).
+
     .. versionadded:: 2.1
 
     BBL is the MEG encoder of *The Brain's Bitter Lesson*, a self-supervised

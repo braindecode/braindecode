@@ -26,6 +26,15 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/dance_arch.png
+       :align: center
+       :alt: DANCE architecture
+       :width: 1000px
+
+       DANCE pipeline (CNN, Perceiver and event decoder, A) and its event- and
+       sample-based scoring (B), reproduced from [dance]_ (MIT, figure file of the
+       reference repository).
+
     DANCE frames EEG decoding as event *set prediction*: a long, unaligned
     window is mapped to a set of events ``(t_start, t_end, class)`` with
     normalized ``[0, 1]`` spans -- DETR [detr2020]_ for 1-D EEG.

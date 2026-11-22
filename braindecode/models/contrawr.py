@@ -14,6 +14,14 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
     :bdg-success:`Convolution`
 
+    .. figure:: ../_static/model/contrawr_arch.png
+       :align: center
+       :alt: ContraWR architecture
+       :width: 1000px
+
+       STFT convolutional encoder network of ContraWR (Figure 2 of the paper),
+       reproduced from [Yang2021]_ (CC BY 4.0).
+
     This model is a convolutional neural network that uses a spectral
     representation with a series of convolutional layers and residual blocks.
     The model is designed to learn a representation of the EEG signal that can

@@ -23,6 +23,15 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
+    .. figure:: ../_static/model/samba_arch.png
+       :align: center
+       :alt: SAMBA architecture
+       :width: 1000px
+
+       SAMBA pre-training with the coordinate-driven spatial embedding, the
+       multi-head differential Mamba and the encoder-mediator-decoder, reproduced
+       from [samba]_ (CC BY 4.0).
+
     .. versionadded:: 2.1
 
     .. rubric:: Architecture Overview
