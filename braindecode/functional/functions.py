@@ -616,7 +616,7 @@ def wavelet_decomposition(
 def sinusoidal_positional_encoding(
     n_positions: int,
     dim: int,
-    device: torch.device | None = None,
+    device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float32,
     base: float = 10000.0,
 ) -> torch.Tensor:

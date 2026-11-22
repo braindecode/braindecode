@@ -5210,10 +5210,11 @@ def test_seizure_transformer_predicts_every_input_sample(n_times, input_times):
     assert out.shape == (2, 2, input_times)
 
 
-def test_seizure_transformer_rejects_inputs_longer_than_n_times():
+def test_seizure_transformer_accepts_inputs_longer_than_n_times():
     model = _small_seizure_transformer(256)
-    with pytest.raises(ValueError, match="built for n_times=256"):
-        model(torch.randn(1, 4, 512))
+    with torch.no_grad():
+        out = model(torch.randn(1, 4, 512))
+    assert out.shape == (1, 2, 512)
 
 
 def test_seizure_transformer_rejects_invalid_construction():

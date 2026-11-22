@@ -179,7 +179,7 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
        picking. Nature Communications, 11, 3952.
     """
 
-    _time_axis = "fixed"  # fixed: n_times reshape/buffer
+    _time_axis = "dense"
     _channel_axis = "fixed"  # fixed: encoder.0.conv.weight
 
     def __init__(
@@ -282,10 +282,6 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
         )
         self._min_n_times = 1
 
-    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        x = self._first_input(args, kwargs)
-        return x is not None and x.shape[-1] <= self.max_n_times
-
     def reset_head(self, n_outputs: int) -> None:
         """Replace the output convolution for a new number of outputs."""
         self._set_n_outputs(n_outputs)
@@ -294,6 +290,11 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
             old_head.in_channels, n_outputs, old_head.kernel_size[0], padding="same"
         )
         self.final_layer = head.to(old_head.weight)
+
+    def _positional_encoding(self, steps: torch.Tensor) -> torch.Tensor:
+        if steps.shape[1] <= self.positional_encoding.shape[0]:
+            return self.positional_encoding[: steps.shape[1]]
+        return sinusoidal_positional_encoding(steps.shape[1], steps.shape[2]).to(steps)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -318,7 +319,7 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
 
         features = self.res_blocks(x)
         steps = self.to_steps(features)
-        steps = steps + self.positional_encoding[: steps.shape[1]]
+        steps = steps + self._positional_encoding(steps)
         steps = self.transformer(self.positional_dropout(steps))
         x = self.to_features(steps) + features
 
