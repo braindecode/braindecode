@@ -1,0 +1,67 @@
+name: summary-csv
+# Regenerates braindecode/models/summary.csv on pull requests that touch models.
+# The local pre-commit hook does the same, but pre-commit.ci skips it (torch is heavy).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - "braindecode/models/**"
+
+permissions:
+  contents: write
+
+jobs:
+  summary-csv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      # Same-repository PRs: check out the branch itself so the fix can be pushed.
+      # Forks: check out the default merge ref and only report the diff.
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SAME_REPO == 'true' && github.event.pull_request.head.ref || '' }}
+          filter: blob:none
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install Braindecode from Current Checkout
+        env:
+          UV_TORCH_BACKEND: cpu
+        run: uv pip install --system -e .
+
+      - name: Regenerate summary.csv
+        run: python -m braindecode.models._summary
+
+      - name: Commit summary.csv or fail with the diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- braindecode/models/summary.csv; then
+            echo "summary.csv is up to date."
+            exit 0
+          fi
+          git diff -- braindecode/models/summary.csv
+          if [[ "$SAME_REPO" != "true" ]]; then
+            echo "::error::braindecode/models/summary.csv is stale. Run 'python -m braindecode.models._summary' and commit the result."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add braindecode/models/summary.csv
+          git commit -m "chore: regenerate summary.csv"
+          git push
