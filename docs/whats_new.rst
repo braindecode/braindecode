@@ -34,6 +34,11 @@ Enhancements
   :class:`~braindecode.models.CSBrain`, and :class:`~braindecode.models.GCNsNet`
   also build their classification heads at construction when input shapes are known
   (by `Bruno Aristimunha`_).
+- Models built with ``n_outputs=None`` have no head (``final_layer`` is
+  ``nn.Identity``) and return features only; ``model.reset_head(n_outputs)``
+  attaches one. ``reset_head`` works on every model with a head: by default it
+  replaces the last linear or convolutional layer of ``final_layer``
+  (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.CareSleepNet`,
   :class:`~braindecode.models.EEGInceptionMI`, :class:`~braindecode.models.FBCNet`,
   :class:`~braindecode.models.FBMSNet`, :class:`~braindecode.models.IFNet`,

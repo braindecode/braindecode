@@ -496,6 +496,15 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
         return self.out_fun(sw_concat_agg)
 
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        self.final_layer = nn.ModuleList(
+            MaxNormLinear(
+                layer.in_features, n_outputs, max_norm_val=self.max_norm_const
+            )
+            for layer in self.final_layer
+        )
+
     def source_optimizer_param_groups(
         self,
         conv_weight_decay: float = 0.009,

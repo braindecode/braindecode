@@ -36,6 +36,7 @@ from braindecode.models.util import (
     models_mandatory_parameters,
 )
 from test.unit_tests.models._fixtures import (
+    _TOKENIZERS,
     PARAMS,
     _build_case,
     _materialize,
@@ -770,3 +771,52 @@ def test_no_lazy_weights_once_the_shape_is_known(
         if isinstance(p, nn.UninitializedParameter)
     ]
     assert lazy == []
+
+
+# A backbone without a head: its classifiers are separate classes.
+_NO_HEAD = {"SignalJEPA"}
+
+
+@PARAMS
+def test_reset_head_on_every_model(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    if model_name in _NO_HEAD:
+        assert not model._can_reset_head()
+        with pytest.raises(ValueError, match="override reset_head"):
+            model.reset_head(3)
+        return
+    n = (model._signal_param("n_outputs") or 2) + 3
+    model.reset_head(n)
+    with torch.no_grad():
+        out = next(_tensor_leaves(model(x)))
+    assert n in out.shape[1:]
+    assert model.get_config()["n_outputs"] == n
+    rebuilt = type(model).from_config(model.get_config()).eval()
+    _materialize(rebuilt, x)
+    with torch.no_grad():
+        assert next(_tensor_leaves(rebuilt(x))).shape == out.shape
+
+
+@PARAMS
+def test_headless_build_and_reset_head(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params, headless=True)
+    _materialize(model, x, return_features=True)
+    assert list(model.final_layer.parameters()) == []
+    with torch.no_grad():
+        feats = model(x, return_features=True)
+    assert feats["embedding"].ndim == 2 and feats["embedding"].shape[0] == x.shape[0]
+    with pytest.raises(ValueError, match="n_outputs not specified"):
+        model.n_outputs
+    if model_name in _NO_HEAD:
+        return
+    with pytest.raises(ValueError, match="headless"):
+        model(x)
+    model.reset_head(4)
+    with torch.no_grad():
+        assert 4 in next(_tensor_leaves(model(x))).shape[1:]
+    assert model.get_config()["n_outputs"] == 4

@@ -303,6 +303,13 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
         last_step = decoded[:, :, -1:]  # (batch, d_fused, 1)
         return self.final_layer(last_step)  # (batch, n_outputs)
 
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        head = self.final_layer
+        self.final_layer = _ClassificationHead(
+            head.conv.in_channels, head.n_groups, n_outputs, self.classifier_max_norm
+        )
+
 
 # ----------------------------------------------------------------------------- #
 def _build_rotary_cache(

@@ -208,7 +208,8 @@ def track_model_init_kwargs(cls) -> None:
                 captured_kwargs[name] = value
         self._braindecode_explicit_init_keys = explicit_keys
         self._braindecode_init_kwargs = captured_kwargs
-        return init(self, *args, **kwargs)
+        init(self, *args, **kwargs)
+        self._drop_headless_head()
 
     setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
     cls.__init__ = wrapped

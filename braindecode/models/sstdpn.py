@@ -364,6 +364,13 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
         return logits
 
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        shape = (n_outputs, self.proto_sep.shape[1])
+        self.proto_sep = nn.Parameter(self.proto_sep.new_empty(shape))
+        self.proto_cpt = nn.Parameter(self.proto_cpt.new_empty(shape))
+        self._reset_parameters()
+
     def _compute_feature_dim(self) -> int:
         """Compute encoder feature dimensionality without a forward pass."""
         if not self.mvp_kernel_sizes:

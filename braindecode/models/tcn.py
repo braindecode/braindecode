@@ -108,6 +108,11 @@ class BDTCN(EEGModuleMixin, nn.Module):
         x = self.final_layer(x)
         return x
 
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        head = self.base_tcn.final_layer
+        head.fc = nn.Linear(head.fc.in_features, n_outputs)
+
 
 class TCN(nn.Module):
     r"""Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
