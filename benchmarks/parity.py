@@ -10,6 +10,7 @@ Run from the repository root::
 from __future__ import annotations
 
 import argparse
+import gc
 import math
 import sys
 from pathlib import Path
@@ -52,6 +53,8 @@ def record(out_dir: Path, names: list[str] | None = None) -> list[str]:
             "out": out,
         }
         torch.save(payload, out_dir / f"{name}.pt")
+        del model, x, state_dict, out, payload
+        gc.collect()
     return selected
 
 
@@ -106,7 +109,9 @@ def check(
     """Compare current model state keys and outputs against recorded files."""
     out_dir = Path(out_dir)
     if names is None:
-        selected = [path.stem for path in sorted(out_dir.glob("*.pt"))]
+        selected = [
+            path.stem for path in sorted(out_dir.glob("*.pt")) if path.stem in _CASES
+        ]
         if not selected:
             raise FileNotFoundError(f"No recorded .pt files found in {out_dir}")
     else:
@@ -123,11 +128,15 @@ def check(
         _materialize(model, x)
         if list(model.state_dict()) != saved["keys"]:
             results[name] = "keys"
+            del model, saved, x
+            gc.collect()
             continue
         model.load_state_dict(saved["state"], strict=True)
         with torch.no_grad():
             got_leaves = list(_tensor_leaves(model(x)))
         results[name] = _compare_leaves(got_leaves, saved["out"], atol=atol, rtol=rtol)
+        del model, saved, x, got_leaves
+        gc.collect()
     return results
 
 

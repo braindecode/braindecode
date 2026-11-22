@@ -262,6 +262,7 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
             merger=merger,
         )
         # Same padding preserves T, so one first-block kernel is the minimum.
+        self._conv_kernel_size = conv_kernel_size
         self._min_n_times = conv_kernel_size
         self.perceiver = Perceiver(
             input_dim=embed_dim,
@@ -297,10 +298,10 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"expected (batch, {self.n_chans}, T) input; got {list(x.shape)}."
             )
-        if x.shape[-1] < self._min_n_times:
+        if x.shape[-1] < self._conv_kernel_size:
             raise ValueError(
                 f"n_times={x.shape[-1]} is shorter than the minimum input "
-                f"length ({self._min_n_times} samples = one conv kernel)."
+                f"length ({self._conv_kernel_size} samples = one conv kernel)."
             )
         x = self.input_drop(x)
         if self.conv.merger is not None:
