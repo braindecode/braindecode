@@ -117,7 +117,8 @@ DOCS_CONTRACT_TARGETS = frozenset(
         "docs/models/models_table.rst",
         "docs/index.rst",
         "docs/api.rst",
-        "docs/user_guide/channel_strategies.rst",
+        "docs/models/channel_strategies.rst",
+        "docs/sphinxext/html_redirects.py",
     }
 )
 
