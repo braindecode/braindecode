@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 import pytest
 import torch
+from torch import nn
 
 import braindecode.models.base as base_mod
 from braindecode.datasets import pad_channels_collate
@@ -36,6 +37,7 @@ from braindecode.models.util import (
     models_dict,
     models_mandatory_parameters,
 )
+from braindecode.modules import Ensure4d
 from braindecode.modules.channels import STRATEGIES, ChannelLayer
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
@@ -985,6 +987,40 @@ def test_lazy_length_is_recorded_on_the_length_grid():
         model(torch.randn(2, 4, 850))  # weights are built from 800
         assert model.n_times == 800
         model(torch.randn(2, 4, 800))
+
+
+class _Lazy4d(base_mod.EEGModuleMixin, nn.Module):
+    """Lazy head, fixed axes, (batch, n_chans, n_times, 1) input."""
+
+    _time_axis = "fixed"
+    _channel_axis = "fixed"
+
+    def __init__(self):
+        super().__init__(n_outputs=2)
+        self.ensure4d = Ensure4d()
+        self.final_layer = nn.LazyLinear(2)
+
+    def forward(self, x):
+        return self.final_layer(self.ensure4d(x).flatten(1))
+
+
+class _Lazy4dChannelsOnAxis2(_Lazy4d):
+    """The (batch, 1, n_chans, n_times) layout of SleepStagerChambon2018."""
+
+    def _input_chans_and_times(self, x):
+        return x.shape[2], x.shape[3], True
+
+
+@pytest.mark.parametrize(
+    "model_cls, shape",
+    [(_Lazy4d, (2, 3, 50, 1)), (_Lazy4dChannelsOnAxis2, (2, 1, 3, 50))],
+)
+def test_lazy_build_records_the_axes_the_shape_check_reads(model_cls, shape):
+    model = model_cls().eval()
+    with torch.no_grad():
+        model(torch.randn(*shape))
+        assert (model.n_chans, model.n_times) == (3, 50)
+        model(torch.randn(*shape))
 
 
 def test_adapt_input_refuses_intracranial_models():
