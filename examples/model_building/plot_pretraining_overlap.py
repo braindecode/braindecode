@@ -58,10 +58,9 @@ model.save_pretrained(
 #
 # ``from_pretrained`` reads the card next to the weights (in the checkpoint folder,
 # or in the Hugging Face cache with the same ``revision`` and cache options) and
-# sets ``card_data``. It makes no network request for the card: for a Hub
-# checkpoint, run ``huggingface_hub.snapshot_download`` first so ``README.md`` is
-# cached. The card is informational: if it is not found, the weights still load and
-# ``card_data`` is ``None``.
+# sets ``card_data``. For a Hub checkpoint it downloads the card with the weights
+# (not with ``local_files_only`` or ``HF_HUB_OFFLINE``). The card is informational:
+# if there is none, the weights still load and ``card_data`` is ``None``.
 
 restored = EEGNet.from_pretrained(tmp_dir)
 print(restored.card_data.datasets)

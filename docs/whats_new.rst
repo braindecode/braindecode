@@ -828,9 +828,9 @@ Code health
 Bugs
 ====
 
-- :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` no longer requests the model card from the Hub, so a
-  network error cannot block loading the weights; ``model.card_data`` is ``None`` for a Hub checkpoint unless its
-  ``README.md`` is already cached, e.g. by ``huggingface_hub.snapshot_download`` (:gh:`1804` by `Bruno Aristimunha`_).
+- :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` downloads the model card (``README.md``) before the weights,
+  so ``model.card_data`` is set for Hub checkpoints again; with ``local_files_only`` or ``HF_HUB_OFFLINE`` it reads only
+  the cache, with no network request (:gh:`1804`, :gh:`1807` by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
