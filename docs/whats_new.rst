@@ -254,6 +254,12 @@ API and behavior changes
 - :class:`braindecode.models.EEGInceptionMI` no longer exposes an ``ave_pooling`` module
   (inlined as ``F.avg_pool2d``); its outputs and state dict are unchanged
   (by `Bruno Aristimunha`_).
+- Whole models saved with 2.0 (``torch.save(model)``) no longer load when they hold private
+  blocks that moved or were replaced since 2.0 — :class:`braindecode.models.BrainModule`
+  (its ``_GLU`` is now :class:`torch.nn.GLU`) and the BrainOmni spatial-temporal/RoPE blocks
+  (now in :mod:`braindecode.modules`) raise ``AttributeError`` on unpickling; rebuild the
+  model and load its weights (``load_state_dict`` and ``from_pretrained`` are unchanged),
+  or save with ``save_pretrained`` (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly. A LUNA saved with 2.0 lacks the weights
