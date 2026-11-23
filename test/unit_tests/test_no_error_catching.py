@@ -13,6 +13,8 @@ _ALLOWED_EXCEPT = {
     ("braindecode/models/config.py", "ImportError"),
     ("braindecode/functional/_lfilter.py", "ImportError"),
     ("braindecode/models/base.py", "ImportError"),
+    # The model card is metadata only: a broken YAML header must not block the weights.
+    ("braindecode/models/base.py", "yaml.YAMLError"),
     ("braindecode/models/base.py", "NotImplementedError"),  # removed by Task 9
 }
 

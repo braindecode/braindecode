@@ -1777,6 +1777,27 @@ def test_reve_fourier_emb_4d_computes_in_float32():
     assert rel_error(out) < 0.01 < 0.02 < rel_error(module._embed(bf16))
 
 
+def test_reve_drop_channel_index_follows_device_without_saving_state():
+    chs = [{"ch_name": "Cz"}, {"ch_name": "NOT_A_CH"}, {"ch_name": "F3"}]
+    with pytest.warns(UserWarning, match="NOT_A_CH"):
+        model = REVE(
+            n_outputs=2,
+            chs_info=chs,
+            n_times=400,
+            embed_dim=32,
+            depth=1,
+            heads=2,
+            head_dim=16,
+            on_missing="drop",
+        ).eval()
+    assert "channel_index" not in model.state_dict()
+    assert model.channel_index is not None
+    model.to("meta")
+    assert model.channel_index.is_meta
+    out = model(torch.empty(1, 3, 400, device="meta"))
+    assert out.is_meta and out.shape == (1, 2)
+
+
 # ==============================================================================
 # Tests for CBraMod Model
 # ==============================================================================

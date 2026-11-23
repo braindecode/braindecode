@@ -657,6 +657,9 @@ def test_model_card_datasets_roundtrip(tmp_path):
     assert "braindecode" in restored.card_data.tags
     assert DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "b").card_data.datasets is None
 
+    (tmp_path / "a" / "README.md").write_text("---\nlicense: [mit\n---\n# card\n")
+    assert DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "a").card_data is None
+
     (tmp_path / "a" / "README.md").unlink()  # no card: still loads
     assert DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "a").card_data is None
 

@@ -365,7 +365,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self._position_bank = RevePositionBank()
         default_pos = None  # (n_kept, 3) positions of the chs_info montage
-        self.channel_index = None  # input channels kept by on_missing (None: all)
+        channel_index = None  # input channels kept by on_missing (None: all)
         self._n_pos_chans: Optional[int] = None
         if self._chs_info is not None:
             pos, kept = resolve_channel_positions(
@@ -377,8 +377,9 @@ class REVE(EEGModuleMixin, nn.Module):
             default_pos = torch.as_tensor(pos, dtype=torch.float32)
             self._n_pos_chans = len(kept)
             if len(kept) < len(self._chs_info):
-                self.channel_index = torch.as_tensor(kept)
-        # A buffer, so that .to() moves it; not saved, positions are not weights.
+                channel_index = torch.as_tensor(kept)
+        # Buffers, so that .to() moves them; not saved, as they are not weights.
+        self.register_buffer("channel_index", channel_index, persistent=False)
         self.register_buffer("default_pos", default_pos, persistent=False)
 
         self.to_patch_embedding = nn.Sequential(

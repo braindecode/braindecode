@@ -121,7 +121,12 @@ def _load_card_data(pretrained_model_name_or_path, **kwargs):
         if not isinstance(cached, str):
             return None
         card = Path(cached)
-    return huggingface_hub.ModelCard.load(card, ignore_metadata_errors=True).data
+    import yaml
+
+    try:
+        return huggingface_hub.ModelCard.load(card, ignore_metadata_errors=True).data
+    except yaml.YAMLError:  # an unparsable YAML header must not block the weights
+        return None
 
 
 def _checkpoint_source(pretrained_model_name_or_path, **kwargs):
