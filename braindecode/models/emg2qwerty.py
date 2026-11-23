@@ -241,6 +241,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
     """
 
     _time_axis = "free"
+    _dense_conversion = True
     _channel_axis = "fixed"  # fixed: model.0.batch_norm.weight
 
     mapping = {

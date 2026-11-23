@@ -126,6 +126,7 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
     """
 
     _time_axis = "dense"
+    _dense_conversion = True
     _channel_axis = "fixed"  # fixed: conv_spatial.parametrizations.weight.original
     _feature_axis = 1
 

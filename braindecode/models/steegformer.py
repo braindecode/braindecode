@@ -232,7 +232,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: channel_indices is sized by n_chans
-    _dense_conversion = False
 
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"

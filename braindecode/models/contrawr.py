@@ -54,7 +54,6 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: convs.0.conv1.weight
-    _dense_conversion = False
 
     def __init__(
         self,

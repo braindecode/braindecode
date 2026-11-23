@@ -142,7 +142,6 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: eeg_encoder.conv_time_spat.conv_spat.weight
-    _dense_conversion = False
 
     def __init__(
         self,

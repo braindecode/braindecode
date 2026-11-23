@@ -225,9 +225,8 @@ API and behavior changes
 - The 2.0 constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
   ``return_features`` of 16 models warn and keep their 2.0 output and head until 2.3 (eager only);
   call ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
-- ``to_dense_prediction_model`` also converts already dilated convolution stacks and raises
-  ``ValueError`` with the reason on models it cannot convert, including EMG2QwertyNet and NeuroPose,
-  which did not raise before (by `Bruno Aristimunha`_).
+- ``to_dense_prediction_model`` raises ``ValueError`` on every model except Deep4Net, EEGNet,
+  ShallowFBCSPNet, EMG2QwertyNet and NeuroPose, which affects code that converted any other model (by `Bruno Aristimunha`_).
 - Registered models declare their time and channel axes, and :class:`braindecode.models.EEGModuleMixin` checks channel counts
   and lengths before ``forward``: a length off by at most 1% of ``n_times`` and one step snaps to it with a one-time
   ``UserWarning`` unless ``on_non_divisible="error"``; larger mismatches raise ``ValueError`` (by `Bruno Aristimunha`_).

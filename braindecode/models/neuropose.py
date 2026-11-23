@@ -199,8 +199,8 @@ class NeuroPose(EEGModuleMixin, nn.Module):
     """
 
     _time_axis = "free"
+    _dense_conversion = True
     _channel_axis = "fixed"  # fixed: final_layer.weight is sized by n_chans
-    _dense_conversion = False
 
     def __init__(
         self,

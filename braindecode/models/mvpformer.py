@@ -228,7 +228,6 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     _time_axis = "free"
     _channel_axis = "free"
-    _dense_conversion = False
 
     def __init__(
         self,

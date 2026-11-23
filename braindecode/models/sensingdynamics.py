@@ -160,7 +160,6 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: mlp.1.weight
     _time_inputs = ("x", "x_lowpass")
-    _dense_conversion = False
 
     #: Temporal receptive field of the paper's default configuration. The
     #: value actually enforced is derived per instance in ``__init__``, so a

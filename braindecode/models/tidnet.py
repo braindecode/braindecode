@@ -70,7 +70,6 @@ class TIDNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: dscnn.spatial.channel_collapse.conv.weight
-    _dense_conversion = False
 
     def __init__(
         self,

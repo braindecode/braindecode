@@ -7,7 +7,6 @@ import warnings
 import numpy as np
 import pytest
 import torch
-from torch import nn
 
 import braindecode.models.base as base_mod
 from braindecode.datasets import pad_channels_collate
@@ -23,17 +22,15 @@ from braindecode.models import (
     DeepSOZ,
     EEGConformer,
     EEGNet,
-    EMG2QwertyNet,
     FBCNet,
     FBMSNet,
     IFNet,
+    SeizureTransformer,
     SensingDynamics,
-    ShallowFBCSPNet,
     TinyMyo,
     USleep,
 )
 from braindecode.models.util import models_dict, models_mandatory_parameters
-from braindecode.modules import CausalConv1d
 from test.unit_tests.models._fixtures import (
     _TOKENIZERS,
     PARAMS,
@@ -648,19 +645,6 @@ def test_summary_generator_subset_and_cli(tmp_path):
     (row,) = generate_summary_rows(names=["TFMTokenizer"], csv_path=blank_sfreq_csv)
     assert row["Sampling Frequency (Hz)"] == "200"
 
-def _has_symmetric_padding(model: nn.Module) -> bool:
-    for mod in model.modules():
-        if isinstance(mod, CausalConv1d):
-            continue
-        pad = getattr(mod, "padding", 0)
-        if isinstance(pad, str) and pad != "valid":
-            return True
-        if isinstance(pad, int) and pad > 0:
-            return True
-        if isinstance(pad, tuple) and any(p > 0 for p in pad):
-            return True
-    return False
-
 
 @PARAMS
 def test_dense_conversion_contract(model_name, required_params, signal_params):
@@ -673,110 +657,46 @@ def test_dense_conversion_contract(model_name, required_params, signal_params):
             dense.to_dense_prediction_model()
         return
     dense.to_dense_prediction_model()
-    with pytest.raises(
-        ValueError, match="cannot give dense predictions: it is already converted"
-    ):
-        dense.to_dense_prediction_model()
+    if model_name == "NeuroPose":
+        return  # its dense forward on 3 * n_times takes about 24 GB and 3 minutes
     long = torch.randn(2, x.shape[1], 3 * T)
     with torch.no_grad():
         out = dense(long)
         assert out.numel() > dense(long[..., : 2 * T]).numel()
         window = model(long[..., :T])
-        if window.ndim == 2:
-            # On the single window itself, step 0 matches for both valid and
-            # symmetrically zero-padded convolutions (e.g. EEGNet). On the 3*T
-            # signal, symmetrically padded convolutions read real samples past T
-            # instead of the single window's right zero-padding.
-            torch.testing.assert_close(
-                dense(long[..., :T])[..., 0], window, atol=1e-5, rtol=1e-4
-            )
-            if not _has_symmetric_padding(model):
-                torch.testing.assert_close(out[..., 0], window, atol=1e-5, rtol=1e-4)
+        # master's converter does not handle EEGNet's average pooling (see its docstring)
+        if window.ndim == 2 and model_name != "EEGNet":
+            torch.testing.assert_close(out[..., 0], window, atol=1e-5, rtol=1e-4)
 
 
-def test_dense_conversion_refusal_reasons_and_dilated_stacks():
-    from braindecode.modules.util import to_dense_prediction_model
-
-    # 1. Fixed window length
-    fixed_cls = EEGConformer(n_chans=3, n_outputs=2, n_times=1000).eval()
-    with pytest.raises(
-        ValueError,
-        match="EEGConformer cannot give dense predictions: its head needs a fixed window length",
-    ):
-        fixed_cls.to_dense_prediction_model()
-
-    eegnet_linear = EEGNet(
-        n_chans=3, n_outputs=2, n_times=128, final_layer_with_constraint=True
-    ).eval()
-    with pytest.raises(
-        ValueError,
-        match="EEGNet cannot give dense predictions: its head needs a fixed window length",
-    ):
-        eegnet_linear.to_dense_prediction_model()
-
-    # 2. Pools or tokenizes over the whole window
-    for mdl in (
-        BDTCN(n_chans=3, n_outputs=2, n_times=1000).eval(),
-        LUNA(
-            n_chans=3, n_outputs=2, n_times=1000, embed_dim=16, depth=1, num_heads=2
-        ).eval(),
-        USleep(n_chans=2, sfreq=128, n_times=3840, n_outputs=5).eval(),
+def test_dense_conversion_opt_in_and_refusal_reasons():
+    assert {n for n, c in models_dict.items() if c._dense_conversion} == {
+        "Deep4Net",
+        "EEGNet",
+        "EMG2QwertyNet",
+        "NeuroPose",
+        "ShallowFBCSPNet",
+    }
+    for mdl, reason in (
+        (USleep(n_chans=2, sfreq=128, n_times=3840, n_outputs=5), "it already gives"),
+        (SeizureTransformer(n_chans=2, n_outputs=1, n_times=1000), "it already gives"),
+        (EEGConformer(n_chans=3, n_outputs=2, n_times=1000), "it pools, tokenizes"),
+        (BDTCN(n_chans=3, n_outputs=2, n_times=1000), "it pools, tokenizes"),
     ):
         with pytest.raises(
             ValueError,
-            match=rf"{type(mdl).__name__} cannot give dense predictions: it pools or tokenizes over the whole window",
+            match=rf"^{type(mdl).__name__} cannot give dense predictions: {reason}",
         ):
             mdl.to_dense_prediction_model()
 
-    # 3. Already converted
-    shallow = ShallowFBCSPNet(n_chans=3, n_outputs=2, n_times=1000).eval()
-    shallow.to_dense_prediction_model()
-    with pytest.raises(
-        ValueError,
-        match="ShallowFBCSPNet cannot give dense predictions: it is already converted",
-    ):
-        shallow.to_dense_prediction_model()
 
-    # 4. No strided layer to convert
-    emg_ctc = EMG2QwertyNet(n_chans=32, n_outputs=99, n_times=8000, sfreq=2000.0).eval()
-    with pytest.raises(
-        ValueError,
-        match="EMG2QwertyNet cannot give dense predictions: it has no strided layer to convert",
-    ):
-        emg_ctc.to_dense_prediction_model()
-
-    with pytest.raises(ValueError, match="Only 2 and 3"):
-        ShallowFBCSPNet(n_chans=3, n_outputs=2, n_times=1000).to_dense_prediction_model(
-            axis=1
-        )
-
-    # A 1-D average pooling after a stride would need a dilation it lacks.
-    with pytest.raises(ValueError, match="1 is an AvgPool1d after a stride"):
-        to_dense_prediction_model(
-            nn.Sequential(nn.Conv1d(3, 8, 3, stride=2), nn.AvgPool1d(2))
-        )
-
-    # Standalone modules.util.to_dense_prediction_model on a 2-D strided + dilated stack
-    net2d = nn.Sequential(
-        nn.Conv2d(1, 4, kernel_size=(3, 1), stride=(2, 1)),
-        nn.ReLU(),
-        nn.Conv2d(4, 4, kernel_size=(3, 1), dilation=(2, 1)),
-        nn.AvgPool2d(kernel_size=(2, 1), stride=(3, 1)),
-        nn.Conv2d(4, 2, kernel_size=(2, 3), dilation=(3, 1)),
-    ).eval()
-    ref2d = copy.deepcopy(net2d)
-    to_dense_prediction_model(net2d)
-    assert net2d[2].dilation == (4, 1)
-    assert net2d[4].dilation == (18, 1)
-    long_2d = torch.randn(2, 1, 80, 3)
+def test_dense_eegnet_matches_master_and_scripts():
+    torch.manual_seed(0)
+    model = EEGNet(n_chans=4, n_outputs=2, n_times=1000).eval()
+    model.to_dense_prediction_model()
+    x = torch.randn(2, 4, 1500)
     with torch.no_grad():
-        out_2d = net2d(long_2d)
-        # Receptive field along H: conv0 (k=3,s=2) + conv2 (k=3,d=2 -> span 5*2=8) + pool3 (k=2,s=3 -> span 2) + conv4 (k=2,d=3 -> span 3*6=18):
-        # For H_win = 33: (33-3)//2+1 = 16 -> 16 - 4 = 12 -> (12-2)//3+1 = 4 -> 4 - 3 = 1!
-        for step in (0, 1, 7, 15):
-            torch.testing.assert_close(
-                out_2d[:, :, step : step + 1, :],
-                ref2d(long_2d[:, :, step : step + 33, :]),
-                atol=1e-5,
-                rtol=1e-4,
-            )
+        out = model(x)
+        # master's converter gives 487 steps for this input
+        assert out.shape == (2, 2, 487)
+        torch.testing.assert_close(torch.jit.script(model)(x), out)

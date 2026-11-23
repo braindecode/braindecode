@@ -44,10 +44,6 @@ from braindecode.models.util import (
 from braindecode.modules.channels import ChannelLayer
 from braindecode.modules.layers import Ensure4d
 from braindecode.modules.parametrization import make_parametrizations_scriptable
-from braindecode.modules.util import _has_strided_layer
-from braindecode.modules.util import (
-    to_dense_prediction_model as _to_dense_prediction_model,
-)
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -572,7 +568,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "_materialized_n_chans",
         "_materialized_n_times",
         "_dense_conversion",
-        "_is_dense_converted",
     ]
     #: Rich MNE channel dictionaries are intentionally unavailable in scripted
     #: forwards; they remain unchanged on eager models and in saved configs.
@@ -748,7 +743,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self._has_ensure4d: bool | None = None
         self._materialized_n_chans: int | None = None
         self._materialized_n_times: int | None = None
-        self._is_dense_converted: bool = False
         self._on_non_divisible_explicit: bool = "on_non_divisible" in getattr(
             self, "_braindecode_explicit_init_keys", ()
         )
@@ -1603,7 +1597,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _time_axis: str | None = None
     _channel_axis: str | None = None
     _time_inputs: ClassVar[tuple[str, ...]] = ("x",)
-    _dense_conversion: ClassVar[bool] = True
+    #: Whether :meth:`to_dense_prediction_model` can convert this model.
+    _dense_conversion: ClassVar[bool] = False
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         own = super().state_dict()
@@ -1647,46 +1642,62 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ) - from_checkpoint
         return result
 
-    def _dense_refusal_reason(self) -> str | None:
-        """Why this model cannot give dense predictions, or None if it can."""
-        if self._time_axis == "fixed":
-            return "its head needs a fixed window length"
-        if not self._dense_conversion:
-            return "it pools or tokenizes over the whole window"
-        if getattr(self, "_is_dense_converted", False):  # absent on v2.0 pickles
-            return "it is already converted"
-        if self._time_axis != "dense" and not _has_strided_layer(self):
-            return "it has no strided layer to convert"
-        return None
-
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
-        """Transform a sequential convolutional model with strides to dense predictions.
+        """
+        Transform a sequential model with strides to a model that outputs.
 
-        Replaces strides along ``axis`` with ``1`` and multiplies downstream
-        dilations by the cumulative stride removed before each layer. Modifies
-        the model in place.
+        dense predictions by removing the strides and instead inserting dilations.
+        Modifies model in-place.
 
         Parameters
         ----------
-        axis : int or tuple of int, default=(2, 3)
-            Intermediate output axes to transform; can be ``2``, ``3``, or
-            ``(2, 3)``.
+        axis : int or (int,int)
+            Axis to transform (in terms of intermediate output axes)
+            can either be 2, 3, or (2,3).
+
+        Notes
+        -----
+        Does not yet work correctly for average pooling.
+        Prior to version 0.1.7, there had been a bug that could move strides
+        backwards one layer.
 
         Raises
         ------
         ValueError
-            If the model needs a fixed window length, pools or tokenizes over
-            the whole window, is already converted, or has no strided layer to
-            convert.
+            If the model does not support dense conversion.
         """
-        reason = self._dense_refusal_reason()
-        if reason is not None:
-            raise ValueError(
-                f"{type(self).__name__} cannot give dense predictions: {reason}."
+        if not self._dense_conversion:
+            reason = (
+                "it already gives dense predictions"
+                if self._time_axis == "dense"
+                else "it pools, tokenizes or fixes its window"
             )
-        _to_dense_prediction_model(self, axis=axis)
-        self._is_dense_converted = True
-        self._n_times_step = 1
+            raise ValueError(
+                f"{type(self).__name__} cannot give dense predictions: {reason}"
+            )
+        if not hasattr(axis, "__iter__"):
+            axis = (axis,)
+        assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]
+        axis = np.array(axis) - 2
+        stride_so_far = np.array([1, 1])
+        for module in self.modules():  # type: ignore
+            if hasattr(module, "dilation"):
+                assert module.dilation == 1 or (module.dilation == (1, 1)), (
+                    "Dilation should equal 1 before conversion, maybe the model is "
+                    "already converted?"
+                )
+                new_dilation = [1, 1]
+                for ax in axis:  # type: ignore[union-attr]
+                    new_dilation[ax] = int(stride_so_far[ax])
+                module.dilation = tuple(new_dilation)
+            if hasattr(module, "stride"):
+                if not hasattr(module.stride, "__len__"):
+                    module.stride = (module.stride, module.stride)
+                stride_so_far *= np.array(module.stride)
+                new_stride = list(module.stride)
+                for ax in axis:  # type: ignore[union-attr]
+                    new_stride[ax] = 1
+                module.stride = tuple(new_stride)
 
     def get_torchinfo_statistics(
         self,

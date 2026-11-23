@@ -103,7 +103,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
-    _dense_conversion = False
 
     def __init__(
         self,

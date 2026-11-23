@@ -77,6 +77,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
     """
 
     _time_axis = "dense"
+    _dense_conversion = True
     _channel_axis = "fixed"  # fixed: conv_time_spat.conv_spat.weight
     _feature_axis = 1
 
