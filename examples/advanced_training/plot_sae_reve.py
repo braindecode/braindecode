@@ -106,7 +106,7 @@ from braindecode.util import set_random_seeds
 ######################################################################
 # The figures use the Okabe-Ito colors: the result in blue, the native model
 # in ink, controls in grey, and the pretrained blocks that finish an edited
-# forward pass (and the other classes' feature sets) in vermillion.
+# forward pass (and the other classes' feature sets) in vermilion.
 
 INK, ACCENT, SUBTLE, RED = "#14181F", "#0072B2", "#7F7F7F", "#D55E00"
 MUTED = "#B0B0B0"
@@ -310,7 +310,7 @@ print(f"REVE-base: {n_params / 1e6:.1f} M parameters, {n_blocks} blocks")
 # output is cached. The SAE reads and edits the stream at block 18
 # (blue), in one of two ways: the first test replaces the tokens by their
 # reconstruction, and the second takes away only the decoded contribution of
-# the removed features. ``run_blocks`` then applies only the vermillion blocks
+# the removed features. ``run_blocks`` then applies only the vermilion blocks
 # again, once per edit. Panel B shows why a hook cannot do this: what a
 # submodule returns is the update, and the stream itself only exists in the
 # loop. After training the head, we check that ``run_blocks`` reproduces
@@ -815,9 +815,9 @@ print(
 )
 
 ######################################################################
-# When we ran this example, the reconstruction kept 84% of the test
-# decisions (72% balanced accuracy, against 76% for the native model),
-# although its FVU was 0.380. Both controls fell to chance and predicted a
+# When we ran this example, the reconstruction kept 85% of the test
+# decisions (73% balanced accuracy, against 76% for the native model),
+# although its FVU was 0.379. Both controls fell to chance and predicted a
 # single class, so their 34% agreement is only the share of that class among
 # the native predictions. The dictionary thus passes the first test: what
 # blocks 19–22 and the head need is largely preserved by the reconstruction.
@@ -1057,7 +1057,7 @@ for row in effects:
 # Panel A shows every value behind the table, one row per class, on
 # the trials of that class: the drop caused by the class's own features
 # (blue), by each of the 20 random feature sets (grey dots) and by each of
-# the other classes' sets (open vermillion markers). Its right column gives the
+# the other classes' sets (open vermilion markers). Its right column gives the
 # specificity contrast, the drop caused by the own set minus the largest drop
 # caused by any control: it is positive only when no control comes close, and
 # a control that exceeds the own set is named. Panel B shows every
@@ -1194,10 +1194,10 @@ print(
 ######################################################################
 # When we ran this example, removing the 32 features selected for left hand,
 # right hand or tongue lowered the probability of that class on its own test
-# trials by 0.11–0.17. That exceeded each of the 20 random sets (at most
-# 0.011) and every other class's selected set. For feet the drop (0.068) was
+# trials by 0.12–0.18. That exceeded each of the 20 random sets (at most
+# 0.020) and every other class's selected set. For feet the drop (0.050) was
 # smaller, though still above every random set and above the second-largest
-# effect from the tongue set (0.031); feet and tongue are also the two classes
+# effect from the tongue set (0.023); feet and tongue are also the two classes
 # most often confused by the native model (see the confusion matrices above),
 # which is consistent with, but does not show, a representation that the two
 # classes share. Overall, these results suggest that the model relies on the
@@ -1210,7 +1210,7 @@ print(
 # Our results show that a sparse dictionary fitted to a frozen pretrained EEG
 # transformer can expose features that its classifier actually uses on this
 # subject and seed. First, the dictionary preserves what the model computes:
-# substituting its reconstruction at block 18 kept 84% of the test decisions,
+# substituting its reconstruction at block 18 kept 85% of the test decisions,
 # against 34% for the untrained dictionary and for mean tokens (both at chance
 # accuracy). Second, removing the 32 features selected for a class lowered the
 # probability of that class on its own test trials more than every random set
