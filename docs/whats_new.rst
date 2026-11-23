@@ -228,17 +228,38 @@ API and behavior changes
 
 - Every model's ``forward`` takes its signal as ``x`` and :class:`braindecode.models.LUNA` its
   positions as ``pos``. Calling a model with the old keywords (``X``, ``input``, ``inputs``, ``eeg``,
-  ``input_tensor``, ``channel_locations``) warns and keeps working until 2.3 (by `Bruno Aristimunha`_).
+  ``input_tensor``, ``channel_locations``) warns and keeps working until 2.3, when calling the
+  model; direct ``model.forward(...)`` calls and TorchScript-scripted models take the new
+  names only (by `Bruno Aristimunha`_).
 - The 2.0 constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
-  ``return_features`` of 16 models warn and keep their 2.0 output and head until 2.3 (eager only);
+  ``return_features`` of 16 models warn and keep their 2.0 output and head until 2.3 (eager only:
+  ``torch.jit.script`` raises for a flag-built model, which scripted in 2.0);
   call ``model(x, return_features=True)`` instead. The flags are read when the model is built:
-  setting one as an attribute afterwards, which switched the output in 2.0, no longer changes it
-  (by `Bruno Aristimunha`_).
+  setting one as an attribute afterwards, which switched the output in 2.0, no longer changes it.
+  Whole models saved with 2.0 (``torch.save(model)``) that were built with one of these flags
+  return logits when loaded now instead of their 2.0 feature output, and AttnSleep ones, built
+  without a head, raise ``AttributeError``; rebuild the model and load its weights, or save
+  with ``save_pretrained`` (by `Bruno Aristimunha`_).
 - ``to_dense_prediction_model`` raises ``ValueError`` on every model except Deep4Net, EEGNet,
   ShallowFBCSPNet, EMG2QwertyNet and NeuroPose, which affects code that converted any other model (by `Bruno Aristimunha`_).
 - Registered models declare their time and channel axes, and :class:`braindecode.models.EEGModuleMixin` checks channel counts
   and lengths before ``forward``: a length off by at most 1% of ``n_times`` and one step snaps to it with a one-time
-  ``UserWarning`` unless ``on_non_divisible="error"``; larger mismatches raise ``ValueError`` (by `Bruno Aristimunha`_).
+  ``UserWarning`` unless ``on_non_divisible="error"``; larger mismatches raise ``ValueError``. The check runs
+  when calling the model; calling ``forward`` directly keeps the 2.0 behavior, a ``RuntimeError``
+  from inside the model on mismatched shapes (by `Bruno Aristimunha`_).
+- Dicts returned for ``return_features=True`` gained keys: every native dict now also holds
+  ``"embedding"``, and those of BIOT, CBraMod, BaRISTA and MVPFormer hold ``"tokens"`` or
+  ``"logits"``; code unpacking such a dict by position or asserting its exact keys breaks
+  (by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGInceptionMI` no longer exposes an ``ave_pooling`` module
+  (inlined as ``F.avg_pool2d``); its outputs and state dict are unchanged
+  (by `Bruno Aristimunha`_).
+- Whole models saved with 2.0 (``torch.save(model)``) no longer load when they hold private
+  blocks that moved or were replaced since 2.0 — :class:`braindecode.models.BrainModule`
+  (its ``_GLU`` is now :class:`torch.nn.GLU`) and the BrainOmni spatial-temporal/RoPE blocks
+  (now in :mod:`braindecode.modules`) raise ``AttributeError`` on unpickling; rebuild the
+  model and load its weights (``load_state_dict`` and ``from_pretrained`` are unchanged),
+  or save with ``save_pretrained`` (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly. A LUNA saved with 2.0 lacks the weights
