@@ -82,11 +82,13 @@ _INITIAL_CROPPED_MODELS: frozenset[str] = frozenset(
     {"Deep4Net", "EEGNet", "EMG2QwertyNet", "NeuroPose", "ShallowFBCSPNet"}
 )
 
-# Models whose __init__ (or lazy-head materialization) executes data-dependent
-# host ops (.item(), _unique2, CPU-only tensor copies) that cannot run on meta.
+# Models whose __init__, lazy-head materialization or return_features probe
+# executes data-dependent host ops (.item(), _unique2, CPU-only tensor copies)
+# that cannot run on meta.
 _CPU_SUMMARY_MODELS: frozenset[str] = frozenset(
     {
         "BaRISTA",
+        "BrainOmni",
         "CORTEG",
         "DGCNN",
         "EEGPT",
@@ -94,6 +96,7 @@ _CPU_SUMMARY_MODELS: frozenset[str] = frozenset(
         "GeoNIRS",
         "Labram",
         "MAPA",
+        "MEGXL",
         "MetaNeuromotorHand",
         "NeuroRVQ",
         "NeuroRVQTokenizer",
@@ -541,15 +544,24 @@ def _output_kind(name: str) -> str:
     return "(batch, outputs)"
 
 
-def _capabilities(name: str, cls: type[EEGModuleMixin], model: Any) -> dict[str, str]:
+def _capabilities(
+    name: str, cls: type[EEGModuleMixin], model: Any, probe_shape: tuple[int, int]
+) -> dict[str, str]:
     """The capability columns of a model, read from a built instance."""
+    import torch
+
     head = name not in _TOKENIZERS
+    features = None
+    if head:  # measured: one forward with return_features=True
+        device = "cpu" if name in _CPU_SUMMARY_MODELS else "meta"  # as built
+        with warnings.catch_warnings(), torch.no_grad(), torch.device(device):
+            warnings.simplefilter("ignore")
+            features = model.eval()(torch.zeros(1, *probe_shape), return_features=True)
     flags = {
         "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
         "adapt_input": hasattr(cls, "adapt_input"),
         "reset_head": head and model._can_reset_head(),
-        # __call__ pools the final_layer input for models without a native path.
-        "return_features": head,
+        "return_features": isinstance(features, dict) and "embedding" in features,
     }
     return {col: "yes" if flag else "no" for col, flag in flags.items()}
 
@@ -635,7 +647,7 @@ def generate_summary_rows(
                 "Time axis": cls._time_axis,
                 "Channel axis": cls._channel_axis,
                 "Output": _output_kind(name),
-                **_capabilities(name, cls, model),
+                **_capabilities(name, cls, model, probe_shape),
             }
         )
     return generated
