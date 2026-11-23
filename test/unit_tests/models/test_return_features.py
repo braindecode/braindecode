@@ -237,11 +237,12 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
 
 _ALL_MODELS = dict(models_dict)
 _REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
-# Every registered model that overrides reset_head.
+# SignalJEPA has no head. GCNsNet's node biases stay lazy until its graph is
+# fitted, and safetensors cannot load into lazy parameters.
 _RESET_HEAD_CASES = [
     name
     for name in _REGISTRY
-    if _ALL_MODELS[name].reset_head is not EEGModuleMixin.reset_head
+    if name not in _TOKENIZERS and name not in ("SignalJEPA", "GCNsNet")
 ]
 
 
@@ -324,3 +325,4 @@ def test_labram_reset_to_zero_reloads_as_identity(tmp_path, via_pretrained):
     assert reloaded.n_outputs == 0
     assert isinstance(reloaded.final_layer, torch.nn.Identity)
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
+

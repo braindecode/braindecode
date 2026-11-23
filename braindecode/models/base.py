@@ -251,10 +251,11 @@ def _new_head_follows_model(reset_head):
         # Hold the old tensors until the end, so that their ids cannot be
         # reused by the new ones.
         old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
-        head = self.__dict__.pop("_head_spec", None)
-        if head is not None:  # headless build: put back its head, then resize it
-            self.final_layer = head[0]
-        out = reset_head(self, *args, **kwargs)
+        if self.__dict__.pop("_headless", False):
+            # A headless build has no head for an override to resize.
+            out = EEGModuleMixin._attach_fresh_head(self, *args, **kwargs)
+        else:
+            out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
                 tensors = [*module.parameters(), *module.buffers()]
@@ -409,9 +410,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     _feature_axis: ClassVar[int] = -1
     _native_features: ClassVar[bool] = False
-    #: Head of a model built with ``n_outputs=None``, kept off the module tree
-    #: until :meth:`reset_head` attaches it.
-    _head_spec: Optional[tuple] = None
+    #: True on a model built with ``n_outputs=None`` until :meth:`reset_head`.
+    _headless: bool = False
 
     #: Attributes that :func:`torch.jit.script` must not introspect. The
     #: signal-related properties raise :class:`ValueError` when their value was
@@ -427,7 +427,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "_channel_axis",
         "_feature_axis",
         "_native_features",
-        "_head_spec",
+        "_headless",
         "_time_inputs",
         "_min_n_times",
         "_n_times_step",
@@ -673,7 +673,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if self.__dict__.pop("_headless_build", None) and isinstance(
             getattr(self, "final_layer", None), torch.nn.Module
         ):
-            self._head_spec = (self.final_layer,)
+            self._headless = True
             self.final_layer = torch.nn.Identity()
 
     @property
@@ -808,8 +808,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         raise KeyError(f"Unknown signal parameter {name!r}.")
 
     def _call_arg(self, args: tuple, kwargs: dict, name: str, default=None) -> Any:
-        """Value of the ``forward`` argument ``name`` in this call."""
-        i = _forward_param_names(type(self)).index(name)
+        """Value of the ``forward`` argument ``name`` in this call (a keyword the
+        signature lacks, such as ``return_features`` that ``__call__`` serves,
+        is read from ``kwargs``)."""
+        names = _forward_param_names(type(self))
+        i = names.index(name) if name in names else len(args)
         return args[i] if len(args) > i else kwargs.get(name, default)
 
     def _first_input(self, args: tuple, kwargs: dict) -> torch.Tensor | None:
@@ -1042,7 +1045,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     self._materialized_n_times = x.shape[-1]
 
     def __call__(self, *args, **kwargs):
-        if self._head_spec is not None and not kwargs.get("return_features"):
+        if self._headless and not self._call_arg(
+            args, kwargs, "return_features", False
+        ):
             raise ValueError(
                 f"{type(self).__name__} was built with n_outputs=None (headless); "
                 "call model(x, return_features=True) or attach a head with "
@@ -1328,7 +1333,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         return (
             type(self).reset_head is not EEGModuleMixin.reset_head
             or self._head_linear() is not None
-            or self._head_spec is not None
+            or self._headless
         )
 
     @_new_head_follows_model
@@ -1338,8 +1343,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         This is called automatically by :meth:`from_pretrained` when the
         user passes an ``n_outputs`` that differs from the saved config, and
         attaches a head to a model built with ``n_outputs=None``. The default
-        replaces the last linear or convolutional layer of ``final_layer`` by
-        a new one with ``n_outputs`` outputs. Override in subclasses that need
+        builds the same model with ``n_outputs`` from :meth:`get_config` and
+        takes from it every module whose weights depend on ``n_outputs`` and
+        the last layer of ``final_layer``, with their weight constraints and
+        initialization; the other weights stay. Override in subclasses that need
         a model-specific head structure. Implementations keep changed
         constructor arguments in sync with ``self._update_init_kwargs``, so
         that a saved model can be loaded back. Implementations requiring
@@ -1361,36 +1368,56 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         .. versionadded:: 1.4
         """
-        old = self._head_linear()
-        if old is None:
+        if self._head_linear() is None:
             raise ValueError(
                 f"{type(self).__name__} has no linear or convolutional layer in "
                 "final_layer; override reset_head() to change n_outputs."
             )
-        bias = old.bias is not None
-        if isinstance(old, torch.nn.LazyLinear):  # not sized yet (GCNsNet)
-            new = torch.nn.LazyLinear(n_outputs, bias=bias)
-        elif isinstance(old, torch.nn.Linear):
-            new = torch.nn.Linear(old.in_features, n_outputs, bias=bias)
-        else:
-            conv = (
-                torch.nn.Conv1d if isinstance(old, torch.nn.Conv1d) else torch.nn.Conv2d
+        self._attach_fresh_head(n_outputs)
+
+    def _attach_fresh_head(self, n_outputs: int) -> None:
+        """Take from a model freshly built with ``n_outputs`` every module whose
+        weights depend on it, and the last layer of ``final_layer``, so weight
+        constraints, every head layer and their initialization follow the
+        constructor while the other weights stay."""
+        config = {**self.get_config(), "n_outputs": n_outputs}
+        for name in ("n_chans", "n_times"):  # geometry read from the first batch
+            if name in config and config[name] is None:
+                config[name] = self._signal_param(name)
+        fresh = type(self).from_config(config)
+        theirs = dict(fresh.named_modules())
+        head = fresh._head_linear()
+        own = self.state_dict()
+        changed = {n + ".weight" for n, m in theirs.items() if m is head} | {
+            key
+            for key, value in fresh.state_dict().items()
+            if key not in own
+            or isinstance(own[key], UninitializedParameter)
+            or isinstance(value, UninitializedParameter)
+            or own[key].shape != value.shape
+        }
+        for key in changed:
+            # A weight parametrization belongs to the module it constrains.
+            owner, _, attr = key.split(".parametrizations.")[0].rpartition(".")
+            if ".parametrizations." in key:
+                owner = key.split(".parametrizations.")[0]
+            if not owner:  # a tensor of the model itself (SSTDPN's prototypes)
+                setattr(self, attr, getattr(fresh, attr))
+                continue
+            mine = dict(self.named_modules())
+            parts = owner.split(".")
+            # Replace the shallowest module that is missing or of another type
+            # (a headless nn.Identity), else the owner itself.
+            path = next(
+                (
+                    ".".join(parts[:depth])
+                    for depth in range(1, len(parts) + 1)
+                    if type(mine.get(".".join(parts[:depth])))
+                    is not type(theirs[".".join(parts[:depth])])
+                ),
+                owner,
             )
-            new = conv(
-                old.in_channels,
-                n_outputs,
-                old.kernel_size,
-                stride=old.stride,
-                padding=old.padding,
-                dilation=old.dilation,
-                bias=bias,
-            )
-        name = next(n for n, m in self.final_layer.named_modules() if m is old)
-        if name:
-            parent, _, child = name.rpartition(".")
-            setattr(self.final_layer.get_submodule(parent), child, new)
-        else:
-            self.final_layer = new
+            self.set_submodule(path, theirs[path])
         self._set_n_outputs(n_outputs)
 
     mapping: Optional[Dict[str, str]] = None

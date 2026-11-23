@@ -28,7 +28,7 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
-from braindecode.models import LUNA, MAPA, GCNsNet
+from braindecode.models import LUNA, MAPA, EEGConformer, GCNsNet
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
     _summary_table,
@@ -836,3 +836,15 @@ def test_headless_build_and_reset_head(model_name, required_params, signal_param
     with torch.no_grad():
         assert 4 in next(_tensor_leaves(model(x))).shape[1:]
     assert model.get_config()["n_outputs"] == 4
+    # Every layer that depends on n_outputs follows it, as in a model built with 4.
+    built = type(model).from_config(model.get_config())
+    _materialize(built, x)
+    assert {k: v.shape for k, v in model.state_dict().items()} == {
+        k: v.shape for k, v in built.state_dict().items()
+    }
+
+
+def test_headless_model_takes_return_features_positionally():
+    model = EEGConformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    with torch.no_grad():
+        assert "features" in model(torch.randn(2, 3, 1000), True)
