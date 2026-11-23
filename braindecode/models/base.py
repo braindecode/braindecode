@@ -396,7 +396,8 @@ def _new_head_follows_model(reset_head):
         # numpy and torch integers count; 0 is left to overrides (Labram, LUNA)
         if not hasattr(n_outputs, "__index__") or operator.index(n_outputs) < 0:
             raise ValueError(
-                f"n_outputs must be a non-negative integer; got {n_outputs!r}."
+                "n_outputs must be positive (a non-negative integer for heads "
+                f"that allow 0); got {n_outputs!r}."
             )
         ref = next((p for p in self.parameters() if p.is_floating_point()), None)
         # Hold the old tensors until the end, so that their ids cannot be
