@@ -343,7 +343,28 @@ except Exception as exc:
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib.lines import Line2D
+
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+
+plt.rcdefaults()  # importing MOABB applies seaborn's "whitegrid" style globally
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "legend.frameon": False,
+    }
+)
 
 # Extract loss and accuracy values for plotting from history object
 results_columns = ["train_loss", "valid_loss", "train_accuracy", "valid_accuracy"]
@@ -352,41 +373,57 @@ df = pd.DataFrame(
     columns=results_columns,
     index=clf.history[:, "epoch"],
 )
+df[["train_accuracy", "valid_accuracy"]] *= 100  # fractions to percent
 
-# get percent of misclass for better visual comparison to loss
-df = df.assign(
-    train_misclass=100 - 100 * df.train_accuracy,
-    valid_misclass=100 - 100 * df.valid_accuracy,
+
+def label_curve_ends(ax, ends, min_gap=0.07):
+    """Write each curve's name after its last point, keeping names apart."""
+    y_min, y_max = ax.get_ylim()
+    gap = min_gap * (y_max - y_min)
+    (low_name, (low_y, _)), (high_name, (high_y, _)) = sorted(
+        ends.items(), key=lambda item: item[1][0]
+    )
+    if high_y - low_y < gap:
+        middle = (high_y + low_y) / 2
+        low_y, high_y = middle - gap / 2, middle + gap / 2
+    for name, y in [(low_name, low_y), (high_name, high_y)]:
+        ax.text(
+            df.index[-1] + 0.02 * len(df),
+            y,
+            name,
+            color=ends[name][1],
+            va="center",
+            fontweight="bold",
+        )
+
+
+fig, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(8, 3.2), sharex=True)
+
+# Four balanced classes: a random guess is right 25 % of the time
+ax_acc.axhline(25, color=GREY, ls="--", lw=0.9)
+ax_acc.text(
+    df.index[-1], 23, "Chance (25%)", color=GREY, fontsize=8.5, ha="right", va="top"
 )
+ax_acc.set_ylim(0, 100)
+ax_acc.set_yticks([0, 25, 50, 75, 100])
 
-fig, ax1 = plt.subplots(figsize=(8, 3))
-df.loc[:, ["train_loss", "valid_loss"]].plot(
-    ax=ax1, style=["-", ":"], marker="o", color="tab:blue", legend=False, fontsize=14
-)
-
-ax1.tick_params(axis="y", labelcolor="tab:blue", labelsize=14)
-ax1.set_ylabel("Loss", color="tab:blue", fontsize=14)
-
-ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-
-df.loc[:, ["train_misclass", "valid_misclass"]].plot(
-    ax=ax2, style=["-", ":"], marker="o", color="tab:red", legend=False
-)
-ax2.tick_params(axis="y", labelcolor="tab:red", labelsize=14)
-ax2.set_ylabel("Misclassification Rate [%]", color="tab:red", fontsize=14)
-ax2.set_ylim(ax2.get_ylim()[0], 85)  # make some room for legend
-ax1.set_xlabel("Epoch", fontsize=14)
-
-# where some data has already been plotted to ax
-handles = []
-handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle="-", label="Train")
-)
-handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle=":", label="Valid")
-)
-plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
-plt.tight_layout()
+for ax, metric, letter, title, ylabel in [
+    (ax_loss, "loss", "A", "Cross-entropy loss", "Loss"),
+    (ax_acc, "accuracy", "B", "Classification accuracy", "Accuracy (%)"),
+]:
+    ends = {}
+    for split, color in [("Train", GREY), ("Valid", BLUE)]:
+        values = df[f"{split.lower()}_{metric}"]
+        ax.plot(df.index, values, color=color, lw=1.8)
+        ends[split] = (values.iloc[-1], color)
+    label_curve_ends(ax, ends)
+    ax.set_title(f"{letter}  {title}", loc="left", fontweight="bold", color=INK)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel(ylabel)
+    ax.grid(axis="y", color="#EAEAEA", lw=0.7)
+    ax.set_axisbelow(True)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(4, integer=True))
+fig.tight_layout()
 
 
 ######################################################################
@@ -410,9 +447,22 @@ sorted_items = sorted(label_dict.items(), key=lambda kv: kv[1])
 labels = [k for k, _ in sorted_items]
 class_ids = [v for _, v in sorted_items]
 
+fig, ax = plt.subplots(figsize=(4.4, 3.8))
+# Each row sums to 100 %: the share of a true class given to each prediction
 ConfusionMatrixDisplay.from_predictions(
-    y_true, y_pred, labels=class_ids, display_labels=labels
+    y_true,
+    y_pred,
+    labels=class_ids,
+    display_labels=[label.replace("_", " ") for label in labels],
+    normalize="true",
+    values_format=".0%",
+    cmap="Blues",
+    colorbar=False,
+    ax=ax,
 )
+ax.set_xlabel("Predicted class")
+ax.set_ylabel("True class")
+fig.tight_layout()
 
 #############################################################
 #

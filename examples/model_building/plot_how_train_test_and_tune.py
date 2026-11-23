@@ -304,39 +304,73 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 #
 #
 import matplotlib.pyplot as plt
-import seaborn as sns
-from matplotlib.patches import Patch
 
-sns.set(font_scale=1.5)
+INK = "#14181F"
+# Okabe-Ito colors, one per subset, kept the same in the three figures
+SPLIT_COLORS = {
+    "Full dataset": "#B0B0B0",
+    "Train": "#0072B2",
+    "Valid": "#009E73",
+    "Test": "#D55E00",
+}
+
+plt.rcdefaults()  # importing MOABB applies seaborn's "whitegrid" style globally
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "axes.spines.left": False,
+        "xtick.direction": "out",
+    }
+)
+
+
+def draw_split_row(ax, row, segments, show_names=True):
+    """Draw consecutive (subset, n_windows) segments on one row, named inside."""
+    left = 0
+    for name, n_windows in segments:
+        if n_windows == 0:
+            continue
+        ax.barh(row, n_windows, left=left, height=0.6, color=SPLIT_COLORS[name])
+        if show_names:
+            ax.text(
+                left + n_windows / 2,
+                row,
+                f"{name}\n{n_windows}",
+                ha="center",
+                va="center",
+                fontsize=8.5,
+                color=INK if name == "Full dataset" else "white",
+            )
+        left += n_windows
+
+
+def style_split_axes(ax, row_labels, n_total):
+    """Name the rows, put the first row on top and label the window axis."""
+    ax.set_yticks(range(len(row_labels)), row_labels)
+    ax.tick_params(axis="y", length=0)
+    ax.invert_yaxis()
+    ax.set_xlim(0, n_total)
+    ax.set_xlabel("Number of windows")
 
 
 def plot_simple_train_test(ax, all_dataset, train_set, test_set):
     """Create a sample plot for training-testing split."""
-    bd_cmap = ["#3A6190", "#683E00", "#DDF2FF", "#2196F3"]
-
-    ax.barh("Original\ndataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
-    ax.barh("Train-Test\nsplit", len(train_set), left=0, height=0.5, color=bd_cmap[1])
-    ax.barh(
-        "Train-Test\nsplit",
-        len(test_set),
-        left=len(train_set),
-        height=0.5,
-        color=bd_cmap[2],
-    )
-
-    ax.invert_yaxis()
-    ax.set(xlabel="Number of samples.", title="Train-Test split")
-    ax.legend(
-        ["Original set", "Training set", "Testing set"],
-        loc="lower center",
-        ncols=4,
-        bbox_to_anchor=(0.5, 0.5),
-    )
-    ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
+    draw_split_row(ax, 0, [("Full dataset", len(all_dataset))])
+    draw_split_row(ax, 1, [("Train", len(train_set)), ("Test", len(test_set))])
+    style_split_axes(ax, ["Full dataset", "Train-test split"], len(all_dataset))
     return ax
 
 
-fig, ax = plt.subplots(figsize=(12, 8))
+fig, ax = plt.subplots(figsize=(7, 2.2), layout="constrained")
 plot_simple_train_test(
     ax=ax, all_dataset=windows_dataset, train_set=train_set, test_set=test_set
 )
@@ -421,40 +455,14 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 
 def plot_train_valid_test(ax, all_dataset, train_subset, val_subset, test_set):
     """Create a sample plot for training, validation, testing."""
-    bd_cmap = [
-        "#3A6190",
-        "#683E00",
-        "#2196F3",
-        "#DDF2FF",
-    ]
-
     n_train, n_val, n_test = len(train_subset), len(val_subset), len(test_set)
-    ax.barh("Original\ndataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
-    ax.barh("Train-Test-Valid\nsplit", n_train, left=0, height=0.5, color=bd_cmap[1])
-    ax.barh(
-        "Train-Test-Valid\nsplit", n_val, left=n_train, height=0.5, color=bd_cmap[2]
-    )
-    ax.barh(
-        "Train-Test-Valid\nsplit",
-        n_test,
-        left=n_train + n_val,
-        height=0.5,
-        color=bd_cmap[3],
-    )
-
-    ax.invert_yaxis()
-    ax.set(xlabel="Number of samples.", title="Train-Test-Valid split")
-    ax.legend(
-        ["Original set", "Training set", "Validation set", "Testing set"],
-        loc="lower center",
-        ncols=2,
-        bbox_to_anchor=(0.5, 0.4),
-    )
-    ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
+    draw_split_row(ax, 0, [("Full dataset", len(all_dataset))])
+    draw_split_row(ax, 1, [("Train", n_train), ("Valid", n_val), ("Test", n_test)])
+    style_split_axes(ax, ["Full dataset", "Train-valid-test split"], len(all_dataset))
     return ax
 
 
-fig, ax = plt.subplots(figsize=(12, 5))
+fig, ax = plt.subplots(figsize=(7, 2.2), layout="constrained")
 plot_train_valid_test(
     ax=ax,
     all_dataset=windows_dataset,
@@ -535,60 +543,28 @@ print(
 
 def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
     """Create a sample plot for training, validation, testing."""
-    bd_cmap = [
-        "#3A6190",
-        "#683E00",
-        "#2196F3",
-        "#DDF2FF",
-    ]
-
-    ax.barh("Original\nDataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
+    draw_split_row(ax, 0, [("Full dataset", len(all_dataset))])
+    row_labels = ["Full dataset"]
 
     # Generate the training/validation/testing data fraction visualizations for each CV split
     for ii, (tr_idx, val_idx) in enumerate(cv.split(X=X_train, y=y_train)):
         n_train, n_val, n_test = len(tr_idx), len(val_idx), len(test_set)
         n_train2 = n_train + n_val - max(val_idx) - 1
-        ax.barh("cv" + str(ii + 1), min(val_idx), left=0, height=0.5, color=bd_cmap[1])
-        ax.barh(
-            "cv" + str(ii + 1), n_val, left=min(val_idx), height=0.5, color=bd_cmap[2]
-        )
-        ax.barh(
-            "cv" + str(ii + 1),
-            n_train2,
-            left=max(val_idx) + 1,
-            height=0.5,
-            color=bd_cmap[1],
-        )
-        ax.barh(
-            "cv" + str(ii + 1),
-            n_test,
-            left=n_train + n_val,
-            height=0.5,
-            color=bd_cmap[3],
-        )
+        segments = [
+            ("Train", min(val_idx)),
+            ("Valid", n_val),
+            ("Train", n_train2),
+            ("Test", n_test),
+        ]
+        # Name the subsets on the first fold only; the colors carry the rest
+        draw_split_row(ax, ii + 1, segments, show_names=ii == 0)
+        row_labels.append(f"Fold {ii + 1}")
 
-    ax.invert_yaxis()
-    ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
-    ax.set(xlabel="Number of samples.", title="KFold Train-Test-Valid split")
-    ax.legend(
-        [Patch(color=bd_cmap[i]) for i in range(4)],
-        ["Original set", "Training set", "Validation set", "Testing set"],
-        loc="lower center",
-        ncols=2,
-    )
-    ax.text(
-        -0.07,
-        0.45,
-        "Train-Valid-Test split",
-        rotation=90,
-        verticalalignment="center",
-        horizontalalignment="left",
-        transform=ax.transAxes,
-    )
+    style_split_axes(ax, row_labels, len(all_dataset))
     return ax
 
 
-fig, ax = plt.subplots(figsize=(15, 7))
+fig, ax = plt.subplots(figsize=(7, 3.6), layout="constrained")
 plot_k_fold(
     ax,
     cv=train_val_split,
