@@ -104,14 +104,13 @@ from braindecode.preprocessing import (
 from braindecode.util import set_random_seeds
 
 ######################################################################
-# The figures use the colors of the Braindecode documentation: the result
-# in blue, the native model in ink, controls in muted slate, and the
-# pretrained blocks that finish an edited forward pass (and the other
-# classes' feature sets) in red.
+# The figures use the Okabe-Ito colors: the result in blue, the native model
+# in ink, controls in grey, and the pretrained blocks that finish an edited
+# forward pass (and the other classes' feature sets) in vermilion.
 
-INK, ACCENT, SUBTLE, RED = "#14181f", "#3a6c97", "#5e6878", "#b5332e"
-MUTED = (0.37, 0.41, 0.47, 0.45)  # SUBTLE at 45% opacity
-BLUES = LinearSegmentedColormap.from_list("blues", ["white", "#dde7f0", ACCENT])
+INK, ACCENT, SUBTLE, RED = "#14181F", "#0072B2", "#7F7F7F", "#D55E00"
+MUTED = "#B0B0B0"
+BLUES = LinearSegmentedColormap.from_list("blues", ["white", "#cce3f0", ACCENT])
 DIVERGE = LinearSegmentedColormap.from_list("diverge", [RED, "white", ACCENT])
 # sphinx_gallery_start_ignore
 plt.rcParams.update(
@@ -124,17 +123,18 @@ plt.rcParams.update(
         "axes.titlelocation": "left",
         "axes.spines.top": False,
         "axes.spines.right": False,
-        "axes.edgecolor": "#d6d9de",
-        "axes.labelcolor": SUBTLE,
+        "axes.edgecolor": INK,
+        "axes.linewidth": 0.8,
+        "axes.labelcolor": INK,
         "axes.grid": True,
         "axes.grid.axis": "y",
         "axes.axisbelow": True,
-        "grid.color": "#e6e8eb",
-        "xtick.color": "#d6d9de",
-        "ytick.color": "#d6d9de",
-        "xtick.labelcolor": SUBTLE,
-        "ytick.labelcolor": SUBTLE,
-        "ytick.major.size": 0,
+        "grid.color": "#EAEAEA",
+        "grid.linewidth": 0.7,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "xtick.major.width": 0.8,
+        "ytick.major.width": 0.8,
     }
 )
 # sphinx_gallery_end_ignore
@@ -310,8 +310,8 @@ print(f"REVE-base: {n_params / 1e6:.1f} M parameters, {n_blocks} blocks")
 # output is cached. The SAE reads and edits the stream at block 18
 # (blue), in one of two ways: the first test replaces the tokens by their
 # reconstruction, and the second takes away only the decoded contribution of
-# the removed features. ``run_blocks`` then applies only the red blocks
-# again, once per edit. The lower panel shows why a hook cannot do this: what a
+# the removed features. ``run_blocks`` then applies only the vermilion blocks
+# again, once per edit. Panel B shows why a hook cannot do this: what a
 # submodule returns is the update, and the stream itself only exists in the
 # loop. After training the head, we check that ``run_blocks`` reproduces
 # ``model(x)``.
@@ -390,10 +390,7 @@ ax.text(
     color=ACCENT,
 )
 ax.set(xlim=(-2.8, n_blocks + 3.7), ylim=(-3.15, 1.1))
-ax.set_title(
-    f"The SAE reads the tokens after block {block}, and run_blocks finishes the "
-    "forward pass from its edit"
-)
+ax.set_title("A  Where the SAE reads and edits the stream", color=INK)
 ax.axis("off")
 
 steps = ("stream b-1", "Attention", "+", "FeedForward", "+", "stream b")
@@ -426,7 +423,7 @@ ax_block.text(
     color=SUBTLE,
 )
 ax_block.set(xlim=(-1, 11), ylim=(-1.3, 0.9))
-ax_block.set_title("Inside block b: x = attn(x) + x, then x = ff(x) + x")
+ax_block.set_title("B  Inside block b", color=INK)
 ax_block.axis("off")
 
 
@@ -555,13 +552,11 @@ ax.set(
 )
 ax.yaxis.set_major_formatter("{x:.0%}")
 ax.tick_params(axis="x", length=0)
-fig.suptitle(
-    f"Skipping a single block changes {changed.min():.0%} to {changed.max():.0%} of "
-    f"the validation decisions (block {blocks[changed.argmax()]} the most)",
-    x=0.01,
-    ha="left",
-)
 plt.show()
+print(
+    f"Skipping a single block changes {changed.min():.0%} to {changed.max():.0%} of "
+    f"the validation decisions (block {blocks[changed.argmax()]} the most)"
+)
 
 ######################################################################
 # No block can be skipped without changing some decisions. When we ran this
@@ -757,7 +752,7 @@ for name, pred in substituted_pred.items():
 # model (black) uses the exact tokens, the trained SAE (blue) is the result
 # and the two controls (grey) show what an uninformative substitute costs.
 # For the mean tokens, the FVU is the error of predicting zero in the
-# standardized coordinates. The vertical line marks chance (25%).
+# standardized coordinates. The dashed line marks chance (25%).
 
 predictions = {"native model": baseline_pred, **substituted_pred}
 zero = torch.zeros_like(test_scaled)  # the fit mean, in standardized coordinates
@@ -778,6 +773,7 @@ panels = (
 )
 fig, axes = plt.subplots(1, 3, figsize=(10, 2.5), sharey=True)
 for column, (ax, title) in enumerate(zip(axes, panels)):
+    title = f"{'ABC'[column]}  {title}"
     values = [score[column] for score in scores.values()]
     top = max(1.0, *values)
     ax.barh(list(scores), values, height=0.6, color=[INK, ACCENT, MUTED, MUTED])
@@ -793,6 +789,7 @@ for column, (ax, title) in enumerate(zip(axes, panels)):
         )
     ax.set(title=title, xlim=(0, top * 1.3), xticks=[])
     ax.spines[["left", "bottom"]].set_visible(False)
+    ax.tick_params(axis="y", length=0)
     ax.grid(False)
 for i, (name, pred) in enumerate(predictions.items()):
     if len(np.unique(pred)) == 1:  # a control that predicts a single class
@@ -806,30 +803,30 @@ for i, (name, pred) in enumerate(predictions.items()):
         )
 axes[0].invert_yaxis()
 axes[0].get_yticklabels()[1].set(color=INK, weight="bold")
-axes[1].axvline(1 / len(LABELS), color=INK, lw=0.8, ls=":")
-axes[1].text(1 / len(LABELS), 3.6, " chance", fontsize=7.5, color=SUBTLE, va="center")
-controls = max(score[2] for score in list(scores.values())[2:])
-fig.suptitle(
-    f"The SAE reconstruction keeps {scores['trained SAE'][2]:.0%} of test decisions; "
-    f"the untrained SAE and mean tokens keep at most {controls:.0%}",
-    x=0.01,
-    ha="left",
+axes[1].axvline(1 / len(LABELS), color=SUBTLE, lw=0.9, ls="--")
+axes[1].text(
+    1 / len(LABELS), 3.6, " Chance (25%)", fontsize=7.5, color=SUBTLE, va="center"
 )
 plt.show()
+controls = max(score[2] for score in list(scores.values())[2:])
+print(
+    f"The SAE reconstruction keeps {scores['trained SAE'][2]:.0%} of test decisions; "
+    f"the untrained SAE and mean tokens keep at most {controls:.0%}"
+)
 
 ######################################################################
-# When we ran this example, the reconstruction kept 84% of the test
-# decisions (72% balanced accuracy, against 76% for the native model),
-# although its FVU was 0.380. Both controls fell to chance and predicted a
+# When we ran this example, the reconstruction kept 85% of the test
+# decisions (73% balanced accuracy, against 76% for the native model),
+# although its FVU was 0.379. Both controls fell to chance and predicted a
 # single class, so their 34% agreement is only the share of that class among
 # the native predictions. The dictionary thus passes the first test: what
 # blocks 19–22 and the head need is largely preserved by the reconstruction.
 #
-# The confusion matrices show which decisions change. On the left, the
-# native model against the true test labels. On the right, the native
+# The confusion matrices show which decisions change. Panel A shows the
+# native model against the true test labels. Panel B shows the native
 # predictions against the predictions with the trained SAE's reconstruction:
 # its diagonal holds the unchanged decisions, whose share is the agreement
-# above, and the title counts the others.
+# above, and the printed line counts the others.
 
 fig, axes = plt.subplots(1, 2, figsize=(9.2, 4))
 for ax, (reference, pred) in zip(
@@ -849,24 +846,23 @@ for ax, (reference, pred) in zip(
         text.set_color("white" if value > 0.8 * matrix.max() else INK)
     ax.grid(False)
     ax.spines[:].set_visible(False)
+    ax.tick_params(length=0)
 axes[0].set(
-    title=f"Native model: {scores['native model'][1]:.1%} balanced accuracy",
+    title="A  Native model",
     xlabel="Predicted class",
     ylabel="True class",
 )
 axes[1].set(
-    title=f"Trained SAE at block {block}: {scores['trained SAE'][2]:.1%} unchanged",
+    title=f"B  Trained SAE at block {block}",
     xlabel="Prediction with reconstruction",
     ylabel="Native prediction",
 )
-changes = display.confusion_matrix * (1 - np.eye(len(LABELS), dtype=int))
-fig.suptitle(
-    f"{changes.sum()} of {len(y_test)} test decisions change with the SAE, "
-    f"{changes.sum(0).max()} of them to {pretty[changes.sum(0).argmax()]}",
-    x=0.01,
-    ha="left",
-)
 plt.show()
+changes = display.confusion_matrix * (1 - np.eye(len(LABELS), dtype=int))
+print(
+    f"{changes.sum()} of {len(y_test)} test decisions change with the SAE, "
+    f"{changes.sum(0).max()} of them to {pretty[changes.sum(0).argmax()]}"
+)
 
 ######################################################################
 # Selecting class features on the fit windows
@@ -903,8 +899,8 @@ for label, features in zip(LABELS, selected):
 # its test-session code over the four patches and show the mean over the test
 # trials of that class *minus* the mean over the other test trials: blue
 # channels are where the feature fires more for its class. Each map has its
-# own symmetric color scale, in code units; its limit and the peak channel
-# are given under the map. Because Euclidean alignment mixes channels, a
+# own symmetric color scale, in code units, shown by the bar under the map;
+# the peak channel is named above the bar. Because Euclidean alignment mixes channels, a
 # channel here is an aligned virtual channel placed at the electrode's
 # position, not the raw electrode. The maps describe what this frozen encoder
 # encodes, not a validated neural source.
@@ -918,14 +914,14 @@ channel_codes = einops.reduce(
 ).numpy()
 fig, axes = plt.subplots(1, len(LABELS), figsize=(10.5, 3.4))
 peaks = []
-for class_id, (ax, label) in enumerate(zip(axes, pretty)):
+for class_id, (ax, label, letter) in enumerate(zip(axes, pretty, "ABCD")):
     feature = selected[class_id, 0]
     in_class = y_test == class_id
     contrast = channel_codes[in_class, :, feature].mean(0) - channel_codes[
         ~in_class, :, feature
     ].mean(0)
     limit = max(np.abs(contrast).max(), 1e-6)
-    mne.viz.plot_topomap(
+    image, _ = mne.viz.plot_topomap(
         contrast,
         raw_info,
         axes=ax,
@@ -938,24 +934,17 @@ for class_id, (ax, label) in enumerate(zip(axes, pretty)):
     )
     peak = raw_info["chs"][contrast.argmax()]  # loc[0] > 0: right hemisphere
     peaks.append((peak["ch_name"], "right" if peak["loc"][0] > 0 else "left"))
-    ax.set_title(f"#{feature} · {label}")
-    ax.set_xlabel(f"peak {peaks[-1][0]} · scale ±{limit:.2g}", family="monospace")
-fig.suptitle(
-    f"The top left-hand feature peaks over the {peaks[1][1]} hemisphere "
-    f"({peaks[1][0]}), the top right-hand one over the {peaks[2][1]} ({peaks[2][0]})",
-    x=0.01,
-    ha="left",
-)
-fig.supxlabel(
-    "Test session; blue: more active on the class's trials; each map has its own "
-    "scale. An association, not a source map:\nchannels are aligned virtual "
-    "channels at the electrode positions, and the maps describe the encoder.",
-    x=0.01,
-    ha="left",
-    fontsize=8,
-    color=SUBTLE,
-)
+    ax.set_title(f"{letter}  {label} (#{feature})", color=INK)
+    ax.set_xlabel(f"Peak at {peaks[-1][0]}")
+    bar = fig.colorbar(image, ax=ax, orientation="horizontal", shrink=0.7, pad=0.02)
+    bar.set_ticks([-limit, 0, limit], labels=[f"{-limit:.2g}", "0", f"{limit:.2g}"])
+    bar.set_label("Code difference (a.u.)")
+    bar.outline.set_visible(False)
 plt.show()
+print(
+    f"The top left-hand feature peaks over the {peaks[1][1]} hemisphere "
+    f"({peaks[1][0]}), the top right-hand one over the {peaks[2][1]} ({peaks[2][0]})"
+)
 
 ######################################################################
 # When we ran this example, the feature selected for left hand fired more
@@ -1065,13 +1054,13 @@ for row in effects:
     )
 
 ######################################################################
-# The left panel shows every value behind the table, one row per class, on
+# Panel A shows every value behind the table, one row per class, on
 # the trials of that class: the drop caused by the class's own features
 # (blue), by each of the 20 random feature sets (grey dots) and by each of
-# the other classes' sets (open red markers). Its right column gives the
+# the other classes' sets (open vermilion markers). Its right column gives the
 # specificity contrast, the drop caused by the own set minus the largest drop
 # caused by any control: it is positive only when no control comes close, and
-# a control that exceeds the own set is named. The right panel shows every
+# a control that exceeds the own set is named. Panel B shows every
 # combination: row *j* removes the features selected for class *j*, column
 # *c* is the drop of p(*c*) on the trials of class *c*. A class-specific
 # effect would appear as an outlined diagonal that stands out.
@@ -1146,20 +1135,20 @@ ax.text(
     fontsize=7.5,
     color=SUBTLE,
 )
-ax.axvline(0, color="#d6d9de", lw=0.8)
+ax.axvline(0, color=SUBTLE, lw=0.9, ls="--")
 ax.set(
     yticks=positions,
     yticklabels=pretty,
     ylim=(len(LABELS) - 0.5, -1.6),
     xlim=(min(drop_matrix.min(), random_drops.min()) - 0.02, drop_matrix.max() + 0.07),
     xlabel="Drop in p(class) on the test trials of the class",
-    title=f"Removing {n_selected} SAE features at block {block}",
+    title=f"A  Removing {n_selected} SAE features at block {block}",
 )
 ax.grid(False)
 ax.grid(axis="x")
 
 limit = np.abs(drop_matrix).max()
-ax_matrix.imshow(drop_matrix, cmap=DIVERGE, vmin=-limit, vmax=limit)
+image = ax_matrix.imshow(drop_matrix, cmap=DIVERGE, vmin=-limit, vmax=limit)
 for (row, column), value in np.ndenumerate(drop_matrix):
     color = "white" if abs(value) > 0.6 * limit else INK
     ax_matrix.text(
@@ -1180,10 +1169,14 @@ ax_matrix.set(
     xticklabels=pretty,
     yticks=positions,
     yticklabels=pretty,
-    xlabel="drop of p(c) on class-c trials",
-    ylabel="features removed",
-    title="Every combination (own set outlined)",
+    xlabel="Drop of p(c) on class-c trials",
+    ylabel="Features removed",
+    title="B  Every combination (own set outlined)",
 )
+bar = fig.colorbar(image, ax=ax_matrix, shrink=0.7)
+bar.set_ticks([-limit, 0, limit], labels=[f"{-limit:.2f}", "0", f"{limit:.2f}"])
+bar.set_label("Drop in p(class)")
+bar.outline.set_visible(False)
 ax_matrix.tick_params(length=0)
 ax_matrix.grid(False)
 ax_matrix.spines[:].set_visible(False)
@@ -1191,22 +1184,20 @@ beats_random = sum(effect["own"] > effect["random max"] for effect in effects)
 beats_others = sum(
     drop_matrix[c, c] > np.delete(drop_matrix[:, c], c).max() for c in positions
 )
-fig.suptitle(
-    f"Removing a class's own features lowers p(class) more than all {n_random} random "
-    f"sets for {beats_random} of {len(LABELS)} classes,\nand more than every other "
-    f"class's set for {beats_others} of {len(LABELS)}",
-    x=0.01,
-    ha="left",
-)
 plt.show()
+print(
+    f"Removing a class's own features lowers p(class) more than all {n_random} random "
+    f"sets for {beats_random} of {len(LABELS)} classes, and more than every other "
+    f"class's set for {beats_others} of {len(LABELS)}"
+)
 
 ######################################################################
 # When we ran this example, removing the 32 features selected for left hand,
 # right hand or tongue lowered the probability of that class on its own test
-# trials by 0.11–0.17. That exceeded each of the 20 random sets (at most
-# 0.011) and every other class's selected set. For feet the drop (0.068) was
+# trials by 0.12–0.18. That exceeded each of the 20 random sets (at most
+# 0.020) and every other class's selected set. For feet the drop (0.050) was
 # smaller, though still above every random set and above the second-largest
-# effect from the tongue set (0.031); feet and tongue are also the two classes
+# effect from the tongue set (0.023); feet and tongue are also the two classes
 # most often confused by the native model (see the confusion matrices above),
 # which is consistent with, but does not show, a representation that the two
 # classes share. Overall, these results suggest that the model relies on the
@@ -1219,7 +1210,7 @@ plt.show()
 # Our results show that a sparse dictionary fitted to a frozen pretrained EEG
 # transformer can expose features that its classifier actually uses on this
 # subject and seed. First, the dictionary preserves what the model computes:
-# substituting its reconstruction at block 18 kept 84% of the test decisions,
+# substituting its reconstruction at block 18 kept 85% of the test decisions,
 # against 34% for the untrained dictionary and for mean tokens (both at chance
 # accuracy). Second, removing the 32 features selected for a class lowered the
 # probability of that class on its own test trials more than every random set

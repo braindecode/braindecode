@@ -245,12 +245,25 @@ plt.rcParams.update(
         "figure.dpi": 110,
         "savefig.bbox": "tight",
         "font.family": "sans-serif",
-        "font.sans-serif": ["Helvetica", "Arial", "DejaVu Sans"],
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "figure.facecolor": "white",
+        "axes.grid": False,
+        "axes.facecolor": "white",
+        "axes.titlesize": 10,
+        "axes.titleweight": "bold",
+        "axes.titlelocation": "left",
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "legend.frameon": False,
     }
 )
 
 # Okabe-Ito colorblind-safe palette, one entry per label.
 LABEL_COLORS = ("#0072B2", "#009E73", "#D55E00", "#CC79A7")
+GREY, INK = "#7F7F7F", "#14181F"
 
 ######################################################################
 # Frequency-domain attribution
@@ -303,15 +316,16 @@ def _band_topomap_grid(
     frequency_bands,
     mne_info,
     labels,
-    title,
+    colorbar_label,
     landmark_channels=None,
 ):
-    """One row per frequency band, one column per class.
+    """One row per frequency band (panels A, B, ...), one column per class.
 
     Color scale is set per row from the 98th-percentile absolute value
     so that a single high-magnitude class can't wash out the rest of the
-    band. The shared colorbar on the right uses scientific notation
-    folded into its label, so no floating ``1e-6`` exponent appears.
+    band. Each row's colorbar on the right is ticked at -limit, 0 and
+    +limit, with the scientific exponent folded into its label, so no
+    floating ``1e-6`` exponent appears.
     Pass ``landmark_channels`` (e.g. ``{"C3", "Cz", "C4"}``) to label
     those electrodes on every topomap so the reader can orient.
     """
@@ -366,26 +380,37 @@ def _band_topomap_grid(
             va="center",
             fontsize=9,
             fontweight="bold",
-            color="#444",
+            color=INK,
+        )
+        axes[row_idx, 0].text(
+            -0.5,
+            1.0,
+            "AB"[row_idx],
+            transform=axes[row_idx, 0].transAxes,
+            ha="left",
+            va="top",
+            fontsize=12,
+            fontweight="bold",
+            color=INK,
         )
 
-    # Fold the colorbar's scientific exponent into the label so it
-    # doesn't float as a "1e-6" annotation outside the axes.
-    largest_limit = max(band_color_limits)
-    exponent = int(np.floor(np.log10(largest_limit))) if largest_limit > 0 else 0
-    scale = 10**exponent
-    fig.suptitle(title, fontsize=11, fontweight="bold", y=0.99)
-    fig.subplots_adjust(right=0.88, top=0.90, wspace=0.05, hspace=0.15)
-    colorbar_ax = fig.add_axes([0.91, 0.18, 0.015, 0.65])
-    cbar = fig.colorbar(band_images[-1], cax=colorbar_ax)
-    cbar.formatter.set_scientific(False)
-    cbar.ax.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda v, _pos: f"{v / scale:+.1f}")
-    )
-    cbar.set_label(
-        f"Attribution × 10$^{{{exponent}}}$ (diverging)",
-        fontsize=9,
-    )
+    fig.subplots_adjust(right=0.86, top=0.90, wspace=0.05, hspace=0.15)
+    for row_idx, (image, limit) in enumerate(zip(band_images, band_color_limits)):
+        # Fold the scientific exponent into the label so it doesn't float
+        # as a "1e-6" annotation outside the axes.
+        exponent = int(np.floor(np.log10(limit))) if limit > 0 else 0
+        row_box = axes[row_idx, -1].get_position()
+        colorbar_ax = fig.add_axes(
+            [0.89, row_box.y0 + 0.15 * row_box.height, 0.012, 0.7 * row_box.height]
+        )
+        cbar = fig.colorbar(image, cax=colorbar_ax)
+        cbar.set_ticks(
+            [-limit, 0, limit],
+            labels=[f"{-limit / 10**exponent:.1f}", "0", f"{limit / 10**exponent:.1f}"],
+        )
+        cbar.outline.set_visible(False)
+        unit = f" (× 10$^{{{exponent}}}$)" if exponent else ""
+        cbar.set_label(f"{colorbar_label}{unit}", fontsize=8)
 
 
 _band_topomap_grid(
@@ -393,7 +418,7 @@ _band_topomap_grid(
     frequency_bands=[(7, 13), (14, 30)],
     mne_info=raw_info,
     labels=LABELS,
-    title="Amplitude gradients carry distinct α/β signatures across classes",
+    colorbar_label="Gradient",
 )
 
 ######################################################################
@@ -450,7 +475,7 @@ _band_topomap_grid(
     frequency_bands=[(7, 13), (14, 30)],
     mne_info=raw_info,
     labels=LABELS,
-    title="Haufe patterns isolate the class-distinctive part of each gradient",
+    colorbar_label="Pattern",
     landmark_channels={"C3", "Cz", "C4"},
 )
 
@@ -573,17 +598,13 @@ topomap_image, _ = mne.viz.plot_topomap(
     show=False,
     axes=ax,
 )
-ax.set_title(
-    "All three methods agree the network attends to motor cortex",
-    fontsize=10,
-    fontweight="bold",
-)
 fig.colorbar(
     topomap_image,
     ax=ax,
     fraction=0.04,
     pad=0.04,
     label="Mean attribution magnitude\n(per-method max-normalized)",
+    ticks=[0, 1],
 )
 
 ######################################################################
@@ -630,7 +651,7 @@ fig.colorbar(
 # In both checks lower r is better: the attribution is sensitive to the
 # manipulation, so it is doing its job. The paper's empirical threshold
 # for "class/model-specific" is Pearson r < ~0.5; that cutoff is shown
-# as a dotted red line in both panels below.
+# as a dashed grey line in both panels below.
 
 set_random_seeds(seed=20240205, cuda=cuda_available)
 n_classes = signal_properties["n_outputs"]
@@ -681,11 +702,12 @@ n_levels = len(cascade_levels) - 1
 fully_random_pearson = {name: cascade_pearson[name][-1] for name in methods}
 
 ######################################################################
-# The figure puts the two checks side by side: each method gets a bar
-# in the left panel (label vs full-weight randomization) and a curve in
-# the right panel (Pearson r versus number of layers reset, output →
-# input). The horizontal red dotted line at the paper's [5]_ ~0.5 cutoff
-# separates "model-specific" (below) from "architecture-driven" (above).
+# The figure puts the two checks side by side: each method gets a pair of
+# bars in panel A (label vs full-weight randomization) and a curve in
+# panel B (Pearson r versus number of layers reset, output → input).
+# Lower values mean the attribution depends on what the network learned.
+# The dashed grey line at the paper's [5]_ ~0.5 cutoff separates
+# "model-specific" (below) from "architecture-driven" (above).
 
 method_palette = {
     "Saliency": "#D55E00",
@@ -716,13 +738,19 @@ ax_bar.bar(
 )
 ax_bar.set_xticks(bar_x)
 ax_bar.set_xticklabels(list(methods), fontsize=9)
+for tick, name in zip(ax_bar.get_xticklabels(), methods):
+    tick.set_color(method_palette[name])
 ax_bar.set_ylim(-0.05, 1.05)
-ax_bar.axhline(0.5, color="#a30000", lw=0.8, ls=":", alpha=0.7)
+ax_bar.set_yticks([0, 0.5, 1])
+ax_bar.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+ax_bar.set_axisbelow(True)
+ax_bar.axhline(0.5, color=GREY, lw=0.9, ls="--")
+ax_bar.text(
+    bar_x[-1] + 0.5, 0.52, "r = 0.5", color=GREY, fontsize=8, ha="right", va="bottom"
+)
 ax_bar.set_ylabel("Per-trial Pearson r vs trained model\n(lower is better)")
-ax_bar.set_title("Sanity-check scores", fontsize=10, fontweight="bold")
-ax_bar.legend(loc="upper right", frameon=False, fontsize=8)
-for spine in ("top", "right"):
-    ax_bar.spines[spine].set_visible(False)
+ax_bar.set_title("A  Sanity-check scores", color=INK)
+ax_bar.legend(loc="upper left", fontsize=8)
 
 for name in methods:
     ax_cascade.plot(
@@ -734,23 +762,41 @@ for name in methods:
         lw=1.6,
         markersize=4,
     )
+# Direct labels at the curve ends, nudged apart so they never overlap.
+label_y = {}
+for name in sorted(methods, key=lambda n: cascade_pearson[n][-1]):
+    y = cascade_pearson[name][-1]
+    if label_y:
+        y = max(y, max(label_y.values()) + 0.08)
+    label_y[name] = y
+for name, y in label_y.items():
+    ax_cascade.text(
+        n_levels + 0.15,
+        y,
+        name,
+        color=method_palette[name],
+        fontsize=8.5,
+        fontweight="bold",
+        va="center",
+    )
 ax_cascade.set_xticks(range(n_levels + 1))
-ax_cascade.set_xlabel(f"# layers reset (output → input, total {n_levels})")
+ax_cascade.set_xlim(-0.2, n_levels + 1.6)
+ax_cascade.spines["bottom"].set_bounds(0, n_levels)
+ax_cascade.set_xlabel(f"Layers reset, output to input (total {n_levels})")
 ax_cascade.set_ylabel("Per-trial Pearson r vs trained model")
-ax_cascade.set_title("Cascading weight randomization", fontsize=10, fontweight="bold")
-ax_cascade.set_ylim(-0.1, 1.05)
-ax_cascade.axhline(0.5, color="#a30000", lw=0.8, ls=":", alpha=0.7)
-ax_cascade.axhline(0.0, color="#888", lw=0.6, ls=":")
-ax_cascade.legend(loc="best", frameon=False, fontsize=8)
-for spine in ("top", "right"):
-    ax_cascade.spines[spine].set_visible(False)
-
-fig.suptitle(
-    "Lower values mean the attribution depends on what the network learned",
-    fontsize=11,
-    fontweight="bold",
+ax_cascade.set_title("B  Cascading weight randomization", color=INK)
+lowest_pearson = min(min(curve) for curve in cascade_pearson.values())
+ax_cascade.set_ylim(min(-0.1, lowest_pearson - 0.05), 1.05)
+ax_cascade.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+ax_cascade.set_axisbelow(True)
+ax_cascade.set_yticks([0, 0.5, 1])
+ax_cascade.axhline(0.5, color=GREY, lw=0.9, ls="--")
+ax_cascade.text(
+    n_levels + 1.5, 0.52, "r = 0.5", color=GREY, fontsize=8, ha="right", va="bottom"
 )
-fig.tight_layout(rect=[0, 0, 1, 0.94])
+ax_cascade.axhline(0.0, color=GREY, lw=0.6, ls=":")
+
+fig.tight_layout()
 
 ######################################################################
 # Quantitative scoring
@@ -837,19 +883,33 @@ metric_table = pd.DataFrame(method_metric_rows).T  # rows = methods, cols = metr
 mass_rank_cols = [c for c in metric_table.columns if "Accuracy" in c]
 metric_table = metric_table.drop(columns=mass_rank_cols)
 
-# Render the table as a heatmap rather than ASCII text. Top panel: raw
-# scores (lower is better, capped at 0.7 since no method exceeds that
-# here, which gives the colour scale useful contrast). Bottom panel:
-# rank colour-coded by *deviation from consensus* — green where one
-# method clearly beats the other two, red where it clearly loses. Cells
-# where the colour changes column-to-column are where the metrics
-# disagree, which is the paper's [5]_ central point.
-ranks = metric_table.rank(axis=0, method="min", ascending=True).astype(int)
-val_max = max(0.5, metric_table.values.max() * 1.1)
+# Render the table as a heatmap rather than ASCII text, one row per
+# metric. Panel A: raw similarity scores (lower is better; the colour
+# scale is symmetric around 0). Panel B: rank colour-coded by *deviation
+# from consensus*: blue where one method clearly beats the other two,
+# red where it clearly loses. Rows where the colour changes from column
+# to column are where the metrics disagree, which is the paper's [5]_
+# central point.
+readable_metric_names = {
+    "Cosine_topperc_abs": "Cosine (top %, abs.)",
+    "Cosine_absnorm": "Cosine (abs. norm.)",
+    "Cosine_norm": "Cosine (norm.)",
+    "Cosine_raw": "Cosine (raw)",
+    "Pearson_topK_vs_topperc": "Pearson r (top K vs top %)",
+    "Pearson_absnorm_vs_refnorm": "Pearson r (abs. norm.)",
+    "Pearson_norm_vs_refnorm": "Pearson r (norm.)",
+    "Pearson_raw_vs_refnorm": "Pearson r (raw)",
+    "SSIM_topperc": "SSIM (top %)",
+    "SSIM_absnorm": "SSIM (abs. norm.)",
+    "SSIM_norm": "SSIM (norm.)",
+    "SSIM_raw": "SSIM (raw)",
+}
+metric_table = metric_table.T.rename(index=readable_metric_names)  # rows = metrics
+metric_table.columns = [name.replace(" ", "\n") for name in metric_table.columns]
+ranks = metric_table.rank(axis=1, method="min", ascending=True).astype(int)
+val_max = max(0.5, np.abs(metric_table.values).max() * 1.1)
 
-fig, (ax_val, ax_rank) = plt.subplots(
-    2, 1, figsize=(11, 4.6), gridspec_kw={"height_ratios": [1, 1]}
-)
+fig, (ax_val, ax_rank) = plt.subplots(1, 2, figsize=(9, 5.6), sharey=True)
 
 im_val = ax_val.imshow(
     metric_table.values,
@@ -859,14 +919,11 @@ im_val = ax_val.imshow(
     aspect="auto",
     interpolation="nearest",
 )
-ax_val.set_xticks([])  # x-axis labels only on the bottom panel
+ax_val.set_xticks(range(len(metric_table.columns)))
+ax_val.set_xticklabels(metric_table.columns, fontsize=8.5)
 ax_val.set_yticks(range(len(metric_table.index)))
 ax_val.set_yticklabels(metric_table.index, fontsize=9)
-ax_val.set_title(
-    "Score vs random-weight model (lower = more sensitive)",
-    fontsize=10,
-    fontweight="bold",
-)
+ax_val.set_title("A  Score vs random-weight model", color=INK)
 for i, j in np.ndindex(metric_table.values.shape):
     val = metric_table.values[i, j]
     ax_val.text(
@@ -878,8 +935,12 @@ for i, j in np.ndindex(metric_table.values.shape):
         fontsize=8,
         color="white" if abs(val) > 0.6 * val_max else "black",
     )
-cbar_val = fig.colorbar(im_val, ax=ax_val, fraction=0.025, pad=0.01)
-cbar_val.set_label("Pearson r", fontsize=8)
+cbar_val = fig.colorbar(
+    im_val, ax=ax_val, fraction=0.05, pad=0.03, ticks=[-val_max, 0, val_max]
+)
+cbar_val.ax.set_yticklabels([f"{-val_max:.2f}", "0", f"{val_max:.2f}"])
+cbar_val.outline.set_visible(False)
+cbar_val.set_label("Similarity score (lower is better)", fontsize=8)
 
 # Bottom panel: divergent palette anchored at rank 2 (the median).
 # Cells coloured by how far each method departs from consensus.
@@ -892,14 +953,9 @@ im_rank = ax_rank.imshow(
     interpolation="nearest",
 )
 ax_rank.set_xticks(range(len(ranks.columns)))
-ax_rank.set_xticklabels(ranks.columns, rotation=35, ha="right", fontsize=8)
-ax_rank.set_yticks(range(len(ranks.index)))
-ax_rank.set_yticklabels(ranks.index, fontsize=9)
-ax_rank.set_title(
-    "Per-metric rank (1 = most sensitive)",
-    fontsize=10,
-    fontweight="bold",
-)
+ax_rank.set_xticklabels(ranks.columns, fontsize=8.5)
+ax_rank.tick_params(axis="y", left=False)
+ax_rank.set_title("B  Per-metric rank", color=INK)
 for i, j in np.ndindex(ranks.values.shape):
     rank_val = ranks.values[i, j]
     ax_rank.text(
@@ -912,8 +968,12 @@ for i, j in np.ndindex(ranks.values.shape):
         fontweight="bold",
         color="white" if rank_val in (1, 3) else "black",
     )
-cbar_rank = fig.colorbar(im_rank, ax=ax_rank, fraction=0.025, pad=0.01, ticks=[1, 2, 3])
-cbar_rank.set_label("Rank", fontsize=8)
+cbar_rank = fig.colorbar(im_rank, ax=ax_rank, fraction=0.05, pad=0.03, ticks=[1, 2, 3])
+cbar_rank.outline.set_visible(False)
+cbar_rank.set_label("Rank (1 = most sensitive)", fontsize=8)
+for ax in (ax_val, ax_rank):
+    ax.spines[["left", "bottom"]].set_visible(False)
+    ax.tick_params(axis="x", length=0)
 
 fig.tight_layout()
 

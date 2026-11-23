@@ -547,34 +547,80 @@ else:
 ######################################################################
 # Plot results
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Each panel shows the mean cross-validation accuracy of one augmentation,
+# relative to the ``IdentityTransform`` baseline (dashed line at 0%), across
+# its five strengths. The shaded band spans ±1 standard deviation across the
+# cross-validation folds, expressed in the same relative units.
 
 import matplotlib.pyplot as plt
 
+GREY, INK = "#7F7F7F", "#14181F"
+# Importing MOABB applies a seaborn style; restore matplotlib defaults first.
+plt.rcdefaults()
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+identity_mean = search_results.loc[
+    search_results["augmentation"] == "IdentityTransform", "mean_validation_accuracy"
+].iloc[0]
 plot_results = search_results.query("augmentation != 'IdentityTransform'")
 augmentations = plot_results["augmentation"].drop_duplicates().tolist()
-fig, axes = plt.subplots(1, len(augmentations), sharey=True, figsize=(12, 3.5))
+fig, axes = plt.subplots(1, len(augmentations), sharey=True, figsize=(10.5, 3.4))
 axes = np.atleast_1d(axes)
 palette = {
-    "FTSurrogate": "C0",
-    "SmoothTimeMask": "C1",
-    "ChannelsDropout": "C2",
+    "FTSurrogate": "#0072B2",
+    "SmoothTimeMask": "#D55E00",
+    "ChannelsDropout": "#009E73",
 }
-for ax, augmentation in zip(axes, augmentations):
+for letter, ax, augmentation in zip("ABC", axes, augmentations):
     augmentation_results = plot_results.loc[
         plot_results["augmentation"] == augmentation
     ].sort_values("display_magnitude")
-    ax.plot(
-        augmentation_results["display_magnitude"],
-        augmentation_results["relative_validation_improvement_pct"],
-        color=palette.get(augmentation, "C0"),
-        marker="o",
-        linewidth=2,
+    magnitudes = augmentation_results["display_magnitude"]
+    improvement = augmentation_results["relative_validation_improvement_pct"]
+    spread = augmentation_results["std_validation_accuracy"] / identity_mean * 100
+    color = palette[augmentation]
+    ax.fill_between(
+        magnitudes,
+        improvement - spread,
+        improvement + spread,
+        color=color,
+        alpha=0.18,
+        linewidth=0,
     )
-    ax.axhline(y=0, xmin=0, xmax=1, ls="--", c="tab:red", linewidth=1)
-    ax.set_title(augmentation)
+    ax.plot(magnitudes, improvement, color=color, marker="o", linewidth=2)
+    ax.axhline(0, color=GREY, linestyle="--", linewidth=0.9)
+    ax.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+    ax.set_axisbelow(True)
+    ax.set_title(f"{letter}  {augmentation}", loc="left", fontweight="bold", color=INK)
     ax.set_xlabel(augmentation_results["axis_label"].iloc[0])
-    ax.grid(alpha=0.3)
-axes[0].set_ylabel("Validation accuracy relative improvement (%)")
+axes[0].text(
+    np.mean(axes[0].get_xlim()),
+    0.5,
+    "Identity baseline (0%)",
+    color=GREY,
+    fontsize=8.5,
+    ha="center",
+    va="bottom",
+    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8, "pad": 1},
+)
+axes[0].set_ylabel("Validation accuracy change\nvs. no augmentation (%)")
 plt.tight_layout()
 
 ######################################################################
