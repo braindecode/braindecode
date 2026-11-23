@@ -190,8 +190,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
                 "logits": logits,
             }
             # Headless: the branch heads are dropped.
-            if not torch.jit.is_scripting() and self._head_spec is not None:
-                return out
+            if not torch.jit.is_scripting():
+                if self._head_spec is not None:
+                    return out
             # The branch logits feed the paper's joint deep-supervision loss
             # ``lambda * CE(main) + (1 - lambda) * sum_i CE(branch_i)``.
             branch_preds = [
