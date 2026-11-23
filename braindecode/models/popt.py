@@ -29,6 +29,15 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
+    .. figure:: ../_static/model/popt_arch.png
+       :align: center
+       :alt: PopulationTransformer architecture
+       :width: 1000px
+
+       PopT on frozen per-electrode temporal embeddings (a) with its
+       ensemble-wise (b) and channel-wise (c) discriminative pretraining
+       objectives, reproduced from [PopT2024]_ (CC BY 4.0).
+
     PopT is a self-supervised **population** model for intracranial recordings
     (sEEG/iEEG). It does not encode a raw time signal; instead each electrode is
     represented by a feature vector — typically the frozen embedding of a

@@ -357,6 +357,15 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/neurorvq_arch.png
+       :align: center
+       :alt: NeuroRVQ architecture
+       :width: 1000px
+
+       The NeuroRVQ foundation model: multi-scale temporal encoder, Transformer
+       encoder and the frozen RVQ codebooks whose tokens it predicts, reproduced
+       from [neurorvq]_ (CC BY 4.0).
+
     The model combines four temporal convolution scales with a shared
     Transformer encoder and learned channel/time embeddings; this class adapts
     the pretrained encoder to Braindecode's window classifier API.

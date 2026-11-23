@@ -545,10 +545,16 @@ def _output_kind(name: str) -> str:
 
 
 def _capabilities(
-    name: str, cls: type[EEGModuleMixin], model: Any, probe_shape: tuple[int, int]
+    name: str,
+    cls: type[EEGModuleMixin],
+    model: Any,
+    probe_shape: tuple[int, int],
+    modality: str,
 ) -> dict[str, str]:
     """The capability columns of a model, read from a built instance."""
     import torch
+
+    from braindecode.models.util import _modalities
 
     head = name not in _TOKENIZERS
     features = None
@@ -559,7 +565,8 @@ def _capabilities(
             features = model.eval()(torch.zeros(1, *probe_shape), return_features=True)
     flags = {
         "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
-        "adapt_input": hasattr(cls, "adapt_input"),
+        # the rule adapt_input applies: one input of EEG electrodes
+        "adapt_input": "EEG" in _modalities(modality) and len(cls._time_inputs) == 1,
         "reset_head": head and model._can_reset_head(),
         "return_features": isinstance(features, dict) and "embedding" in features,
     }
@@ -647,7 +654,7 @@ def generate_summary_rows(
                 "Time axis": cls._time_axis,
                 "Channel axis": cls._channel_axis,
                 "Output": _output_kind(name),
-                **_capabilities(name, cls, model, probe_shape),
+                **_capabilities(name, cls, model, probe_shape, editorial["Modality"]),
             }
         )
     return generated
