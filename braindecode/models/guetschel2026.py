@@ -738,7 +738,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         return x.to(dtype)
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        return bool(args[1] if len(args) > 1 else kwargs.get("return_features", False))
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
@@ -759,6 +759,30 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             ``return_features=True``, ``{"features": z, "cls_token": None}``
             with ``z`` of shape ``(batch, n_chans, n_patches, embed_dim)``.
         """
+        if torch.jit.is_scripting():
+            # The eager checks live in EEGModuleMixin.__call__, which scripting
+            # skips; without them one channel broadcasts over every electrode.
+            if x.shape[-1] < self.patch_size:
+                raise ValueError(
+                    f"Input has {x.shape[-1]} samples, fewer than patch_size "
+                    f"({self.patch_size})."
+                )
+            if x.shape[-2] != self.n_chans:
+                raise ValueError(
+                    f"The model was built for {self.n_chans} channels, but the "
+                    f"input has {x.shape[-2]}. Pass the matching chs_info at "
+                    "construction, or use a channel_strategy to map another "
+                    "montage."
+                )
+            n_patches = (x.shape[-1] - self.patch_size) // self.patch_step + 1
+            if not return_features and n_patches != self.n_patches:
+                raise ValueError(
+                    f"The head expects {self.n_patches} patches "
+                    f"(n_times={self.n_times}), but the input has "
+                    f"{x.shape[-1]} samples ({n_patches} patches). Use "
+                    "return_features=True for other window lengths, or build "
+                    f"the model with n_times={x.shape[-1]}."
+                )
         z = self.model(self.feature_encoder(self._scale(x)))  # (B, C, P, embed_dim)
         if return_features:
             return {"features": z, "cls_token": None}  # nosec B105

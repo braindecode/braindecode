@@ -199,8 +199,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
         # padding/cropping a non-divisible time axis at forward time.
-        known_n_times = self._signal_param("n_times")
-        tokenizer_n_times = patch_size if known_n_times is None else known_n_times
+        tokenizer_n_times = self._signal_param("n_times") or patch_size
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
             n_times=tokenizer_n_times,
@@ -243,12 +242,12 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
-        if super()._accepts_any_n_chans(args, kwargs):
-            return True
-        return bool(args[2] if len(args) > 2 else kwargs.get("return_features"))
+        return super()._accepts_any_n_chans(args, kwargs) or self._accepts_any_n_times(
+            args, kwargs
+        )
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        return bool(args[2] if len(args) > 2 else kwargs.get("return_features"))
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def reset_head(self, n_outputs):
         self._set_n_outputs(n_outputs)

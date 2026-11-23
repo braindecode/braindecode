@@ -12,6 +12,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import MLP
@@ -375,6 +376,15 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             None}`` with the ``(batch, 2 * bottleneck_channels)`` input of
             ``final_layer``.
         """
+        if torch.jit.is_scripting():
+            # The eager checks live in EEGModuleMixin.__call__ (scripting skips it).
+            check_n_chans(x, self.n_chans, "SAMBA")
+            if x.shape[-1] < self.min_n_times:
+                raise ValueError(
+                    f"SAMBA needs at least {self.min_n_times} samples, one for "
+                    f"each step it keeps after its max-poolings; got "
+                    f"{x.shape[-1]}."
+                )
         # Encoder: n_steps = n_times // pool_size ** 3 steps of bottleneck_channels
         # features
         # (batch, n_chans, n_times) -> (batch, n_steps, bottleneck_channels)

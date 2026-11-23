@@ -400,8 +400,8 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        ret_feat = args[1] if len(args) > 1 else kwargs.get("return_features", False)
-        coords = args[2] if len(args) > 2 else kwargs.get("coordinates")
+        ret_feat = self._call_arg(args, kwargs, "return_features", False)
+        coords = self._call_arg(args, kwargs, "coordinates")
         return coords is not None and (
             self.pool == "channel_temporal_mean" or bool(ret_feat)
         )

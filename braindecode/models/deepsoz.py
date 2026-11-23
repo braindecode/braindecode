@@ -7,7 +7,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from braindecode.functional import pad_or_crop_to_patches, patch_count
+from braindecode.functional import check_n_chans, pad_or_crop_to_patches, patch_count
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -293,6 +293,12 @@ class DeepSOZ(EEGModuleMixin, nn.Module):
             ``(batch, n_chans)``.
         """
         if torch.jit.is_scripting():
+            # The eager check lives in EEGModuleMixin.__call__ (scripting skips
+            # it); without it embedding[n_chans] reads a channel row as the
+            # global token.
+            check_n_chans(
+                x, self.n_chans, "DeepSOZ", hint="build it with that many n_chans."
+            )
             # x: (batch, n_chans, n_patches * patch_size), whole tokens
             x = pad_or_crop_to_patches(x, self.patch_size, self.on_non_divisible)
         batch, n_chans, n_times = x.shape

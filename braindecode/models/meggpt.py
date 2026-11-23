@@ -286,7 +286,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        return bool(args[1] if len(args) > 1 else kwargs.get("return_features"))
+        return bool(self._call_arg(args, kwargs, "return_features"))
 
     def _init_parameters(self) -> None:
         # Reference initialisation (meg_gpt/optim/initializer.py): Xavier linear

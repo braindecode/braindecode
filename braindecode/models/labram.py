@@ -442,7 +442,7 @@ class Labram(EEGModuleMixin, nn.Module):
             return True
         if not self.neural_tokenizer:
             return True
-        ch_names = args[4] if len(args) > 4 else kwargs.get("ch_names")
+        ch_names = self._call_arg(args, kwargs, "ch_names")
         return ch_names is not None
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:

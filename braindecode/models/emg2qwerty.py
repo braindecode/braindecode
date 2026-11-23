@@ -460,8 +460,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         min_n_times = (
             self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
         )
-        known_n_times = self._signal_param("n_times")
-        n_times = min_n_times if known_n_times is None else known_n_times
+        n_times = self._signal_param("n_times") or min_n_times
         if n_times < min_n_times:
             raise ValueError(
                 f"n_times={n_times} is shorter than the encoder's receptive "
