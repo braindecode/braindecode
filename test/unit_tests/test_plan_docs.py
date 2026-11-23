@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import zipfile
 from pathlib import Path
 
@@ -97,7 +98,11 @@ def test_plan_runs_only_changed_gallery_plots_and_gates_sae_extra(
     )
     assert plan["build"] == "true"
     assert plan["run_examples"] == stem
-    assert stem in plan["gallery_arg"]
+    # make hands SPHINXOPTS to sh, which must see one -D value.
+    assert shlex.split(plan["gallery_arg"]) == [
+        "-D",
+        f"sphinx_gallery_conf.filename_pattern=/({stem})\\.py",
+    ]
     assert "docs-gallery" in plan["extras"]
     assert (",sae" in plan["extras"]) is expect_sae
     assert plan["use_gallery_cache"] == "false"
