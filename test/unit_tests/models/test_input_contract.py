@@ -555,12 +555,6 @@ def test_summary_generator_subset_and_cli(tmp_path):
 
 # adapt_input(chs_info=...) refuses MEG, fNIRS and sEMG models, and CORTEG,
 # whose second per-channel input (x_hi) the channel layer does not map.
-_NO_CHANNEL_ADAPTATION = {
-    *("BBL", "MEGGPT", "MEGXL", "CORTEG", "JungMAE", "GeoNIRS", "MtReNIRS"),
-    *("FNIRS4D", "FNIRSCNN1D", "FNIRSNet", "FNIRSPreT", "FNIRST"),
-    *("EMG2QwertyNet", "MetaNeuromotorHand", "NeuroPose", "SensingDynamics"),
-    *("TCCNet", "TinyMyo", "VEMG2Pose"),
-}
 # The registry models whose constructor takes channel_strategy (SleepFM and
 # SleepFMStager take only "native").
 STRATEGY_MODELS = [
@@ -587,7 +581,8 @@ def test_adapt_input_maps_a_permuted_montage(
     model = models_dict[model_name](**{**kw, "chs_info": chs}).eval()
     x = torch.randn(2, len(chs), sp["n_times"])
     _materialize(model, x)
-    if model_name in _NO_CHANNEL_ADAPTATION:
+    # the summary.csv column and adapt_input apply the same rule
+    if _summary_row(model_name)["adapt_input"] == "no":
         with pytest.raises(ValueError, match="cannot map channels"):
             copy.deepcopy(model).adapt_input(chs_info=chs)
         return

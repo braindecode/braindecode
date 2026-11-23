@@ -29,8 +29,8 @@ Enhancements
 ============
 
 - Add :meth:`braindecode.models.EEGModuleMixin.adapt_input` to adapt a built model, in
-  place and with unchanged ``state_dict`` keys, to another EEG montage, sampling rate or
-  window length; ``get_config`` saves the adaptation (by `Bruno Aristimunha`_).
+  place and with unchanged ``state_dict`` keys, to another EEG montage or sampling
+  rate; ``get_config`` saves the adaptation (by `Bruno Aristimunha`_).
 - ATCNet, CareSleepNet, EEGInceptionMI, FBCNet, FBMSNet, IFNet, Labram (``neural_tokenizer=True``), NeuroRVQTokenizer, PBT
   and SeizureTransformer read the window length from the input instead of the length stored at build, so other lengths run
   with unchanged weights, and outputs at the build length stay the same (by `Bruno Aristimunha`_).

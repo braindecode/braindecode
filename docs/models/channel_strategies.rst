@@ -237,9 +237,8 @@ works under ``"native"`` only.
 ************************
 
 A model that has already been trained or loaded can be adapted in place to another
-montage, sampling rate or window length with
-:meth:`~braindecode.models.EEGModuleMixin.adapt_input`, without adding keys to its
-``state_dict``:
+montage or sampling rate with :meth:`~braindecode.models.EEGModuleMixin.adapt_input`,
+without adding keys to its ``state_dict``:
 
 .. code-block:: python
 
@@ -272,12 +271,6 @@ montage, sampling rate or window length with
   ``strict=True`` before and after ``adapt_input``.
 - **Sampling rate.** An integer ``sfreq`` resamples the input to ``model.sfreq`` before
   the length checks and the channel mapping. ``sfreq=model.sfreq`` removes it.
-- **Window length.** ``n_times`` is the window length at ``model.sfreq``. Free and dense
-  models run on it as they are. Fixed-length models whose only weight sized by
-  ``n_times`` is the head (such as :class:`~braindecode.models.EEGConformer`,
-  :class:`~braindecode.models.EEGPT` and :class:`~braindecode.models.REVE`) average-pool
-  their features to the build length before the head, which is the identity at the build
-  ``n_times``. The other fixed-length models raise a ``ValueError``.
 - **Saved with the model.** ``get_config()["input_adaptation"]`` holds the adaptation,
   and ``from_config`` and ``from_pretrained`` apply it again. A model without adaptation
   has no such entry.
