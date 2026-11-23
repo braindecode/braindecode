@@ -319,6 +319,8 @@ Requirements
 Bug fixes
 ==========
 
+- ``from_pretrained`` loads a checkpoint whose ``README.md`` has a YAML header that cannot be parsed,
+  with ``card_data`` set to ``None`` (:gh:`1808` by `Bruno Aristimunha`_).
 - :meth:`braindecode.models.CodeBrain.reset_head` replaces only the output layer of its head and keeps the two hidden layers,
   so ``reset_head(k)`` and ``from_pretrained(..., n_outputs=k)`` with a new ``k`` no longer raise :class:`NotImplementedError`
   (:gh:`1802` by `Bruno Aristimunha`_).
