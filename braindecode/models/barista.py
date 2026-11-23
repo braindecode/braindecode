@@ -584,9 +584,9 @@ class _SpatialEmbedding(nn.Module):
                 "(batch, n_chans, 3) for coordinates and (n_chans,) or "
                 "(batch, n_chans) for region scales."
             )
-        grid = grid.to(self.tables[0].weight.device)
         # Value check only in eager mode: it branches on tensor data, which
         # TorchScript, torch.export and torch.compile graphs cannot express.
+        # Before the move, so indices passed on the CPU are read on the CPU.
         if not torch.jit.is_scripting():
             if given and not torch.compiler.is_compiling():
                 n_slots = self.tables[0].num_embeddings
@@ -594,6 +594,7 @@ class _SpatialEmbedding(nn.Module):
                     raise ValueError(
                         f"spatial_indices must contain integers in [0, {n_slots})."
                     )
+        grid = grid.to(self.tables[0].weight.device)
         return torch.stack(
             [table(grid[..., dim]) for dim, table in enumerate(self.tables)]
         ).sum(dim=0)

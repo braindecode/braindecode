@@ -4893,6 +4893,15 @@ def test_barista_forward_rejects_out_of_range_indices(bad):
         model(torch.randn(1, 4, 128), spatial_indices=torch.tensor(bad))
 
 
+def test_barista_range_checks_caller_indices_before_moving_them():
+    # On meta, a check of the moved indices could not read them.
+    model = _barista_model("parcels", spatial_indices=[1, 2, 3, 4]).eval().to("meta")
+    x = torch.empty(1, 4, 128, device="meta")
+    with torch.no_grad():
+        out = model(x, spatial_indices=torch.tensor([1, 2, 3, 4]))
+    assert out.is_meta and out.shape == (1, 2)
+
+
 def test_barista_learned_pooling_needs_construction_grid():
     model = _barista_model("parcels", pooling="learned", spatial_indices=[1, 2, 3, 4])
     with pytest.raises(ValueError, match="built for n_chans=4 and got 6 channels"):
