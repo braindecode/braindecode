@@ -716,3 +716,76 @@ def test_identity_mapping_matches_native(model_name):
             torch.testing.assert_close(g, w)
     with pytest.raises(ValueError, match="maps any montage already"):
         mapped.adapt_input(chs_info=kw["chs_info"])
+
+
+# Free-length models whose export still fixes the time axis: model name to the
+# first line of the export error. Shrink only.
+_EXPORT_STATIC_TIME: dict[str, str] = {
+    "ATCNet": "Constraints violated (time)",
+    "AXON": "Constraints violated (time)",
+    "BBL": "Constraints violated (time)",
+    "BENDR": "Constraints violated (time)",
+    "BIOT": "Constraints violated (time)",
+    "BrainBERT": "Constraints violated (time)",
+    "BrainOmni": "Cannot create Dim with inconsistent min and max",
+    "BrainTokenizer": "Constraints violated (time)",
+    "CareSleepNet": "Constraints violated (time)",
+    "ContraWR": "Constraints violated (time)",
+    "CORTEG": "Constraints violated (time)",
+    "DANCE": "Constraints violated (time)",
+    "DeepSOZ": "Constraints violated (time)",
+    "EEGDINO": "Constraints violated (time)",
+    "EEGInceptionMI": "Constraints violated (time)",
+    "EEGSimpleConv": "Constraints violated (time)",
+    "EMG2QwertyNet": "Constraints violated (time)",
+    "FBCNet": "Cannot create Dim with inconsistent min and max",
+    "FBLightConvNet": "Cannot create Dim with inconsistent min and max",
+    "FBMSNet": "Cannot create Dim with inconsistent min and max",
+    "FNIRSCNN1D": "Constraints violated (time)",
+    "GCNsNet": "Attempted to use an uninitialized parameter",
+    "IFNet": "Cannot create Dim with inconsistent min and max",
+    "Labram": "Constraints violated (time)",
+    "LUNA": "Constraints violated (time)",
+    "MAPA": "Could not extract specialized integer from data-dependent expression u2",
+    "MEGGPT": "Constraints violated (time)",
+    "MEGXL": "Constraints violated (time)",
+    "MetaNeuromotorHand": "Constraints violated (time)",
+    "MIRepNet": "Constraints violated (time)",
+    "MSCFormer": "Constraints violated (time)",
+    "MtReNIRS": "Constraints violated (time)",
+    "MVPFormer": "Constraints violated (time)",
+    "NeuroPose": "Constraints violated (time)",
+    "NeuroRVQTokenizer": "Could not guard on data-dependent expression zuf0",
+    "Pratibha2": "Constraints violated (time)",
+    "SAMBA": "Constraints violated (time)",
+    "SeizureTransformer": "Constraints violated (time)",
+    "SignalJEPA": "Constraints violated (time)",
+    "SleepFM": "Constraints violated (time)",
+    "SleepFMStager": "Constraints violated (time)",
+    "SPARCNet": "Constraints violated (time)",
+    "STEEGFormer": "Constraints violated (time)",
+    "TCFormer": "Constraints violated (time)",
+    "TFMTokenizer": "Constraints violated (time)",
+    "TinyMyo": "Constraints violated (time)",
+    "USleep": "Constraints violated (time)",
+    "VEMG2Pose": "Constraints violated (time)",
+}
+
+
+@PARAMS
+def test_export_with_dynamic_time(model_name, required_params, signal_params, request):
+    model, x = _build_case(model_name, required_params, signal_params)
+    if model._time_axis == "fixed":
+        pytest.skip("fixed length")
+    if model_name in _EXPORT_STATIC_TIME:
+        request.applymarker(
+            pytest.mark.xfail(reason=_EXPORT_STATIC_TIME[model_name], strict=True)
+        )
+    # From twice the build length: a dense model drops its time axis at the build
+    # length only, so its output keeps one rank over the exported range.
+    C, T = x.shape[1:]
+    x = torch.randn(2, C, 2 * T)
+    time = torch.export.Dim("time", min=2 * T, max=4 * T)
+    program = torch.export.export(model, (x,), dynamic_shapes=({2: time},))
+    longer = torch.randn(2, C, 4 * T)
+    torch.testing.assert_close(program.module()(longer), model(longer))
