@@ -1360,3 +1360,19 @@ def test_deprecated_flags_follow_their_2_0_rules():
     model, x = _flag_model("AttnSleep", return_feats=True)
     with torch.no_grad():
         assert torch.jit.trace(model, x)(x).shape == model(x).shape == (2, 2400)
+
+
+def test_model_built_without_chs_info_traces():
+    # torch.jit.trace probes dir() with hasattr(); the unset chs_info used to
+    # raise there.
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+    x = torch.randn(2, 3, 128)
+    with torch.no_grad():
+        torch.testing.assert_close(torch.jit.trace(model, x)(x), model(x))
+    assert "n_chans" in dir(model) and "chs_info" not in dir(model)
+    with pytest.raises(ValueError, match="chs_info not specified"):
+        model.chs_info
+    # input_shape reads n_times, which BDTCN built without it cannot give.
+    model = models_dict["BDTCN"](n_chans=3, n_outputs=2).eval()
+    with torch.no_grad():
+        torch.testing.assert_close(torch.jit.trace(model, x)(x), model(x))

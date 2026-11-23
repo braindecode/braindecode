@@ -1092,6 +1092,18 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
+    def __dir__(self):
+        # torch.jit.trace probes every name of dir() with hasattr(), which lets a
+        # property's ValueError through: list a signal parameter only when its
+        # value is stored (reading a missing one still raises the same error).
+        # ponytail: values derived from others (n_chans from chs_info, sfreq from
+        # n_times and the window) are left out too.
+        stored = {n for n in _EEG_PARAMS if self.__dict__.get(f"_{n}") is not None}
+        if {"n_chans", "n_times"} <= stored:  # input_shape reads both
+            stored.add("input_shape")
+        hidden = {*_EEG_PARAMS, "input_shape"} - stored
+        return [n for n in super().__dir__() if n not in hidden]
+
     #: The true deprecated constructor flag that decides the output (deprecated_init_flags).
     _legacy_flag = None
 

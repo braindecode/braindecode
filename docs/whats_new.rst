@@ -694,6 +694,8 @@ Bug fixes
 - :func:`braindecode.preprocessing.create_fixed_length_windows` raises a ``ValueError`` when
   the window does not fit between ``start_offset_samples`` and ``stop_offset_samples``,
   instead of an ``IndexError`` or an empty dataset (:gh:`1763` by `Axel Coiffard-Donaty`_).
+- ``torch.jit.trace`` works on models built without ``chs_info`` or ``n_times``: it failed with
+  "chs_info not specified" while probing the model's attributes (:gh:`1805` by `Bruno Aristimunha`_).
 
 Code health
 ============
