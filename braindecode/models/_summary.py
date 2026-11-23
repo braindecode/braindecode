@@ -546,12 +546,13 @@ def _capabilities(
 ) -> dict[str, str]:
     """The capability columns of a model; later hooks add their rules here."""
     from braindecode.models.base import EEGModuleMixin
+    from braindecode.models.util import _modalities
 
     head = name not in _TOKENIZERS
     flags = {
         "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
         # the rule adapt_input applies: one input of EEG electrodes
-        "adapt_input": "EEG" in modality.split(", ") and len(cls._time_inputs) == 1,
+        "adapt_input": "EEG" in _modalities(modality) and len(cls._time_inputs) == 1,
         "reset_head": head and cls.reset_head is not EEGModuleMixin.reset_head,
         "return_features": head
         and "return_features" in inspect.signature(cls.forward).parameters,

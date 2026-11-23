@@ -251,7 +251,7 @@ def build_model_config(model) -> dict:
             elif not _is_jsonable(val):
                 continue
             config[name] = val
-    adaptation = dict(getattr(model, "_adapt_config", None) or {})
+    adaptation = deepcopy(getattr(model, "_adapt_config", None) or {})
     # Save the input montage, not the target; an adapted layer is saved apart.
     layer = (
         None
@@ -983,6 +983,11 @@ models_mandatory_parameters: list[
         lambda: {"chs_info": _fnirs_chs_info(2), "n_times": 150, "sfreq": 5.0},
     ),
 ]
+
+
+def _modalities(cell: str) -> set[str]:
+    """The modalities of a ``summary.csv`` Modality cell, such as ``"EEG, iEEG"``."""
+    return {m.strip() for m in cell.split(",")}
 
 
 def get_summary_table(dir_name=None):

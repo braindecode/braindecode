@@ -10,6 +10,7 @@ import functools
 import inspect
 import json
 import logging
+import math
 import sys
 import warnings
 from collections import OrderedDict
@@ -39,6 +40,7 @@ from braindecode.models.util import (
     _EEG_PARAMS,
     _in_model_resample,
     _is_jsonable,
+    _modalities,
     build_model_config,
     resolve_config_type,
     resolve_type_kwargs,
@@ -769,7 +771,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             table = model_util._summary_table
             modality = table.at[name, "Modality"] if name in table.index else "EEG"
             kinds = sorted(set(_resolve(target)[3]) - set(_ELECTRODES))
-            if "EEG" not in modality.split(", ") or kinds or len(self._time_inputs) > 1:
+            if (
+                "EEG" not in _modalities(modality)
+                or kinds
+                or len(self._time_inputs) > 1
+            ):
                 raise ValueError(
                     f"{name}.adapt_input cannot map channels: the channel layer maps "
                     f"one input of EEG electrodes, and {name} takes {modality} "
@@ -792,8 +798,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     f"{name}.adapt_input(sfreq=...) needs the integer sampling rate "
                     f"the model was built with, got sfreq={model_sfreq}."
                 )
-            if sfreq <= 0:
-                raise ValueError(f"{name}.adapt_input needs sfreq > 0, got {sfreq=}.")
+            if not math.isfinite(sfreq) or sfreq <= 0:
+                raise ValueError(
+                    f"{name}.adapt_input needs a finite sfreq > 0, got {sfreq=}."
+                )
             if sfreq != model_sfreq:
                 resample = _in_model_resample(
                     name, sfreq, int(model_sfreq), self._signal_param("n_times") or 0
@@ -1177,11 +1185,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     self._materialized_n_chans = x.shape[1]
                 if need_times and not self._accepts_any_n_times(args, kwargs):
                     n_times = x.shape[-1]
-                    if self._input_sfreq is not None:  # the length at model.sfreq
-                        n_times = -(
-                            -n_times
-                            * int(self._signal_param("sfreq"))
-                            // int(self._input_sfreq)
+                    if self._input_sfreq is not None:  # the length the weights saw:
+                        # at model.sfreq, then on the model's length grid
+                        n_times = self._snap_grid_target(
+                            -(
+                                -n_times
+                                * int(self._signal_param("sfreq"))
+                                // int(self._input_sfreq)
+                            )
                         )
                     self._materialized_n_times = n_times
         return out

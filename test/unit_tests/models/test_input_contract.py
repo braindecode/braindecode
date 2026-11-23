@@ -824,9 +824,10 @@ def test_adapt_input_keeps_the_stored_channel_strategy():
     )
     adapted.adapt_input(chs_info=chs[::-1])
     assert adapted.channel_layer.strategy == "spline"
-    assert adapted.get_config()["input_adaptation"]["channel_strategy_kwargs"] == {
-        "reg": 0.1
-    }
+    options = adapted.get_config()["input_adaptation"]["channel_strategy_kwargs"]
+    assert options == {"reg": 0.1}
+    options["reg"] = 1.0  # a copy, not the model's own config
+    assert adapted._adapt_config["channel_strategy_kwargs"] == {"reg": 0.1}
 
 
 def test_adapt_input_saves_numpy_strategy_options():
@@ -855,27 +856,28 @@ def test_adapt_input_leaves_the_model_unchanged_when_it_raises():
     model.adapt_input(chs_info=chs[::-1])  # not refused as a channel_strategy build
 
 
-@pytest.mark.parametrize("sfreq", [0, -500])
+@pytest.mark.parametrize("sfreq", [0, -500, float("nan"), float("inf")])
 def test_adapt_input_refuses_a_non_positive_sfreq(sfreq):
     model, _ = _eegnet()
-    with pytest.raises(ValueError, match="needs sfreq > 0"):
+    with pytest.raises(ValueError, match="needs a finite sfreq > 0"):
         model.adapt_input(sfreq=sfreq)
 
 
 def test_adapt_input_records_the_lazy_length_at_model_sfreq():
-    model = CBraMod(n_chans=4, n_outputs=2, sfreq=200)
+    model = CBraMod(n_chans=4, n_outputs=2, sfreq=200, on_non_divisible="crop")
     with pytest.warns(UserWarning, match="resampled inside the model"):
         model.adapt_input(sfreq=400)
     with torch.no_grad():
+        model(torch.randn(2, 4, 1700))  # 850 samples at 200 Hz, cropped to 800
+        assert model.n_times == 800
         model(torch.randn(2, 4, 1600))
-    assert model.n_times == 800
 
 
 def test_adapt_input_refuses_intracranial_models():
     from braindecode.models._summary import _capabilities
 
     assert _capabilities("BrainBERT", BrainBERT, "iEEG")["adapt_input"] == "no"
-    assert _capabilities("EEGNet", EEGNet, "EEG, iEEG")["adapt_input"] == "yes"
+    assert _capabilities("EEGNet", EEGNet, "iEEG,EEG")["adapt_input"] == "yes"
     chs = _draw_chs_info(4, np.random.default_rng(4))
     model = BrainBERT(chs_info=chs, n_outputs=2, n_times=1000, sfreq=250)
     with pytest.raises(ValueError, match="cannot map channels"):
