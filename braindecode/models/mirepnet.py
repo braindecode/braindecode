@@ -12,7 +12,6 @@ from typing import Dict, Optional, Union
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import (
@@ -157,6 +156,9 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/staraink/MIRepNet
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: embedding.conv2.weight
+
     _channel_target = MIREPNET_CHANNEL_ORDER
 
     def __init__(
@@ -268,12 +270,12 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             ]
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self._min_n_times = filter_time_length + pool_time_length - 1
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(
         self, x: Tensor, return_features: Optional[bool] = None
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
-        check_n_chans(x, self.n_chans, "MIRepNet")
         tokens = self.transformer(self.embedding(x))
         features = tokens.mean(dim=1)
         if return_features is None:

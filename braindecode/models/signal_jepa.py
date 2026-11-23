@@ -14,7 +14,6 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import (
-    check_n_chans,
     init_weights_,
     scaled_dot_product_attention,
     sinusoidal_positional_encoding,
@@ -316,6 +315,10 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
                 conv_bias=feature_encoder__conv_bias,
                 activation=activation,
             )
+            min_time = 1
+            for _, k, s in reversed(feature_encoder__conv_layers_spec):
+                min_time = (min_time - 1) * s + k
+            self._min_n_times = min_time
 
         if _init_transformer:
             assert channel_locations is not None  # narrowing for type checker
@@ -391,6 +394,14 @@ class SignalJEPA(_BaseSignalJEPA):
     r"""Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
+
+    .. figure:: ../_static/model/signal_jepa_arch.png
+       :align: center
+       :alt: SignalJEPA architecture
+       :width: 1000px
+
+       S-JEPA pre-training procedure with the local encoder, contextual encoder,
+       EMA target encoder and predictor, reproduced from [1]_ (CC BY 4.0).
 
     This model is not meant for classification but for SSL pre-training.
     Its output shape depends on the input shape.
@@ -480,6 +491,9 @@ class SignalJEPA(_BaseSignalJEPA):
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: pos_encoder.pos_encoder_spat.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -544,7 +558,6 @@ class SignalJEPA(_BaseSignalJEPA):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        check_n_chans(X, self.n_chans, "SignalJEPA")
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features = local_features + pos_encoding  # type: ignore
@@ -646,6 +659,9 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.linear.weight
+    _channel_axis = "fixed"  # fixed: final_layer.spat_conv.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -732,7 +748,6 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        check_n_chans(X, self.n_chans, "SignalJEPA_Contextual")
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features = local_features + pos_encoding  # type: ignore
@@ -905,6 +920,9 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.linear.weight
+    _channel_axis = "fixed"  # fixed: final_layer.spat_conv.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -1047,7 +1065,6 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        check_n_chans(X, self.n_chans, "SignalJEPA_PostLocal")
         local_features = self.feature_encoder(X)  # type: ignore[misc]
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
@@ -1141,6 +1158,9 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: spatial_conv.1.weight
 
     _feature_encoder_channels: str = "n_spat_filters"
 
@@ -1289,7 +1309,6 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        check_n_chans(X, self.n_chans, "SignalJEPA_PreLocal")
         X = self.spatial_conv(X)
         local_features = self.feature_encoder(X)  # type: ignore[misc]
         if return_features:

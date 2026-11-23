@@ -72,6 +72,9 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         Journal of Neural Engineering, 18(4), 046014.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: initial_inception_module.bottleneck.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -168,20 +171,6 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             activation=self.activation,
         )
 
-        # XXX The paper mentions a final average pooling but does not indicate
-        # the kernel size... The only info available is figure1 showing a
-        # final AveragePooling layer and the table3 indicating the spatial and
-        # channel dimensions are unchanged by this layer... This could indicate
-        # a stride=1 as for MaxPooling layers. Howevere, when we look at the
-        # number of parameters of the linear layer following the average
-        # pooling, we see a small number of parameters, potentially indicating
-        # that the whole time dimension is averaged on this stage for each
-        # channel. We follow this last hypothesis here to comply with the
-        # number of parameters reported in the paper.
-        self.ave_pooling = nn.AvgPool2d(
-            kernel_size=(1, self.n_times),
-        )
-
         self.flat = nn.Flatten()
 
         module = nn.Sequential()
@@ -195,6 +184,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         )
         module.add_module("out_fun", nn.Identity())
         self.final_layer = module
+        self._min_n_times = 1
 
     def forward(
         self,
@@ -218,7 +208,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         out = res2 + out
 
-        out = self.ave_pooling(out)
+        out = nn.functional.avg_pool2d(out, (1, out.shape[-1]))
         out = self.flat(out)
         out = self.final_layer(out)
         return out

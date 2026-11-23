@@ -74,6 +74,9 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
         https://doi.org/10.1016/j.bspc.2024.107189
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: spatial_conv.weight
+
     def __init__(
         self,
         # Braindecode signal arguments

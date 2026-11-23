@@ -230,6 +230,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
        https://openreview.net/forum?id=5Xwm8e6vbh
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_indices is sized by n_chans
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -377,6 +380,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.norm = nn.LayerNorm(embed_dim, eps=1e-6)
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
         self.head_drop = nn.Dropout(drop_prob)
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
         # Upstream MAE init (xavier-uniform Linears, unit/zero LayerNorm) on every
         # submodule, then the faithful-port specials: a normal(std=0.02) CLS token
@@ -412,10 +417,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         unknown channel lacks a valid position. Raises an actionable error if
         the identity mapping exceeds the embedding capacity.
         """
-        try:
-            chs_info = self.chs_info
-        except ValueError:
-            chs_info = None
+        chs_info = self._signal_param("chs_info")
         if not chs_info:
             identity = self._identity_channel_indices()
             warnings.warn(
@@ -503,10 +505,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
-        if x.shape[1] != self.n_chans:
+        if torch.jit.is_scripting() and x.shape[1] != self.n_chans:
+            # The eager check lives in EEGModuleMixin.__call__ (scripting skips it).
             raise ValueError(
-                f"STEEGFormer was built for {self.n_chans} channels but got input "
-                f"with {x.shape[1]}; rebuild the model for this montage."
+                f"STEEGFormer was built for {self.n_chans} channels but got "
+                f"input with {x.shape[1]}; rebuild the model for this montage."
             )
         # Tokens + positional embeddings, kept on the (seq, channel) grid.
         # Pads, crops or rejects a non-multiple of patch_size (on_non_divisible).

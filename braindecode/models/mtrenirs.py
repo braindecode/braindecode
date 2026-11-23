@@ -245,6 +245,9 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     .. footbibliography::
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -387,6 +390,20 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
         # Classification head: one linear layer on the pooled features
         self.final_layer = nn.Linear(self.feature_dim, self.n_outputs)
+        self._n_times_step = self.window_samples
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.window_samples
+        if self.pool == "flatten":
+            self._time_axis = "fixed"
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        ret_feat = self._call_arg(args, kwargs, "return_features", False)
+        coords = self._call_arg(args, kwargs, "coordinates")
+        return coords is not None and (
+            self.pool == "channel_temporal_mean" or bool(ret_feat)
+        )
 
     def encode(
         self,

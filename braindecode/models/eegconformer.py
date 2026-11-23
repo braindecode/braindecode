@@ -203,6 +203,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
        https://github.com/eeyhsong/EEG-Conformer
     """
 
+    _time_axis = "fixed"  # fixed: fc.fc.0.weight
+    _channel_axis = "fixed"  # fixed: patch_embedding.shallownet.1.weight
+
     # Old full-object checkpoints restore state without calling __init__.
     activation_checkpointing = False
 
@@ -287,6 +290,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         )
 
         self.final_layer = nn.Linear(self.fc.hidden_channels, self.n_outputs)
+        self._n_times_step = pool_time_stride
 
     def compile(self, *args, **kwargs):
         # Reject before installing a native compiled call (including estimator

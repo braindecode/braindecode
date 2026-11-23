@@ -31,6 +31,12 @@ Enhancements
 - Restyle the applied-examples gallery figures after :gh:`1761` and run the ECoG trialwise and
   fixed-length-window examples in the gallery as ``plot_bcic_iv_4_ecog_trial`` and
   ``plot_create_fixed_window_length``, with redirects from the old pages (:gh:`1789` by `Bruno Aristimunha`_).
+- Add :meth:`braindecode.models.EEGModuleMixin.adapt_input` to adapt a built model, in
+  place and with unchanged ``state_dict`` keys, to another EEG montage or sampling
+  rate; ``get_config`` saves the adaptation (by `Bruno Aristimunha`_).
+- ATCNet, CareSleepNet, EEGInceptionMI, FBCNet, FBMSNet, IFNet, Labram (``neural_tokenizer=True``), NeuroRVQTokenizer, PBT
+  and SeizureTransformer read the window length from the input instead of the length stored at build, so other lengths run
+  with unchanged weights, and outputs at the build length stay the same (by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
   with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
   DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).
@@ -205,6 +211,9 @@ Enhancements
 API and behavior changes
 ========================
 
+- Registered models declare their time and channel axes, and :class:`braindecode.models.EEGModuleMixin` checks channel counts
+  and lengths before ``forward``: a length off by at most 1% of ``n_times`` and one step snaps to it with a one-time
+  ``UserWarning`` unless ``on_non_divisible="error"``; larger mismatches raise ``ValueError`` (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).
