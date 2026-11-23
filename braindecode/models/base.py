@@ -251,8 +251,6 @@ def _new_head_follows_model(reset_head):
         # Hold the old tensors until the end, so that their ids cannot be
         # reused by the new ones.
         old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
-        self._materialized_n_chans = None
-        self._materialized_n_times = None
         out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
@@ -651,6 +649,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if self._n_chans is None and self._chs_info is not None:
             return len(self._chs_info)
         elif self._n_chans is None:
+            if not torch.jit.is_scripting():
+                materialized = getattr(self, "_materialized_n_chans", None)
+                if materialized is not None:
+                    return materialized
             raise ValueError(
                 "n_chans could not be inferred. Either specify n_chans or chs_info."
             )
@@ -671,6 +673,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             return int(round(self._input_window_seconds * self._sfreq))
         elif self._n_times is None:
+            if not torch.jit.is_scripting():
+                materialized = getattr(self, "_materialized_n_times", None)
+                if materialized is not None:
+                    return materialized
             raise ValueError(
                 "n_times could not be inferred. "
                 "Either specify n_times or input_window_seconds and sfreq."
@@ -806,11 +812,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     def _replace_time_inputs(
         self, args: tuple, kwargs: dict, fn: Callable[[str, torch.Tensor], torch.Tensor]
     ) -> tuple[tuple, dict]:
+        names = _forward_param_names(type(self))
+        # One time input: the first forward argument, whatever its name (X, eeg...).
+        time_inputs = self._time_inputs if len(self._time_inputs) > 1 else names[:1]
+
         def snap(name, value):
-            is_time = name in self._time_inputs and isinstance(value, torch.Tensor)
+            is_time = name in time_inputs and isinstance(value, torch.Tensor)
             return fn(name, value) if is_time else value
 
-        names = _forward_param_names(type(self))
         args = tuple(snap(n, a) for n, a in zip(names, args)) + args[len(names) :]
         return args, {k: snap(k, v) for k, v in kwargs.items()}
 
@@ -1000,7 +1009,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 probe = torch.zeros(
                     self.input_shape, dtype=ref.dtype, device=ref.device
                 )
-                self._check_input_shape(probe, (probe,), {})
+                (probe,), _ = self._prepare_inputs((probe,), {})
                 return tuple(
                     type(self)
                     .forward(  # the backbone, on its own channels
