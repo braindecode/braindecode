@@ -74,6 +74,14 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
     :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/mapa_arch.png
+       :align: center
+       :alt: MAPA architecture
+       :width: 1000px
+
+       Masked pretraining of MAPA over contacts, frequency bands and time, with
+       band and region embeddings, reproduced from [Tang2026]_ (CC BY 4.0).
+
     .. versionadded:: 2.0
 
     .. rubric:: Architecture Overview

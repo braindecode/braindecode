@@ -26,6 +26,15 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
+    .. figure:: ../_static/model/megxl_arch.png
+       :align: center
+       :alt: MEG-XL architecture
+       :width: 1000px
+
+       MEG-XL pretraining: per-channel BioCodec tokenization, input embedding
+       construction and temporal block masking, reproduced from [megxl]_
+       (CC BY 4.0).
+
     .. rubric:: Architecture Overview
 
     A frozen BioCodec tokenizer turns every channel into discrete codes; a

@@ -541,14 +541,18 @@ def _output_kind(name: str) -> str:
     return "(batch, outputs)"
 
 
-def _capabilities(name: str, cls: type[EEGModuleMixin]) -> dict[str, str]:
+def _capabilities(
+    name: str, cls: type[EEGModuleMixin], modality: str
+) -> dict[str, str]:
     """The capability columns of a model; later hooks add their rules here."""
     from braindecode.models.base import EEGModuleMixin
+    from braindecode.models.util import _modalities
 
     head = name not in _TOKENIZERS
     flags = {
         "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
-        "adapt_input": hasattr(cls, "adapt_input"),
+        # the rule adapt_input applies: one input of EEG electrodes
+        "adapt_input": "EEG" in _modalities(modality) and len(cls._time_inputs) == 1,
         "reset_head": head and cls.reset_head is not EEGModuleMixin.reset_head,
         "return_features": head
         and "return_features" in inspect.signature(cls.forward).parameters,
@@ -638,7 +642,7 @@ def generate_summary_rows(
                 "Time axis": cls._time_axis,
                 "Channel axis": cls._channel_axis,
                 "Output": _output_kind(name),
-                **_capabilities(name, cls),
+                **_capabilities(name, cls, editorial["Modality"]),
             }
         )
     return generated
