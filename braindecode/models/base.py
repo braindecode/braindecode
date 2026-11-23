@@ -658,11 +658,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     @property
     def n_outputs(self) -> int:
         if self._n_outputs is None:
-            if self.__dict__.get("_headless_build") is not None:
-                # Headless build: size the head for one output, then
-                # _drop_headless_head takes it off the model.
-                self._headless_build = True
-                return 1
+            if not torch.jit.is_scripting():
+                if self.__dict__.get("_headless_build") is not None:
+                    # Headless build: size the head for one output, then
+                    # _drop_headless_head takes it off the model.
+                    self._headless_build = True
+                    return 1
             raise ValueError("n_outputs not specified.")
         return self._n_outputs
 
