@@ -976,6 +976,7 @@ _EXPORT_STATIC_TIME: dict[str, str] = {
     "Pratibha2": "Constraints violated (time)",
     "SAMBA": "Constraints violated (time)",
     "SeizureTransformer": "Constraints violated (time)",
+    "SensingDynamics": "Constraints violated (time)",
     "SignalJEPA": "Constraints violated (time)",
     "SleepFM": "Constraints violated (time)",
     "SleepFMStager": "Constraints violated (time)",
@@ -994,6 +995,9 @@ def test_export_with_dynamic_time(model_name, required_params, signal_params, re
     model, x = _build_case(model_name, required_params, signal_params)
     if model._time_axis == "fixed":
         pytest.skip("fixed length")
+    if model_name == "BBL":
+        # Its export fails as the others do, but only after about ten minutes.
+        pytest.skip("export takes longer than the CI timeout")
     if model_name in _EXPORT_STATIC_TIME:
         request.applymarker(
             pytest.mark.xfail(reason=_EXPORT_STATIC_TIME[model_name], strict=True)
