@@ -42,7 +42,7 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
@@ -233,12 +233,15 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             self.eeg_encoder, Deep4Net
         )
 
+    @deprecated_forward_kwargs(X="x")
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(self, X):
+    def forward(self, x, return_features: bool = False):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
-        features = self.eeg_encoder(X)
+        features = self.eeg_encoder(x)
         if features.ndim == 2:
             features = features.unsqueeze(-1)
+        if not torch.jit.is_scripting() and return_features:
+            return {"features": features.transpose(1, 2), "cls_token": None}
         batch_size = features.shape[0]
         # Project every dense prediction, then average over time.
         per_step = features.transpose(1, 2).reshape(-1, features.shape[1])

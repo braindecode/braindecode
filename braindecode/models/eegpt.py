@@ -11,13 +11,17 @@ import torch
 from torch import nn
 
 from braindecode.functional import init_weights_
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
 from braindecode.util import resolve_montage_name
 
 
+@deprecated_init_flags(
+    identity_head=("return_encoder_output",),
+    return_encoder_output="tokens",
+)
 class EEGPT(EEGModuleMixin, nn.Module):
     r"""
     EEGPT: Pretrained Transformer for Universal and Reliable Representation of EEG Signals from Wang et al. (2024) [eegpt]_.
@@ -52,7 +56,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
     4. **Summary extraction**: keep only the summary tokens, apply ``norm`` if set, and reshape back
        to ``(batch, n_patches, embed_num, embed_dim)``.
     5. **Task head** (``final_layer``): flatten summary tokens across patches and map to
-       ``n_outputs``; if ``return_encoder_output=True``, return the encoder features instead.
+       ``n_outputs``; ``model(x, return_features=True)`` returns the encoder features instead.
 
     .. rubric:: Dual Self-Supervised Learning
 
@@ -171,8 +175,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    return_encoder_output : bool, default=False
-        Whether to return the encoder output or the classifier output.
     patch_size : int, default=64
         Size of the patches for the transformer.
     patch_stride : int, default=32
@@ -201,6 +203,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Normalization layer. If None, defaults to ``nn.LayerNorm`` with epsilon ``layer_norm_eps``.
     layer_norm_eps : float, default=1e-6
         Epsilon value for the normalization layer.
+    return_encoder_output : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        Whether to return the encoder output or the classifier output.
     n_chans_target : int, default=19
         Output channels of the learned channel projection. It must be 19, the
         electrodes of EEGPT's original linear probe (``EEGPT_19_CHANNELS``).
@@ -251,8 +256,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         patch_module: Optional[nn.Module] = None,
         norm_layer: Optional[nn.Module] = None,
         layer_norm_eps: float = 1e-6,
-        return_encoder_output: bool = False,
         # downstream finetuning parameters
+        return_encoder_output: bool = False,
         chan_proj_type: Literal[
             "conv1d_constraint", "linear", "none"
         ] = "conv1d_constraint",
@@ -275,7 +280,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         # model parameters
-        self.return_encoder_output = return_encoder_output
         self.patch_size = patch_size
         self.patch_stride = patch_stride
         self.embed_num = embed_num
@@ -298,11 +302,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
             raise ValueError("patch_module must be a subclass of _PatchEmbed")
         else:
             self.patch_module = patch_module
-
-        if final_layer is not None and return_encoder_output:
-            raise ValueError(
-                "return_encoder_output is not compatible with providing a final_layer which will be nn.Identity"
-            )
 
         # Downstream finetuning config
         self.chan_proj_type = chan_proj_type
@@ -369,9 +368,12 @@ class EEGPT(EEGModuleMixin, nn.Module):
         )
 
         # Build final layer (classification head)
-        if return_encoder_output:
-            self.final_layer = nn.Identity()
-        elif final_layer is not None:
+        if final_layer is not None and return_encoder_output:
+            raise ValueError(
+                "return_encoder_output is not compatible with providing a "
+                "final_layer which will be nn.Identity"
+            )
+        if final_layer is not None:
             # Use provided final_layer
             self.final_layer = nn.Sequential(
                 nn.Flatten(1),
@@ -437,7 +439,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Returns
         -------
         torch.Tensor or dict
-            Model output. Shape depends on `n_outputs` and `return_encoder_output`.
+            Logits ``(batch, n_outputs)``, or the feature dictionary.
         """
         # Channel projection (if configured)
         x = self.chan_proj(x)
@@ -449,11 +451,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": z.flatten(2),
                 "cls_token": None,
+                "tokens": z,
             }
             return out
-
-        if self.return_encoder_output:
-            return z
 
         # Pass to final_layer
         # _LinearConstraintProbe expects z in 4D (batch, n_patches, embed_num, embed_dim)

@@ -78,9 +78,6 @@ _OUTPUT_B_TIME_OUT: frozenset[str] = frozenset(
         "VEMG2Pose",
     }
 )
-_INITIAL_CROPPED_MODELS: frozenset[str] = frozenset(
-    {"Deep4Net", "EEGNet", "EMG2QwertyNet", "NeuroPose", "ShallowFBCSPNet"}
-)
 
 # Models whose __init__ (or lazy-head materialization) executes data-dependent
 # host ops (.item(), _unique2, CPU-only tensor copies) that cannot run on meta.
@@ -542,20 +539,23 @@ def _output_kind(name: str) -> str:
 
 
 def _capabilities(
-    name: str, cls: type[EEGModuleMixin], modality: str
+    name: str,
+    cls: type[EEGModuleMixin],
+    modality: str,
+    model: Any = None,
 ) -> dict[str, str]:
-    """The capability columns of a model; later hooks add their rules here."""
-    from braindecode.models.base import EEGModuleMixin
+    """The capability columns of a model; ``reset_head`` is read from the built
+    ``model`` when one is given."""
     from braindecode.models.util import _modalities
 
     head = name not in _TOKENIZERS
     flags = {
-        "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
+        "Cropped decoding": cls._dense_conversion,
         # the rule adapt_input applies: one input of EEG electrodes
         "adapt_input": "EEG" in _modalities(modality) and len(cls._time_inputs) == 1,
-        "reset_head": head and cls.reset_head is not EEGModuleMixin.reset_head,
-        "return_features": head
-        and "return_features" in inspect.signature(cls.forward).parameters,
+        "reset_head": head and model is not None and model._can_reset_head(),
+        # every model but a tokenizer; test_return_features checks each one
+        "return_features": head,
     }
     return {col: "yes" if flag else "no" for col, flag in flags.items()}
 
@@ -565,7 +565,7 @@ def _count_parameters(
     cls: type[EEGModuleMixin],
     init_kwargs: dict[str, Any],
     probe_shape: tuple[int, int],
-) -> int:
+) -> tuple[int, Any]:
     import torch
     from torch import nn
 
@@ -576,7 +576,7 @@ def _count_parameters(
         if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
             with torch.no_grad():
                 model.eval()(torch.zeros(1, *probe_shape))
-    return sum(p.numel() for p in model.parameters())
+    return sum(p.numel() for p in model.parameters()), model
 
 
 def _read_rows(csv_path: Path) -> list[dict[str, str]]:
@@ -629,20 +629,19 @@ def generate_summary_rows(
         for col in EDITORIAL_COLUMNS:
             if not editorial.get(col):
                 raise ValueError(f"{name} is missing editorial column {col!r}.")
+        n_params, model = _count_parameters(name, cls, init_kwargs, probe_shape)
         generated.append(
             {
                 **{col: editorial[col] for col in EDITORIAL_COLUMNS},
                 "Model": name,
                 "Hyperparameters": ", ".join(req),
-                "#Parameters": str(
-                    _count_parameters(name, cls, init_kwargs, probe_shape)
-                ),
+                "#Parameters": str(n_params),
                 "get_#Parameters": expr,
                 "Categorization": _parse_categorization(name, cls),
                 "Time axis": cls._time_axis,
                 "Channel axis": cls._channel_axis,
                 "Output": _output_kind(name),
-                **_capabilities(name, cls, editorial["Modality"]),
+                **_capabilities(name, cls, editorial["Modality"], model),
             }
         )
     return generated

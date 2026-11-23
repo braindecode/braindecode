@@ -13,6 +13,7 @@ from braindecode.training.losses import (
     CroppedLoss,
     DanceLoss,
     TimeSeriesLoss,
+    info_nce,
     mixup_criterion,
 )
 
@@ -205,3 +206,24 @@ def test_time_series_loss():
 
     torch.testing.assert_allclose(preds_out, preds_expected.flatten())
     torch.testing.assert_allclose(targets_out, targets_expected.flatten())
+
+
+def test_info_nce_value_for_orthogonal_pairs():
+    z = torch.eye(4)
+    # positive logit 1 / 0.1 = 10, six negatives at 0
+    expected = torch.log1p(6 * torch.exp(torch.tensor(-10.0)))
+    torch.testing.assert_close(info_nce(z, z, temperature=0.1), expected)
+
+
+def test_info_nce_is_symmetric():
+    z1, z2 = torch.randn(8, 16), torch.randn(8, 16)
+    torch.testing.assert_close(info_nce(z1, z2), info_nce(z2, z1))
+
+
+def test_info_nce_refuses_bad_inputs():
+    with pytest.raises(ValueError, match=r"same shape, got \(4, 8\) and \(4, 9\)"):
+        info_nce(torch.randn(4, 8), torch.randn(4, 9))
+    with pytest.raises(ValueError, match="at least 2"):
+        info_nce(torch.randn(1, 8), torch.randn(1, 8))
+    with pytest.raises(ValueError, match="temperature must be positive"):
+        info_nce(torch.randn(4, 8), torch.randn(4, 8), temperature=0)

@@ -16,7 +16,7 @@ from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.functional import _real_dft, spectral_input
 from braindecode.functional.functions import _next_fast_len
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 
 # Cache of one-sided DFT cosine/sine bases keyed by (device, n_fft): the TUEG
 # geometry reuses one basis for every block, forward and backward.
@@ -277,9 +277,10 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             remapped[new_key] = value
         return super().load_state_dict(remapped, *args, **kwargs)
 
+    @deprecated_forward_kwargs(inputs="x")
     def forward(
         self,
-        inputs: torch.Tensor,
+        x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         return_features: bool = False,
     ) -> Union[
@@ -287,16 +288,14 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Dict[str, Optional[torch.Tensor]],
         Tuple[torch.Tensor, torch.Tensor],
     ]:
-        # inputs: (batch, n_chans, n_times)
-        batch, n_chans, n_times = inputs.shape
+        # x: (batch, n_chans, n_times)
+        batch, n_chans, n_times = x.shape
         patch_size = self.patch_size
         seq_len = n_times // patch_size
 
         # Trim to nearest multiple of patch_size and reshape into patches
         # (batch, n_chans, seq_len, patch_size)
-        x = inputs[:, :, : seq_len * patch_size].reshape(
-            batch, n_chans, seq_len, patch_size
-        )
+        x = x[:, :, : seq_len * patch_size].reshape(batch, n_chans, seq_len, patch_size)
         # Dual temporal-spectral patch embedding
         # (batch, n_chans, seq_len, emb_dim)
         x = self.patch_embedding(x, mask=mask)

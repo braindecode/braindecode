@@ -32,7 +32,7 @@ from braindecode.functional import (
     rotary_frequencies,
     spectral_input,
 )
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.util import chs_info_positions
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
@@ -422,11 +422,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         return x_tokenized, channel_locations_emb
 
+    @deprecated_forward_kwargs(X="x", channel_locations="pos")
     def forward(
         self,
-        X: torch.Tensor,
+        x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-        channel_locations: Optional[torch.Tensor] = None,
+        pos: Optional[torch.Tensor] = None,
         channel_names: Optional[torch.Tensor] = None,
         ch_mask: Optional[torch.Tensor] = None,
         return_features: bool = False,
@@ -443,9 +444,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         "cls_token": None}``: the normed encoder output before the head,
         ``(batch, n_patches, num_queries * embed_dim)``.
         """
-        x_signal = X
+        x_signal = x
         B, C, _ = x_signal.shape
-        ch_mask = check_ch_mask(ch_mask, X)
+        ch_mask = check_ch_mask(ch_mask, x)
         if ch_mask is not None and self.num_classes == 0:
             raise ValueError(
                 "ch_mask needs n_outputs > 0: the reconstruction decoder attends "
@@ -456,8 +457,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             # Padding may hold NaN, which the patch embedding would spread.
             x_signal = x_signal.masked_fill(~ch_mask[:, :, None], 0.0)
 
-        if channel_locations is None:
-            channel_locations = self.get_default_channel_locations(
+        if pos is None:
+            pos = self.get_default_channel_locations(
                 batch_size=B,
                 num_channels=C,
                 device=x_signal.device,
@@ -465,7 +466,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
 
         x, channel_locations_emb = self.prepare_tokens(
-            x_signal, channel_locations, mask=mask, ch_mask=ch_mask
+            x_signal, pos, mask=mask, ch_mask=ch_mask
         )
         if ch_mask is not None:
             # Cross-attention rows are (batch, patch), batch outermost.

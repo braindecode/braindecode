@@ -10,7 +10,7 @@ from mne.utils import warn
 from torch import nn
 
 from braindecode.functional import glorot_weight_zero_bias
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import (
     Conv2dWithConstraint,
     Ensure4d,
@@ -126,7 +126,9 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
     """
 
     _time_axis = "dense"
+    _dense_conversion = True
     _channel_axis = "fixed"  # fixed: conv_spatial.parametrizations.weight.original
+    _feature_axis = 1
 
     def __init__(
         self,
@@ -374,9 +376,17 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
                     max_norm=norm_rate,
                 ),
             )
+            self._time_axis = "fixed"
         self.add_module("final_layer", module)
 
         self._init_parameters()
+
+    @deprecated_forward_kwargs(input="x")
+    def forward(self, x):
+        """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

@@ -8,7 +8,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import fft_conv1d, prefer_fft_conv
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import Ensure4d
 
 
@@ -186,16 +186,17 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.final_layer = module
         self._min_n_times = 1
 
+    @deprecated_forward_kwargs(X="x")
     def forward(
         self,
-        X: torch.Tensor,
+        x: torch.Tensor,
     ) -> torch.Tensor:
-        X = self.ensuredims(X)
-        X = self.dimshuffle(X)
+        x = self.ensuredims(x)
+        x = self.dimshuffle(x)
 
-        res1 = self.residual_block_1(X)
+        res1 = self.residual_block_1(x)
 
-        out = self.initial_inception_module(X)
+        out = self.initial_inception_module(x)
         for layer in self.intermediate_inception_modules_1:
             out = layer(out)
 

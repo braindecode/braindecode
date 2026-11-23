@@ -3,9 +3,13 @@
 # License: BSD-3
 
 
+import ast
+import inspect
 import json
+import pickle  # nosec B403 - the test reloads models it just pickled
 import subprocess
 import sys
+import warnings
 import weakref
 from operator import attrgetter
 from pathlib import Path
@@ -1158,3 +1162,217 @@ def test_attn_sleep_loads_a_v2_safetensors_file(tmp_path):
     state = _v2_layout("attn_sleep_v2.0.0_safetensors.txt")
     save_file(state, tmp_path / "model.safetensors")
     AttnSleep.from_pretrained(tmp_path, strict=True)
+
+
+# Old forward arguments of v2.0.0 keep working until their removal release
+# (deprecated_forward_kwargs); forward itself only takes the new names.
+def _aliases(cls):
+    return (cls._forward_deprecation or (None, {}, None))[1]
+
+
+_V2_FORWARD = [
+    (name, set(args))
+    for name, *args in (
+        line.split()
+        for line in (_V2_DATA / "v2_forward_arguments.txt").read_text().splitlines()
+    )
+]
+
+
+@pytest.mark.parametrize("name,v2_args", _V2_FORWARD)
+def test_v2_forward_arguments_are_still_accepted(name, v2_args):
+    cls = models_dict[name]
+    accepted = set(inspect.signature(cls.forward).parameters) | set(_aliases(cls))
+    assert v2_args <= accepted
+
+
+@pytest.mark.parametrize(
+    "name",
+    sorted(n for n, c in models_dict.items() if "_deprecated_kwargs" in vars(c.forward)),
+)
+def test_deprecated_forward_keywords_rename_to_forward_parameters(name):
+    params = inspect.signature(models_dict[name].forward).parameters
+    for old, new in _aliases(models_dict[name]).items():
+        new = new[0] if isinstance(new, tuple) else new
+        assert new in params and old not in params
+
+
+def test_old_forward_keyword_warns_and_matches_the_new_one():
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+
+    class Wrapped(EEGNet):  # overrides forward without the decorator
+        def forward(self, x):
+            return super().forward(x)
+
+    class Old(EEGNet):  # a 2.0 subclass whose forward still says input
+        def forward(self, input):
+            return super().forward(input)
+
+    wrapped = Wrapped(n_chans=3, n_outputs=2, n_times=128).eval()
+    wrapped.load_state_dict(model.state_dict())
+    old = Old(n_chans=3, n_outputs=2, n_times=128).eval()
+    old.load_state_dict(model.state_dict())
+    x = torch.randn(2, 3, 128)
+    with torch.no_grad():
+        expected = model(x)
+        with pytest.warns(FutureWarning, match="Calling EEGNet with input="):
+            assert torch.equal(model(input=x), expected)
+        with pytest.warns(FutureWarning, match="Calling Wrapped with input="):
+            assert torch.equal(wrapped(input=x), expected)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            assert torch.equal(old(input=x), expected)
+        with pytest.raises(TypeError, match="got both 'input'"):
+            model(input=x, x=x)
+    assert "input" not in str(torch.jit.script(model).forward.schema)
+
+
+def test_old_forward_arguments_compile_with_fullgraph():
+    # __call__ reads a plain class attribute, so torch.compile traces it whole.
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+    x = torch.randn(2, 3, 128)
+    compiled = torch.compile(model, fullgraph=True, backend="eager")
+    with torch.no_grad():
+        assert torch.equal(compiled(input=x), model(x))
+
+
+def test_old_sleepfm_channel_mask_is_the_inverse_of_ch_mask():
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == "SleepFM"
+    )
+    signal = _get_signal_params(signal_params)
+    model = models_dict["SleepFM"](**_get_signal_params(signal_params, required))
+    model.eval()
+    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+    missing = torch.zeros(2, x.shape[1], dtype=torch.bool)
+    missing[:, -1] = True  # the 2.0 channel_mask is True for missing channels
+    with torch.no_grad():
+        expected = model(x, ch_mask=~missing)
+        assert not torch.equal(expected, model(x))
+        with pytest.warns(FutureWarning, match="channel_mask"):
+            assert torch.equal(model(x, channel_mask=missing), expected)
+        with pytest.warns(FutureWarning, match="channel_mask"):
+            assert torch.equal(model(x, missing), expected)  # 2.0 positional order
+        with pytest.warns(FutureWarning, match="channel_mask"):
+            assert torch.equal(model(x, channel_mask=None), model(x))
+        with pytest.raises(TypeError, match="multiple values for argument"):
+            model(x, missing, channel_mask=missing)
+        with pytest.raises(TypeError, match="at most 3 positional"):
+            model(x, missing, False, None)
+        with pytest.warns(FutureWarning, match="second positional argument is ch_mask"):
+            old = model.encode(x, missing)[0]
+        assert torch.equal(old, model.encode(x, ch_mask=~missing)[0])
+
+
+# Constructor feature flags of v2.0.0 keep their 2.0 output until 2.3
+# (deprecated_init_flags). Shapes recorded with v2.0.0 for the test fixtures.
+_V2_FLAG_OUTPUTS = [
+    (name, flag, ast.literal_eval(output))
+    for name, flag, output in (
+        line.split(" ", 2)
+        for line in (_V2_DATA / "v2_flag_outputs.txt").read_text().splitlines()
+    )
+]
+
+
+def _structure(out):
+    if torch.is_tensor(out):
+        return tuple(out.shape)
+    if isinstance(out, dict):
+        return {k: _structure(v) for k, v in out.items()}
+    if isinstance(out, tuple):
+        return [_structure(v) for v in out]
+    return out
+
+
+def test_every_deprecated_flag_has_its_v2_output_recorded():
+    decorated = {
+        (name, flag)
+        for name, cls in models_dict.items()
+        for flag in vars(cls).get("_deprecated_init_flags", (None, {}))[1]
+    }
+    assert decorated == {(name, flag) for name, flag, _ in _V2_FLAG_OUTPUTS}
+
+
+@pytest.mark.parametrize("name,flag,v2_output", _V2_FLAG_OUTPUTS)
+def test_deprecated_constructor_flag_keeps_its_v2_output(name, flag, v2_output):
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == name
+    )
+    signal = _get_signal_params(signal_params)
+    kwargs = {**_get_signal_params(signal_params, required), flag: True}
+    with pytest.warns(FutureWarning, match=rf"{flag}=\.\.\.\) is deprecated"):
+        model = models_dict[name](**kwargs).eval()
+    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+    with torch.no_grad():
+        assert _structure(model(x)) == v2_output
+        # 2.0: an explicit return_features=False kept the flag's output.
+        assert _structure(model(x, return_features=False)) == v2_output
+
+
+def test_deprecated_constructor_flag_config_and_torchscript():
+    kwargs = dict(sfreq=100, n_outputs=2, input_window_seconds=30)
+    with pytest.warns(FutureWarning):  # False is passed, so it warns too
+        plain = AttnSleep(**kwargs, return_feats=False).eval()
+    with pytest.warns(FutureWarning):
+        legacy = AttnSleep(**kwargs, return_feats=True).eval()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        AttnSleep.from_config(plain.get_config())  # a false flag loads silently
+    with pytest.warns(FutureWarning):
+        reloaded = AttnSleep.from_config(legacy.get_config()).eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        assert plain(x).shape == (2, 2)
+        assert reloaded(x).shape == legacy(x).shape == (2, 2400)
+    with pytest.raises(RuntimeError, match="deprecated constructor feature flag"):
+        torch.jit.script(legacy)
+    # As in 2.0: no head weights with the flag, and asking for a head clears it.
+    assert not any(k.startswith("final_layer.") for k in legacy.state_dict())
+    legacy.reset_head(3)
+    with torch.no_grad():
+        assert legacy(x).shape == (2, 3)
+    assert legacy.get_config()["return_feats"] is False
+
+
+def _flag_model(name, **flags):
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == name
+    )
+    signal = _get_signal_params(signal_params)
+    model = models_dict[name](**_get_signal_params(signal_params, required), **flags)
+    return model.eval(), torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+
+
+@pytest.mark.filterwarnings("ignore::FutureWarning")
+def test_deprecated_flags_follow_their_2_0_rules():
+    # Both EEG-DINO flags: return_features decides; a new head clears only the other.
+    model, x = _flag_model("EEGDINO", return_features=True, return_encoder_output=True)
+    model = pickle.loads(pickle.dumps(model))  # nosec B301 - pickled just above
+    model.reset_head(3)
+    with torch.no_grad():
+        assert set(model(x)) == {"features", "cls_token"}
+    # EEGPT refused a custom head with the encoder output in 2.0.
+    with pytest.raises(ValueError, match="not compatible with providing a final_layer"):
+        _flag_model("EEGPT", return_encoder_output=True, final_layer=nn.Identity())
+    # A traced model keeps the flag's output, as in 2.0 (FBMSNet's own exception
+    # is in its decorator).
+    model, x = _flag_model("AttnSleep", return_feats=True)
+    with torch.no_grad():
+        assert torch.jit.trace(model, x)(x).shape == model(x).shape == (2, 2400)
+
+
+def test_model_built_without_chs_info_traces():
+    # torch.jit.trace probes dir() with hasattr(); the unset chs_info used to
+    # raise there.
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+    x = torch.randn(2, 3, 128)
+    with torch.no_grad():
+        torch.testing.assert_close(torch.jit.trace(model, x)(x), model(x))
+    assert "n_chans" in dir(model) and "chs_info" not in dir(model)
+    with pytest.raises(ValueError, match="chs_info not specified"):
+        model.chs_info
+    # input_shape reads n_times, which BDTCN built without it cannot give.
+    model = models_dict["BDTCN"](n_chans=3, n_outputs=2).eval()
+    with torch.no_grad():
+        torch.testing.assert_close(torch.jit.trace(model, x)(x), model(x))

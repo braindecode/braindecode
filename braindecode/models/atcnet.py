@@ -10,7 +10,7 @@ from torch import nn
 from torch.nn.utils.parametrize import is_parametrized, register_parametrization
 
 from braindecode.functional import scaled_dot_product_attention
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import (
     CausalConv1d,
     Ensure4d,
@@ -432,15 +432,16 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.n_windows * self.conv_block_pool_size_1 * self.conv_block_pool_size_2
         )
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    @deprecated_forward_kwargs(X="x")
+    def forward(self, x: torch.Tensor, return_features: bool = False):
         # Dimension: (batch_size, C, T)
-        X = self.ensuredims(X)
+        x = self.ensuredims(x)
         # Dimension: (batch_size, C, T, 1)
-        X = self.dimshuffle(X)
+        x = self.dimshuffle(x)
         # Dimension: (batch_size, 1, T, C)
 
         # ----- Sliding window -----
-        conv_feat = self.conv_block(X)
+        conv_feat = self.conv_block(x)
         # Dimension: (batch_size, F2, Tc, 1)
         tc = conv_feat.shape[2]
         conv_feat = conv_feat.view(-1, self.F2, tc)
@@ -468,6 +469,9 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
             sw_concat.append(tcn_feat)
 
+        if not torch.jit.is_scripting() and return_features:
+            return {"features": torch.stack(sw_concat, dim=1), "cls_token": None}
+
         # Outputs of sliding window can be either averaged after being
         # mapped by dense layer or concatenated then mapped by a dense
         # layer
@@ -487,6 +491,15 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 sw_concat_agg = sw_concat[0]
 
         return self.out_fun(sw_concat_agg)
+
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        self.final_layer = nn.ModuleList(
+            MaxNormLinear(
+                layer.in_features, n_outputs, max_norm_val=self.max_norm_const
+            )
+            for layer in self.final_layer
+        )
 
     def source_optimizer_param_groups(
         self,

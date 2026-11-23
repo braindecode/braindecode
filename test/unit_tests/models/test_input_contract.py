@@ -13,6 +13,7 @@ import braindecode.models.base as base_mod
 from braindecode.datasets import pad_channels_collate
 from braindecode.models import (
     AXON,
+    BDTCN,
     CORTEG,
     DIVER1,
     LUNA,
@@ -25,8 +26,10 @@ from braindecode.models import (
     FBCNet,
     FBMSNet,
     IFNet,
+    SeizureTransformer,
     SensingDynamics,
     TinyMyo,
+    USleep,
 )
 from braindecode.models.util import (
     _draw_chs_info,
@@ -268,6 +271,42 @@ def test_channel_axis_matches_forward(model_name, required_params, signal_params
                     assert _matches_free_channels(out, ref, c)
                 else:
                     assert _shapes(out) == _shapes(ref)
+
+
+@PARAMS
+def test_forward_takes_x_first(model_name, required_params, signal_params):
+    first = list(inspect.signature(models_dict[model_name].forward).parameters)[1]
+    assert first == "x", f"{model_name}.forward takes {first!r} instead of 'x'"
+
+
+def test_jung_mae_accepts_ch_mask_from_pad_channels_collate():
+    from braindecode.models import JungMAE
+
+    model = JungMAE(
+        n_chans=4,
+        n_outputs=2,
+        n_times=60,
+        depth=1,
+        num_heads=4,
+        embed_dim=64,
+        channel_order="interleaved",
+    ).eval()
+    w0 = torch.randn(4, 60).numpy()
+    w1 = torch.randn(2, 60).numpy()
+    X, _, _, mask = pad_channels_collate([(w0, 0, [0, 0, 60]), (w1, 1, [0, 0, 60])])
+    # Overwrite padded slots with finite garbage to verify ch_mask masks them as NaN.
+    X_dirty = X.clone()
+    X_dirty[~mask] = 999.0
+    X_nan = X.clone()
+    X_nan[~mask] = float("nan")
+    with torch.no_grad():
+        out_masked = model(X_dirty, ch_mask=mask)
+        out_nan = model(X_nan)
+        feat_masked = model(X_dirty, return_features=True, ch_mask=mask)["features"]
+        feat_alone = model(X[1:2, :2], return_features=True)["features"]
+    torch.testing.assert_close(out_masked, out_nan, rtol=0, atol=0)
+    # batch of two vs one: float32 round-off only
+    torch.testing.assert_close(feat_masked[1:2, : feat_alone.shape[1]], feat_alone)
 
 
 @PARAMS
@@ -614,6 +653,62 @@ def test_summary_generator_subset_and_cli(tmp_path):
     assert row["Sampling Frequency (Hz)"] == "200"
 
 
+@PARAMS
+def test_dense_conversion_contract(model_name, required_params, signal_params):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    T = x.shape[-1]
+    dense = copy.deepcopy(model)
+    if _summary_row(model_name)["Cropped decoding"] == "no":
+        with pytest.raises(ValueError, match="cannot give dense predictions"):
+            dense.to_dense_prediction_model()
+        return
+    dense.to_dense_prediction_model()
+    if model_name == "NeuroPose":
+        return  # its dense forward on 3 * n_times takes about 24 GB and 3 minutes
+    long = torch.randn(2, x.shape[1], 3 * T)
+    with torch.no_grad():
+        out = dense(long)
+        assert out.numel() > dense(long[..., : 2 * T]).numel()
+        window = model(long[..., :T])
+        # master's converter does not handle EEGNet's average pooling (see its docstring)
+        if window.ndim == 2 and model_name != "EEGNet":
+            torch.testing.assert_close(out[..., 0], window, atol=1e-5, rtol=1e-4)
+
+
+def test_dense_conversion_opt_in_and_refusal_reasons():
+    assert {n for n, c in models_dict.items() if c._dense_conversion} == {
+        "Deep4Net",
+        "EEGNet",
+        "EMG2QwertyNet",
+        "NeuroPose",
+        "ShallowFBCSPNet",
+    }
+    for mdl, reason in (
+        (USleep(n_chans=2, sfreq=128, n_times=3840, n_outputs=5), "it already gives"),
+        (SeizureTransformer(n_chans=2, n_outputs=1, n_times=1000), "it already gives"),
+        (EEGConformer(n_chans=3, n_outputs=2, n_times=1000), "it pools, tokenizes"),
+        (BDTCN(n_chans=3, n_outputs=2, n_times=1000), "it pools, tokenizes"),
+    ):
+        with pytest.raises(
+            ValueError,
+            match=rf"^{type(mdl).__name__} cannot give dense predictions: {reason}",
+        ):
+            mdl.to_dense_prediction_model()
+
+
+def test_dense_eegnet_matches_master_and_scripts():
+    torch.manual_seed(0)
+    model = EEGNet(n_chans=4, n_outputs=2, n_times=1000).eval()
+    model.to_dense_prediction_model()
+    x = torch.randn(2, 4, 1500)
+    with torch.no_grad():
+        out = model(x)
+        # master's converter gives 487 steps for this input
+        assert out.shape == (2, 2, 487)
+        torch.testing.assert_close(torch.jit.script(model)(x), out)
+
+
 def test_barista_refuses_out_of_range_spatial_indices():
     # Only indices passed to forward are range-checked there; the defaults
     # are checked at construction.
@@ -623,6 +718,8 @@ def test_barista_refuses_out_of_range_spatial_indices():
     indices[0] = -1
     with pytest.raises(ValueError, match="spatial_indices must contain integers"):
         model.eval()(x, spatial_indices=indices)
+
+
 # adapt_input(chs_info=...) refuses MEG, fNIRS and sEMG models, and CORTEG,
 # whose second per-channel input (x_hi) the channel layer does not map.
 # The registry models whose constructor takes channel_strategy (SleepFM and

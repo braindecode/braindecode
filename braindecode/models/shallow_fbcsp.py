@@ -10,7 +10,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import (
     CombinedConv,
     Ensure4d,
@@ -77,7 +77,9 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
     """
 
     _time_axis = "dense"
+    _dense_conversion = True
     _channel_axis = "fixed"  # fixed: conv_time_spat.conv_spat.weight
+    _feature_axis = 1
 
     def __init__(
         self,
@@ -229,6 +231,13 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self._init_parameters()
 
         self.train()
+
+    @deprecated_forward_kwargs(input="x")
+    def forward(self, x):
+        """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

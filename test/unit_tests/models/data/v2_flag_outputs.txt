@@ -1,0 +1,17 @@
+AttnSleep return_feats (2, 2400)
+BIOT return_feature [(2, 2), (2, 256)]
+CBraMod return_encoder_output (2, 3, 5, 200)
+CSBrain return_encoder_output (2, 3, 5, 200)
+DeepSleepNet return_feats (2, 1024)
+EEGConformer return_features (2, 61, 40)
+EEGDINO return_encoder_output (2, 200)
+EEGDINO return_features {'features': (2, 15, 200), 'cls_token': (2, 200)}
+EEGPT return_encoder_output (2, 31, 4, 512)
+EEGSimpleConv return_feature (2, 180)
+EMG2QwertyNet return_feature [(2, 373, 99), (2, 373, 768)]
+FBMSNet return_features [(2, 2), (2, 1152)]
+MIRepNet return_features {'features': (2, 256), 'cls_token': None}
+MSVTNet return_features [(2, 2), (4, 2, 2)]
+SSTDPN return_features [(2, 1072), (2, 2)]
+SleepStagerBlanco2020 return_feats (2, 100)
+SleepStagerChambon2018 return_feats (2, 24)
