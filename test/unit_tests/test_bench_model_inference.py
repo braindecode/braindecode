@@ -146,19 +146,13 @@ def test_numerical_mismatch_fails(monkeypatch, tiny_benchmark):
         benchmark(parser().parse_args(["--compile"]))
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda:1", "mps", "hpu"])
+@pytest.mark.parametrize("device", ["cpu", "cuda:1", "mps"])
 def test_synchronization_dispatch(monkeypatch, device):
     calls = []
     monkeypatch.setattr(
         torch.cuda, "synchronize", lambda device: calls.append(str(device))
     )
     monkeypatch.setattr(torch.mps, "synchronize", lambda: calls.append("mps"))
-    monkeypatch.setattr(
-        torch,
-        "hpu",
-        SimpleNamespace(synchronize=lambda: calls.append("hpu")),
-        raising=False,
-    )
     bench.synchronize(torch.device(device))
     assert calls == ([] if device == "cpu" else [device])
 

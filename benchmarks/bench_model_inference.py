@@ -9,7 +9,7 @@ Run from the repository root, for example::
         --dtype float32 --batch 64 --warmup 5 --repeats 20 --out bench.jsonl
 
 Uses PyTorch's benchmark Timer, with explicit accelerator synchronization also
-covering MPS and HPU. Reports first candidate execution after an eager FP32
+covering MPS. Reports first candidate execution after an eager FP32
 reference separately from warmed-up block timings in single-model mode, or one
 JSON line per model with median eager and optional compiled milliseconds in
 ``--models`` registry mode. This is NOT cold-device startup or necessarily a
@@ -66,21 +66,17 @@ def synchronize(device):
         torch.cuda.synchronize(device)
     elif device.type == "mps":
         torch.mps.synchronize()
-    elif device.type == "hpu":
-        torch.hpu.synchronize()
 
 
 def _prepare_device(device_name, precision):
-    """Validate device and precision combination, importing HPU support lazily."""
+    """Validate the device and precision combination."""
     device = torch.device(device_name)
-    if device.type not in {"cpu", "cuda", "mps", "hpu"}:
-        raise ValueError("Supported devices are cpu, cuda, mps and hpu")
+    if device.type not in {"cpu", "cuda", "mps"}:
+        raise ValueError("Supported devices are cpu, cuda and mps")
     if precision == "float16" and device.type != "cuda":
         raise ValueError("float16 is supported by this benchmark only on CUDA")
     if precision == "bfloat16" and device.type == "mps":
         raise ValueError("bfloat16 on MPS is not covered by this benchmark")
-    if device.type == "hpu":
-        import habana_frameworks.torch  # noqa: F401
     return device
 
 

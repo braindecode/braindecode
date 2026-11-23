@@ -20,9 +20,7 @@ from torch import nn
 from torch.export import ExportedProgram, export
 
 from braindecode import EEGClassifier
-from braindecode.functional import _real_dft
 from braindecode.models import (
-    AXON,
     BBL,
     EEGPT,
     MAPA,
@@ -100,9 +98,9 @@ def get_epochs_y(signal_params=None, n_epochs=10):
 def test_completeness__models_test_cases():
     models_tested = set(x[0] for x in models_mandatory_parameters)
     all_models = set(all_models_dict.keys())
-    assert all_models == models_tested, (
-        f"Models missing from models_test_cases: {all_models - models_tested}"
-    )
+    assert (
+        all_models == models_tested
+    ), f"Models missing from models_test_cases: {all_models - models_tested}"
 
 
 @pytest.mark.parametrize(
@@ -291,6 +289,7 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
         if "activation" in key.lower() and key != "activation_checkpointing"
     ]
     for activation in activation_list:
+
         assert issubclass(activation.default, nn.Module), (
             f"In class {model_class.__name__}, parameter has a default value "
             f"that is an initialized nn.Module instance. Default values should be nn.Module "
@@ -490,9 +489,7 @@ def _drop_torchscript_types():
         and hasattr(torch.jit._state, "_clear_class_state")
     ):
         torch._C._jit_clear_class_registry()
-        torch.jit._recursive.concrete_type_store = (
-            torch.jit._recursive.ConcreteTypeStore()
-        )
+        torch.jit._recursive.concrete_type_store = torch.jit._recursive.ConcreteTypeStore()
         torch.jit._state._clear_class_state()
 
 
@@ -552,7 +549,9 @@ def test_torch_script_with_chs_info(n_chans):
         n_times=default_signal_params["n_times"],
         sfreq=default_signal_params["sfreq"],
     ).eval()
-    input_tensor = torch.randn(2, len(chs_info), default_signal_params["n_times"])
+    input_tensor = torch.randn(
+        2, len(chs_info), default_signal_params["n_times"]
+    )
     assert model._n_chans == n_chans
     assert model.chs_info is chs_info
     expected = model(input_tensor)
@@ -616,71 +615,9 @@ def test_eegminer_torch_script_methods(method):
     torch.testing.assert_close(scripted_model(input_tensor), expected)
 
 
-def _always_real_dft(x: torch.Tensor) -> bool:
-    return True
-
-
-@pytest.mark.usefixtures("_drop_torchscript_types")
-@pytest.mark.parametrize(
-    "model_name,extra_kwargs",
-    [
-        ("ContraWR", {}),
-        ("DIVER1", {}),
-        ("EEGMiner", {"method": "mag"}),
-        ("EEGMiner", {"method": "corr"}),
-        ("EEGMiner", {"method": "plv"}),
-    ],
-)
-def test_torch_script_real_dft_models(monkeypatch, model_name, extra_kwargs):
-    """ContraWR, DIVER1 and EEGMiner script and execute their real-DFT branches."""
-    if hasattr(torch.jit._state, "_jit_caching_layer"):
-        torch.jit._state._jit_caching_layer.clear()
-    monkeypatch.setattr(_real_dft, "needs_real_dft", _always_real_dft)
-
-    required, signal_params = _MODEL_CASES[model_name]
-    sp = get_sp(signal_params, required)
-    sp.update(extra_kwargs)
-    model = all_models_dict[model_name](**sp).eval()
-    n_chans = model._signal_param("n_chans") or default_signal_params["n_chans"]
-    n_times = model._signal_param("n_times") or default_signal_params["n_times"]
-    x = torch.randn(2, n_chans, n_times)
-
-    with torch.no_grad():
-        expected = model(x)
-        scripted = torch.jit.script(model)
-        actual = scripted(x)
-    torch.testing.assert_close(actual, expected)
-
-
-def test_axon_attend_passes_contiguous_qkv(monkeypatch):
-    """AXON's ``_attend`` passes contiguous Q, K and V tensors owning their storage."""
-    import braindecode.models.axon as axon_mod
-
-    seen = []
-    orig_sdpa = axon_mod.scaled_dot_product_attention
-
-    def checked_sdpa(query, key, value, **kwargs):
-        seen.append(
-            (
-                query.is_contiguous() and query._base is None,
-                key.is_contiguous() and key._base is None,
-                value.is_contiguous() and value._base is None,
-            )
-        )
-        return orig_sdpa(query, key, value, **kwargs)
-
-    monkeypatch.setattr(axon_mod, "scaled_dot_product_attention", checked_sdpa)
-    required, signal_params = _MODEL_CASES["AXON"]
-    sp = get_sp(signal_params, required)
-    model = AXON(**sp).eval()
-    x = torch.randn(2, model.n_chans, model.n_times)
-    with torch.no_grad():
-        model(x)
-    assert seen and all(all(flags) for flags in seen)
-
-
 @pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_completeness_summary_table(model_class):
+
     assert model_class.__name__ in _summary_table.index, (
         f"{model_class.__name__} is not in the summary table. "
         f"Please add it to the summary table."

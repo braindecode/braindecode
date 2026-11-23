@@ -478,10 +478,6 @@ class _AxisAttention(nn.Module):
             .permute(2, 0, 3, 1, 4)
             .unbind(0)
         )
-        # Contiguous head tensors avoid strided-view bugs in fused attention kernels.
-        query = query.contiguous()
-        key = key.contiguous()
-        value = value.contiguous()
         drop = self.att_drop_prob if self.training else 0.0
         attended = scaled_dot_product_attention(
             query, key, value, attn_mask=mask, dropout_p=drop

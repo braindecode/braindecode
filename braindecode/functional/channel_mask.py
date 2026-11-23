@@ -47,15 +47,8 @@ def check_ch_mask(
     ch_mask = ch_mask.to(device=x.device, dtype=torch.bool)
     # Value check only in eager mode: it branches on tensor data.
     if not torch.jit.is_scripting():
-        if not torch.compiler.is_compiling():
-            message = "ch_mask must flag at least one real channel per sample."
-            has_real = ch_mask.any(dim=1).all()
-            if ch_mask.device.type == "cpu":
-                if not bool(has_real):
-                    raise ValueError(message)
-            else:
-                # A device-side assertion: no host sync on accelerators.
-                torch._assert_async(has_real, message)
+        if not torch.compiler.is_compiling() and not bool(ch_mask.any(dim=1).all()):
+            raise ValueError("ch_mask must flag at least one real channel per sample.")
     return ch_mask
 
 

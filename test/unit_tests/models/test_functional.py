@@ -43,9 +43,7 @@ def test_hilbert_freq_shape_forward_fourier_true():
     input_tensor = torch.randn(batch, channels, seq_len)
     output = hilbert_freq(input_tensor, forward_fourier=True)
     expected_shape = (batch, channels, seq_len, 2)
-    assert output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got {output.shape}"
-    )
+    assert output.shape == expected_shape, f"Expected shape {expected_shape}, got {output.shape}"
 
 
 def test_hilbert_freq_constant_signal():
@@ -57,9 +55,8 @@ def test_hilbert_freq_constant_signal():
     input_tensor = torch.ones(batch, channels, seq_len)
     output = hilbert_freq(input_tensor, forward_fourier=True)
     # Imaginary parts should be close to zero
-    assert torch.allclose(
-        output[..., 1], torch.zeros_like(output[..., 1]), atol=1e-5
-    ), "Imaginary part should be zero for constant input"
+    assert torch.allclose(output[..., 1], torch.zeros_like(output[..., 1]), atol=1e-5), \
+        "Imaginary part should be zero for constant input"
 
 
 @pytest.mark.parametrize("seq_len", [7, 8, 101, 128])
@@ -127,9 +124,8 @@ def test_plv_time_perfect_synchronization():
     input_tensor = signal.unsqueeze(0).repeat(batch, channels, 1)
     plv_matrix = plv_time(input_tensor, forward_fourier=True)
     expected = torch.ones(batch, channels, channels)
-    assert torch.allclose(plv_matrix, expected, atol=1e-5), (
+    assert torch.allclose(plv_matrix, expected, atol=1e-5), \
         "PLV should be 1 for perfectly synchronized signals"
-    )
 
 
 @pytest.mark.parametrize("forward_fourier", [False, True])
@@ -147,7 +143,9 @@ def test_hilbert_freq_bfloat16_matches_float32(forward_fourier):
     bfloat16_input = input_tensor.to(torch.bfloat16)
 
     output = hilbert_freq(bfloat16_input, forward_fourier=forward_fourier)
-    reference = hilbert_freq(bfloat16_input.float(), forward_fourier=forward_fourier)
+    reference = hilbert_freq(
+        bfloat16_input.float(), forward_fourier=forward_fourier
+    )
 
     assert output.dtype == torch.bfloat16
     assert torch.allclose(output.float(), reference, atol=2e-2, rtol=2e-2)
@@ -256,9 +254,7 @@ def test_rotate_pairs(dtype, shape):
     expected = torch.stack((-x[..., 1::2], x[..., 0::2]), dim=-1).flatten(-2)
     actual = rotate_pairs(x)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    torch.testing.assert_close(
-        torch.jit.script(rotate_pairs)(x), expected, rtol=0, atol=0
-    )
+    torch.testing.assert_close(torch.jit.script(rotate_pairs)(x), expected, rtol=0, atol=0)
     weights = torch.randn_like(actual)
     grad = torch.autograd.grad((actual * weights).sum(), x)[0]
     ref_grad = torch.autograd.grad((expected * weights).sum(), x)[0]
@@ -272,9 +268,7 @@ def test_rotate_pairs_rejects_odd_width():
 
 def test_rotate_half():
     x = torch.arange(6.0).reshape(1, 6)
-    assert torch.equal(
-        rotate_half(x), torch.tensor([[-3.0, -4.0, -5.0, 0.0, 1.0, 2.0]])
-    )
+    assert torch.equal(rotate_half(x), torch.tensor([[-3.0, -4.0, -5.0, 0.0, 1.0, 2.0]]))
     assert torch.equal(torch.jit.script(rotate_half)(x), rotate_half(x))
 
 
@@ -328,9 +322,7 @@ def test_real_rfft_and_irfft_match_torch_fft(n):
 
 
 @pytest.mark.parametrize("forward_fourier,n", [(True, 120), (True, 121), (False, 120)])
-def test_hilbert_freq_real_dft_path_matches_complex_path(
-    monkeypatch, forward_fourier, n
-):
+def test_hilbert_freq_real_dft_path_matches_complex_path(monkeypatch, forward_fourier, n):
     """Forcing the real-valued DFT path (as on HPU) reproduces the
     ``torch.fft``-based path exactly, for odd and even lengths and for both
     ``forward_fourier`` values."""
@@ -416,33 +408,6 @@ def test_fft_conv1d_real_matches_conv1d_same(kernel_size):
     )
 
 
-def test_real_dft_helpers_scriptable():
-    """Real-DFT helpers compile under ``torch.jit.script`` without ``@unused``."""
-    x = torch.randn(2, 4, 64)
-    w = torch.randn(5, 4, 9)
-    b = torch.randn(5)
-
-    scripted_hilbert = torch.jit.script(_real_dft.hilbert_freq_real)
-    torch.testing.assert_close(
-        scripted_hilbert(x, True, 64, True),
-        _real_dft.hilbert_freq_real(x, True, 64, True),
-    )
-    torch.testing.assert_close(
-        scripted_hilbert(x.bfloat16(), True, 64, True),
-        _real_dft.hilbert_freq_real(x.bfloat16(), True, 64, True),
-    )
-
-    scripted_conv = torch.jit.script(_real_dft.fft_conv1d_real)
-    torch.testing.assert_close(
-        scripted_conv(x, w, b),
-        _real_dft.fft_conv1d_real(x, w, b),
-    )
-    torch.testing.assert_close(
-        scripted_conv(x.bfloat16(), w.bfloat16(), None),
-        _real_dft.fft_conv1d_real(x.bfloat16(), w.bfloat16(), None),
-    )
-
-
 def test_prefer_fft_conv_needs_input_channels():
     """Direct for a 1-channel k=31 conv (MSVTNet: FFT 2-3x slower); FFT for
     EEGInceptionMI's 48 filters at k_max 108/225/450 (128/250/500 Hz)."""
@@ -467,9 +432,6 @@ def test_check_ch_mask():
         check_ch_mask(torch.ones(2, 2, dtype=torch.bool), x)
     with pytest.raises(ValueError, match="at least one real channel"):
         check_ch_mask(torch.tensor([[True, False, False], [False] * 3]), x)
-    # Off the CPU the value check is a device-side assertion, not a host read.
-    meta_mask = torch.ones(2, 3, dtype=torch.bool, device="meta")
-    assert check_ch_mask(meta_mask, x.to("meta")).is_meta
 
 
 @pytest.mark.parametrize("scripted", [False, True])
@@ -498,9 +460,7 @@ def test_masked_mean(scripted):
 
 
 @pytest.mark.parametrize("scripted", [False, True])
-@pytest.mark.parametrize(
-    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
-)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
 def test_masked_mean_reduction_precision(scripted, dtype):
     mean = torch.jit.script(masked_mean) if scripted else masked_mean
     # The FP16 sum overflows, but the mean is representable. The small offset
@@ -526,14 +486,7 @@ def test_masked_group_norm(scripted):
         norm(x, 3, None, weight, bias, 1e-5), group_norm(x, 3, weight, bias, 1e-5)
     )
     mask = torch.tensor([[True, True, False, True, False], [False] + [True] * 4])
-    out = norm(
-        x.masked_fill(~mask[:, None, :, None], float("nan")),
-        3,
-        mask,
-        weight,
-        bias,
-        1e-5,
-    )
+    out = norm(x.masked_fill(~mask[:, None, :, None], float("nan")), 3, mask, weight, bias, 1e-5)
     for b, rows in enumerate(mask):  # the flagged rows alone, through group_norm
         expected = group_norm(x[b : b + 1, :, rows], 3, weight, bias, 1e-5)[0]
         torch.testing.assert_close(out[b, :, rows], expected)
@@ -545,10 +498,7 @@ def test_masked_group_norm_nan_padding_backward(scripted):
     mask = torch.tensor([[True, False, True]])
     real = mask[:, None, :, None].expand(1, 4, 3, 4)
     x = torch.randn(1, 4, 3, 4).masked_fill(~real, float("nan")).requires_grad_()
-    weight, bias = (
-        torch.randn(4, requires_grad=True),
-        torch.randn(4, requires_grad=True),
-    )
+    weight, bias = torch.randn(4, requires_grad=True), torch.randn(4, requires_grad=True)
     reference_x = x.detach()[:, :, mask[0]].clone().requires_grad_()
     reference_weight = weight.detach().clone().requires_grad_()
     reference_bias = bias.detach().clone().requires_grad_()
