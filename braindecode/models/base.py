@@ -1442,10 +1442,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             x = self._first_input(args, kwargs)
             if x is not None and x.ndim >= 3:
+                n_chans, n_times, _ = self._input_chans_and_times(x)
                 if need_chans and not self._accepts_any_n_chans(args, kwargs):
-                    self._materialized_n_chans = x.shape[1]
+                    self._materialized_n_chans = n_chans
                 if need_times and not self._accepts_any_n_times(args, kwargs):
-                    n_times = x.shape[-1]
                     if self._input_sfreq is not None:  # the length at model.sfreq
                         n_times = -(
                             -n_times
