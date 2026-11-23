@@ -1360,4 +1360,3 @@ def test_deprecated_flags_follow_their_2_0_rules():
     model, x = _flag_model("AttnSleep", return_feats=True)
     with torch.no_grad():
         assert torch.jit.trace(model, x)(x).shape == model(x).shape == (2, 2400)
-
