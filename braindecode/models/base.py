@@ -379,11 +379,11 @@ def _new_head_follows_model(reset_head):
         head = self.__dict__.pop("_head_spec", None)
         if head is not None:  # headless build: put back its head, then resize it
             self.final_layer = head[0]
+        out = reset_head(self, *args, **kwargs)
         flag = self.__dict__.pop("_legacy_head_flag", None)
-        if flag is not None:  # as in 2.0, asking for a head clears the flag
+        if flag is not None:  # as in 2.0, a new head clears the flag (not a refusal)
             self._legacy_output = None
             self._update_init_kwargs(**{flag: False})
-        out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
                 tensors = [*module.parameters(), *module.buffers()]
