@@ -167,8 +167,9 @@ def test_reset_head_keeps_materialized_geometry():
         model(torch.randn(2, 3, 400))
     model.reset_head(3)
     assert model.n_chans == 3
-    with torch.no_grad(), pytest.raises(
-        ValueError, match="built for n_chans=3 and got 4"
+    with (
+        torch.no_grad(),
+        pytest.raises(ValueError, match="built for n_chans=3 and got 4"),
     ):
         model(torch.randn(2, 4, 400))
 
@@ -182,9 +183,7 @@ def test_scripted_model_rejects_wrong_channel_count(model_name):
     # repeat the channel check in forward under scripting; without it a
     # wrong channel count silently broadcasts or reads the wrong token.
     required, signal = next(
-        (rp, sp)
-        for name, rp, sp in models_mandatory_parameters
-        if name == model_name
+        (rp, sp) for name, rp, sp in models_mandatory_parameters if name == model_name
     )
     model, x = _build_case(model_name, required, signal)
     _materialize(model, x)
@@ -197,9 +196,7 @@ def test_scripted_model_rejects_wrong_channel_count(model_name):
 
 def test_vemg2pose_accepts_one_sample_past_left_context():
     required, signal = next(
-        (rp, sp)
-        for name, rp, sp in models_mandatory_parameters
-        if name == "VEMG2Pose"
+        (rp, sp) for name, rp, sp in models_mandatory_parameters if name == "VEMG2Pose"
     )
     model, x = _build_case("VEMG2Pose", required, signal)
     _materialize(model, x)
