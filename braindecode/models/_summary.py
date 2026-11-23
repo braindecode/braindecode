@@ -547,16 +547,17 @@ def _output_kind(name: str) -> str:
 def _capabilities(
     name: str,
     cls: type[EEGModuleMixin],
-    model: Any,
-    probe_shape: tuple[int, int],
     modality: str,
+    model: Any = None,
+    probe_shape: tuple[int, int] = (1, 1),
 ) -> dict[str, str]:
-    """The capability columns of a model, read from a built instance."""
+    """The capability columns of a model; ``reset_head`` and ``return_features``
+    are read from the built ``model`` when one is given."""
     import torch
 
     from braindecode.models.util import _modalities
 
-    head = name not in _TOKENIZERS
+    head = name not in _TOKENIZERS and model is not None
     features = None
     if head:  # measured: one forward with return_features=True
         device = "cpu" if name in _CPU_SUMMARY_MODELS else "meta"  # as built
@@ -654,7 +655,7 @@ def generate_summary_rows(
                 "Time axis": cls._time_axis,
                 "Channel axis": cls._channel_axis,
                 "Output": _output_kind(name),
-                **_capabilities(name, cls, model, probe_shape, editorial["Modality"]),
+                **_capabilities(name, cls, editorial["Modality"], model, probe_shape),
             }
         )
     return generated
