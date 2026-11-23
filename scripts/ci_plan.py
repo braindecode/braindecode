@@ -94,6 +94,7 @@ CROSS_MODEL_TEST_FILES = frozenset(
         "test/unit_tests/models/test_model_init.py",
         "test/unit_tests/models/test_huggingface.py",
         "test/unit_tests/models/test_return_features.py",
+        "test/unit_tests/models/test_ssl_contract.py",
         "test/unit_tests/models/test_models.py",
         "test/unit_tests/models/test_model_categorization.py",
         "test/unit_tests/models/test_model_modality.py",

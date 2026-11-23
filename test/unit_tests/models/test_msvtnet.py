@@ -62,7 +62,14 @@ def test_msvtnet_unequal_n_filters_list_forward():
     ).eval()
     x = torch.randn(3, 5, 300)
     assert model(x).shape == (3, 2)
-    model.return_features = True
+    with pytest.warns(FutureWarning, match="return_features"):
+        model = MSVTNet(
+            n_chans=5,
+            n_outputs=2,
+            n_times=300,
+            n_filters_list=(8, 8, 12, 12),
+            return_features=True,
+        ).eval()
     out, branch_out = model(x)
     assert out.shape == (3, 2)
     assert branch_out.shape == (4, 3, 2)

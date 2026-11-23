@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.functional import init_weights_
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 
 
 class SPARCNet(EEGModuleMixin, nn.Module):
@@ -208,13 +208,14 @@ class SPARCNet(EEGModuleMixin, nn.Module):
             )
         )
 
-    def forward(self, X: torch.Tensor):
+    @deprecated_forward_kwargs(X="x")
+    def forward(self, x: torch.Tensor):
         """
         Forward pass of the model.
 
         Parameters
         ----------
-        X: torch.Tensor
+        x: torch.Tensor
             The input tensor of the model with shape (batch_size, n_channels, n_times)
 
         Returns
@@ -222,7 +223,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             The output tensor of the model with shape (batch_size, n_outputs)
         """
-        emb = self.encoder(X)
+        emb = self.encoder(x)
         emb = self.adaptative_pool(emb)
         emb = self.activation_layer(emb)
         emb = self.flatten_layer(emb)

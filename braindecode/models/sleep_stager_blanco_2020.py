@@ -6,9 +6,13 @@ import math
 
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    identity_head=("return_feats",),
+    return_feats="features",
+)
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
     r"""Sleep staging architecture from Blanco et al (2020) from [Blanco2020]_
 
@@ -40,6 +44,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         If True, apply batch normalization after both temporal convolutional
         layers.
     return_feats : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
@@ -137,15 +142,12 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         self.len_last_layer = self._len_last_layer(
             n_conv_chans, self.n_times, max_pool_size
         )
-        self.return_feats = return_feats
 
-        # TODO: Add new way to handle return_features == True
-        if not return_feats:
-            self.final_layer = nn.Sequential(
-                nn.Dropout(drop_prob),
-                nn.Linear(self.len_last_layer, self.n_outputs),
-                nn.Identity(),
-            )
+        self.final_layer = nn.Sequential(
+            nn.Dropout(drop_prob),
+            nn.Linear(self.len_last_layer, self.n_outputs),
+            nn.Identity(),
+        )
 
     def _len_last_layer(
         self, n_conv_chans: int, input_size: int, max_pool_size: int
@@ -171,7 +173,4 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             x = x.unsqueeze(2)
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
-        if self.return_feats:
-            return feats
-        else:
-            return self.final_layer(feats)
+        return self.final_layer(feats)

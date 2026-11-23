@@ -129,6 +129,62 @@ def mixup_criterion(preds, target):
     return torch.nn.functional.cross_entropy(preds, target)
 
 
+def info_nce(
+    z1: torch.Tensor, z2: torch.Tensor, temperature: float = 0.1
+) -> torch.Tensor:
+    r"""InfoNCE (NT-Xent) contrastive loss between two views of a batch [1]_.
+
+    Row ``i`` of ``z1`` and row ``i`` of ``z2`` embed two views of the same
+    sample. Each of the :math:`2N` rows of ``cat([z1, z2])`` is an anchor whose
+    positive is the other view of its sample and whose negatives are the other
+    :math:`2N - 2` rows:
+
+    .. math::
+
+        \ell_i = -\log \frac{\exp(\mathrm{sim}(z_i, z_{i^+}) / \tau)}
+        {\sum_{k \neq i} \exp(\mathrm{sim}(z_i, z_k) / \tau)}
+
+    with cosine similarity :math:`\mathrm{sim}` and temperature :math:`\tau`.
+    The loss is the mean of :math:`\ell_i` over the :math:`2N` anchors.
+
+    Parameters
+    ----------
+    z1, z2 : torch.Tensor
+        Embeddings of the two views, both of shape ``(batch, dim)``, for
+        example ``model(x, return_features=True)["embedding"]`` passed through
+        a projection head.
+    temperature : float
+        Temperature :math:`\tau` dividing the cosine similarities. Must be
+        positive.
+
+    Returns
+    -------
+    torch.Tensor
+        The scalar loss.
+
+    References
+    ----------
+    .. [1] Chen, T., Kornblith, S., Norouzi, M., Hinton, G. (2020).
+       A Simple Framework for Contrastive Learning of Visual Representations.
+       ICML. https://arxiv.org/abs/2002.05709
+    """
+    if z1.ndim != 2 or z1.shape != z2.shape:
+        raise ValueError(
+            "info_nce takes two (batch, dim) tensors of the same shape, got "
+            f"{tuple(z1.shape)} and {tuple(z2.shape)}."
+        )
+    if z1.shape[0] < 2:
+        raise ValueError("info_nce needs a batch size of at least 2.")
+    if temperature <= 0:
+        raise ValueError(f"temperature must be positive, got {temperature}.")
+    n = z1.shape[0]
+    z = torch.nn.functional.normalize(torch.cat([z1, z2]), dim=1)
+    logits = (z @ z.T / temperature).fill_diagonal_(float("-inf"))
+    # the positive of anchor i is the other view of the same sample
+    targets = torch.arange(2 * n, device=z.device).roll(n)
+    return torch.nn.functional.cross_entropy(logits, targets)
+
+
 class HungarianMatcher(nn.Module):
     """Hungarian one-to-one matching between queries and ground-truth events.
 

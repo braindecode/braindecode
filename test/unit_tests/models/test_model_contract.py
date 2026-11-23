@@ -18,6 +18,7 @@ import sys
 from collections import namedtuple
 from collections.abc import Mapping
 
+import numpy as np
 import pytest
 import torch
 from torch import nn
@@ -28,7 +29,16 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
-from braindecode.models import LUNA, MAPA
+from braindecode.models import (
+    LUNA,
+    MAPA,
+    AttnSleep,
+    EEGConformer,
+    EEGNet,
+    EEGNeX,
+    GCNsNet,
+)
+from braindecode.models.base import HAS_HF_HUB
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
     _summary_table,
@@ -36,6 +46,7 @@ from braindecode.models.util import (
     models_mandatory_parameters,
 )
 from test.unit_tests.models._fixtures import (
+    _TOKENIZERS,
     PARAMS,
     _build_case,
     _materialize,
@@ -617,7 +628,10 @@ _CH_MASK_EXTRAS = {
 # Channels tied to slots of the configuration: a recording keeps all of them and
 # masks the missing ones, so it has no shorter input to run alone
 # (test_sleepfm_masked_input_is_ignored covers its ch_mask).
-_CH_MASK_SLOTS = {"SleepFMStager": "channels are grouped by channel_modalities slot"}
+_CH_MASK_SLOTS = {
+    "SleepFMStager": "channels are grouped by channel_modalities slot",
+    "JungMAE": "a padded channel is a missing (NaN) slot of a fixed HbO/HbR montage",
+}
 
 
 def _ch_mask_case(model_name, required_params, signal_params):
@@ -758,6 +772,105 @@ def _check_mapping_targets(name, model):
 
 
 @PARAMS
+def test_no_lazy_weights_once_the_shape_is_known(
+    model_name, required_params, signal_params
+):
+    if model_name == "GCNsNet":
+        pytest.skip("node counts are only known once the graph is fitted")
+    model, _ = _build_case(model_name, required_params, signal_params)
+    lazy = [
+        n
+        for n, p in model.named_parameters()
+        if isinstance(p, nn.UninitializedParameter)
+    ]
+    assert lazy == []
+
+
+def test_gcnsnet_graph_fit_keeps_the_optimizer_parameters():
+    """An optimizer built before the graph is fitted still trains every weight."""
+    torch.manual_seed(0)
+    x = torch.randn(4, 9, 16)
+    x[:, 4] = 0  # a constant channel has no edges, so Graclus pads more nodes
+    model = GCNsNet(n_chans=9, n_outputs=2, n_times=16)
+    params = list(model.parameters())
+    model.fit_graph(x)
+    model(x).sum().backward()
+    assert [id(p) for p in model.parameters()] == [id(p) for p in params]
+    assert all(p.grad is not None for p in params)
+
+
+# A backbone without a head: its classifiers are separate classes.
+_NO_HEAD = {"SignalJEPA"}
+
+
+@PARAMS
+def test_reset_head_on_every_model(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    if not model._can_reset_head():
+        keys = {k: v.shape for k, v in model.state_dict().items()}
+        with pytest.raises(NotImplementedError, match="needs its own reset_head"):
+            model.reset_head(3)
+        assert {k: v.shape for k, v in model.state_dict().items()} == keys
+        return
+    n = (model._signal_param("n_outputs") or 2) + 3
+    model.reset_head(n)
+    with torch.no_grad():
+        out = next(_tensor_leaves(model(x)))
+    assert n in out.shape[1:]
+    assert model.n_outputs == n == model.get_config()["n_outputs"]
+    rebuilt = type(model).from_config(model.get_config()).eval()
+    _materialize(rebuilt, x)
+    with torch.no_grad():
+        assert next(_tensor_leaves(rebuilt(x))).shape == out.shape
+
+
+@PARAMS
+def test_headless_build_and_reset_head(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params, headless=True)
+    _materialize(model, x, return_features=True)
+    assert list(model.final_layer.parameters()) == []
+    with torch.no_grad():
+        feats = model(x, return_features=True)
+    assert feats["embedding"].ndim == 2 and feats["embedding"].shape[0] == x.shape[0]
+    with pytest.raises(ValueError, match="n_outputs not specified"):
+        model.n_outputs
+    if model_name in _NO_HEAD:
+        return
+    with pytest.raises(ValueError, match="headless"):
+        model(x)
+    if not model._can_reset_head():
+        with pytest.raises(NotImplementedError, match="needs its own reset_head"):
+            model.reset_head(4)
+        with pytest.raises(ValueError, match="headless"):
+            model(x)  # still headless, not a 1-output head
+        assert list(model.final_layer.parameters()) == []
+        return
+    model.reset_head(4)
+    with torch.no_grad():
+        assert 4 in next(_tensor_leaves(model(x))).shape[1:]
+    assert model.get_config()["n_outputs"] == 4
+
+
+def test_headless_model_takes_return_features_positionally():
+    model = EEGConformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    with torch.no_grad():
+        assert "features" in model(torch.randn(2, 3, 1000), True)
+
+
+def test_reset_head_checks_n_outputs_before_touching_the_head():
+    model = EEGConformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    with pytest.raises(ValueError, match="non-negative integer"):
+        model.reset_head(-1)
+    with pytest.raises(ValueError, match="headless"):
+        model(torch.randn(2, 3, 1000))
+
+
+@PARAMS
 def test_autocast_bfloat16_forward(model_name, required_params, signal_params):
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
@@ -776,3 +889,35 @@ def test_channels_last_matches_contiguous(model_name, required_params, signal_pa
         ref = model(x)
         last = copy.deepcopy(model).to(memory_format=torch.channels_last)
         torch.testing.assert_close(last(x), ref, atol=1e-5, rtol=1e-4)
+
+
+def test_default_reset_head_judges_only_the_head():
+    # EEGNet's F1=8 equals n_outputs and a headless AttnSleep has a 1-wide SE
+    # layer: neither is part of the head.
+    eegnet = EEGNet(n_chans=3, n_times=128, n_outputs=8)
+    eegnet.reset_head(np.int64(3))  # numpy integers are accepted
+    assert eegnet.n_outputs == 3
+    attn = AttnSleep(sfreq=100, n_times=3000, n_outputs=None)
+    attn.reset_head(5)
+    with torch.no_grad():
+        assert attn(torch.randn(2, 1, 3000)).shape == (2, 5)
+    with pytest.raises(ValueError, match="positive"):
+        eegnet.reset_head(0)
+
+
+def test_headless_override_that_calls_super_attaches_a_head():
+    class _Conformer(EEGConformer):
+        def reset_head(self, n_outputs):
+            super().reset_head(n_outputs)
+
+    model = _Conformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    model.reset_head(4)
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, 1000)).shape == (2, 4)
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
+def test_from_pretrained_refused_head_change_is_a_value_error(tmp_path):
+    EEGNeX(n_chans=3, n_times=256, n_outputs=2).save_pretrained(tmp_path)
+    with pytest.raises(ValueError, match="does not support changing n_outputs"):
+        EEGNeX.from_pretrained(tmp_path, n_outputs=4)

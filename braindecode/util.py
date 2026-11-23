@@ -428,8 +428,8 @@ class ThrowAwayIndexLoader(object):
     def _forward_kwargs(self, signal, extras):
         """Name the signal and the extras of an extended batch for the forward.
 
-        The signal goes to the first ``forward`` parameter (``x``, ``eeg``,
-        ``X``...). ``pos`` and ``ch_mask`` go under these names only, and only to
+        The signal goes to the first ``forward`` parameter (``x`` on registered
+        models). ``pos`` and ``ch_mask`` go under these names only, and only to
         a ``forward`` that takes them.
         """
         module = self.net.module_

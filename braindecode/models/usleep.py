@@ -173,6 +173,7 @@ class USleep(EEGModuleMixin, nn.Module):
 
     _time_axis = "dense"
     _channel_axis = "fixed"  # fixed: encoder_blocks.0.block_prepool.0.weight
+    _feature_axis = 1
 
     def __init__(
         self,

@@ -185,8 +185,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     on_non_divisible : {"pad", "crop", "error"}, default="pad"
         How a window that is not a multiple of the segment length is handled:
         right zero-padded, cropped, or rejected.
-    return_features : bool, default=False
-        Whether ``forward`` returns the feature dictionary by default.
 
     Input shape
     -----------
@@ -240,7 +238,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         drop_prob: float = 0.2,
         embedding_init_bound: float = 0.05,
         on_non_divisible: str = "pad",
-        return_features: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -254,7 +251,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         _check_on_non_divisible(on_non_divisible)
         self.segment_len = n_patches[0] * patch_lens[0]
         self.on_non_divisible = on_non_divisible
-        self.return_features = return_features
         self.n_last_steps = n_last_steps
         # Read again by reset_parameters, through _init_parameters.
         self.embedding_init_bound = embedding_init_bound
@@ -298,8 +294,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        ret = self._call_arg(args, kwargs, "return_features")
-        return bool(self.return_features if ret is None else ret)
+        return bool(self._call_arg(args, kwargs, "return_features"))
 
     def _init_parameters(self) -> None:
         # Reference initialisation (meg_gpt/optim/initializer.py): Xavier linear
@@ -314,7 +309,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def forward(
         self,
         x: Tensor,
-        return_features: Optional[bool] = None,
+        return_features: bool = False,
         ch_mask: Optional[Tensor] = None,
         token_mask: Optional[Tensor] = None,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
@@ -326,8 +321,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         zeros before positions and causal context, not before tokenization.
         See :meth:`encode_tokens` for next-token targets and loss selection.
         """
-        if return_features is None:
-            return_features = self.return_features
         ch_mask = check_ch_mask(ch_mask, x)  # (batch, n_chans) or None
         if ch_mask is not None:
             if not return_features:

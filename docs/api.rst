@@ -992,6 +992,7 @@ models and evaluate their performance.
      CroppedLoss
      TimeSeriesLoss
      DanceLoss
+     info_nce
      CroppedTrialEpochScoring
      CroppedTimeSeriesEpochScoring
      PostEpochTrainScoring

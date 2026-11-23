@@ -15,9 +15,12 @@ import torch
 from torch import nn
 from torchaudio.transforms import Resample
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    return_feature="features",
+)
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     r"""EEGSimpleConv from Ouahidi, YE et al (2023) [Yassine2023]_.
 
@@ -80,6 +83,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     kernel_size : int
         Size of the convolutions kernels.
     return_feature : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If True, return the features before the final linear layer.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
@@ -128,7 +132,6 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
-        self.return_feature = return_feature
         self.resample = (
             Resample(orig_freq=int(self.sfreq), new_freq=int(resampling_freq))
             if self.sfreq != resampling_freq
@@ -207,7 +210,4 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         for seq in self.blocks:
             feat = seq(feat)
         feat = feat.mean(dim=2)
-        if self.return_feature:
-            return feat
-        else:
-            return self.final_layer(feat)
+        return self.final_layer(feat)
