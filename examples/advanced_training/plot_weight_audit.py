@@ -313,9 +313,9 @@ print(f"Channel whose removal costs the most: {top_data}")
 # compare the channel ranked first by the weights with the one whose removal
 # costs the most.
 
-VERMILLION, BLUE, GREY, INK = "#D55E00", "#0072B2", "#7F7F7F", "#14181F"
+VERMILION, BLUE, GREY, INK = "#D55E00", "#0072B2", "#7F7F7F", "#14181F"
 groups = {
-    "Frequency": (drops.index[:3], VERMILLION),
+    "Frequency": (drops.index[:3], VERMILION),
     "Time window": (drops.index[3:5], BLUE),
     "Channel": (drops.index[5:], GREY),
 }
