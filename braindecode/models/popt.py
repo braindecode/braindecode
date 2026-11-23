@@ -132,6 +132,9 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
        preprint arXiv:2406.03044.
     """
 
+    _time_axis = "fixed"  # fixed: input_embedding.in_proj.weight is sized by n_times
+    _channel_axis = "fixed"  # fixed: electrode_coords is sized by n_chans
+
     def __init__(
         self,
         # braindecode parameters
@@ -255,6 +258,12 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Linear(self.hidden_dim, n_outputs).to(
             device=old.device, dtype=old.dtype
         )
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        coords = self._call_arg(args, kwargs, "coords")
+        return coords is not None
 
     def forward(
         self,

@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import check_n_chans, init_weights_, patch_count
+from braindecode.functional import init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
@@ -297,6 +297,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
        https://github.com/yuchen2199/CSBrain
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -333,10 +336,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
-        try:
-            tokenizer_n_times = self.n_times
-        except ValueError:  # unknown length: nothing to check at construction
-            tokenizer_n_times = patch_size
+        tokenizer_n_times = self._signal_param("n_times") or patch_size
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
             n_times=tokenizer_n_times,
@@ -359,13 +359,13 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # channel, taking precedence over name derivation) when given, else
         # derived from channel names; without either there is no reordering,
         # no region embedding and the inter-region attention is unmasked.
-        if brain_regions is not None and self._n_chans_or_none() not in (
+        if brain_regions is not None and self._signal_param("n_chans") not in (
             None,
             len(brain_regions),
         ):
             raise ValueError(
                 f"brain_regions has {len(brain_regions)} entries for "
-                f"{self._n_chans_or_none()} channels."
+                f"{self._signal_param('n_chans')} channels."
             )
         if brain_regions is not None:
             ordered_regions, sorted_indices = order_regions(
@@ -418,21 +418,21 @@ class CSBrain(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Identity()
         else:
             self.final_layer = self._make_task_head()
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
-    def _n_chans_or_none(self) -> int | None:
-        try:
-            return self.n_chans
-        except ValueError:
-            return None
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        return self.sorted_indices is None and self._accepts_any_n_times(args, kwargs)
 
-    def _n_times_or_none(self) -> int | None:
-        try:
-            return self.n_times
-        except ValueError:
-            return None
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        ret_feat = self._call_arg(args, kwargs, "return_features", False)
+        return bool(self._encoder_output or ret_feat)
 
     def _n_patch(self) -> int | None:
-        n_times = self._n_times_or_none()
+        n_times = self._signal_param("n_times")
         if n_times is None:
             return None
         # ceil for "pad", floor for "crop" (raises below one patch): the count
@@ -445,7 +445,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # n_chans / n_times may come from chs_info / input_window_seconds.
         # Without them the layers are lazy and the hidden width falls back to
         # 4 * emb_dim, the reference value for 4 s windows.
-        n_chans = self._n_chans_or_none()
+        n_chans = self._signal_param("n_chans")
         n_patch = self._n_patch()
         if n_patch is None or n_chans is None:
             return nn.Sequential(
@@ -498,13 +498,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         mask: Optional[Tensor] = None,
         return_features: bool = False,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
-        # The region order and the flattened head are tied to the channels, the
-        # encoder alone is not.
-        if self._n_chans_for_jit is not None and (
-            self.sorted_indices is not None
-            or not (return_features or self._encoder_output)
-        ):
-            check_n_chans(x, self._n_chans_for_jit, "CSBrain")
         x = self.rearrange(x)
         if self.sorted_indices is not None:
             x = x[:, self.sorted_indices, :, :]

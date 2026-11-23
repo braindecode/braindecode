@@ -52,6 +52,9 @@ class ContraWR(EEGModuleMixin, nn.Module):
        GitHub https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: convs.0.conv1.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -123,6 +126,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
         self.activation_layer = activation()
         self.final_layer = nn.Linear(emb_size, self.n_outputs)
+        self._min_n_times = self.n_fft // 2 + 1
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, X: torch.Tensor) -> torch.Tensor:

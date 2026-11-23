@@ -10,7 +10,7 @@ import mne
 import torch
 from torch import nn
 
-from braindecode.functional import check_n_chans, init_weights_
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
@@ -222,6 +222,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
     (Masked Auto-Encoder) and are not part of this encoder-only model used for
     downstream tasks. It is safe to ignore them.
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.probe2.parametrizations.weight.original
+    _channel_axis = "fixed"  # fixed: chan_proj.proj.parametrizations.weight.original
 
     def __init__(
         self,
@@ -436,7 +439,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         torch.Tensor or dict
             Model output. Shape depends on `n_outputs` and `return_encoder_output`.
         """
-        check_n_chans(x, self.n_chans, "EEGPT")
         # Channel projection (if configured)
         x = self.chan_proj(x)
 

@@ -154,6 +154,9 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
     `License <https://github.com/neural-processing-lab/the-brains-bitter-lesson/blob/main/LICENSE>`_
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         # braindecode parameters
@@ -235,6 +238,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         # Rows averaged when no subject_index is given.
         self.register_buffer("trained_subjects", torch.ones(n_subjects))
         self.final_layer = nn.Linear(self.features_dim, self.n_outputs)
+        self._min_n_times = 1
 
     def forward(
         self,

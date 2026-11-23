@@ -22,7 +22,6 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.functional import (
-    check_n_chans,
     init_weights_,
     patch_count,
     sinusoidal_positional_encoding,
@@ -188,6 +187,9 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/liulab-repository/Du-IN (MIT).
     """
 
+    _time_axis = "fixed"  # fixed: head_hidden.0.weight
+    _channel_axis = "fixed"  # fixed: spatial_projection.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -247,6 +249,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         self.patch_tokenizer = PatchTokenizer(
             patch_size, self.n_times, on_non_divisible=on_non_divisible
         )
+        self._n_times_step = patch_size
         # Time-major flattening of the last convolution: (frames, filters).
         self.embed_dim = n_filters[-1] * (patch_size // math.prod(strides))
 
@@ -398,14 +401,6 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             when ``return_features`` is set.
         """
-        # A wrong multiple of patch_size would silently regroup the batch in
-        # to_tokens, so check the length here.
-        if x.shape[-1] != self.n_times:
-            raise ValueError(
-                f"DuIN was configured for {self.n_times} time samples, "
-                f"but received {x.shape[-1]}."
-            )
-        check_n_chans(x, self.n_chans, "DuIN")
         # 0. pad, crop or reject a window that is not a multiple of patch_size
         x = self.patch_tokenizer.prepare_input(x)
         # 1. channels -> neural space: (batch, n_neural, n_patches * patch_size)

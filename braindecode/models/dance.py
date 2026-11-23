@@ -170,6 +170,9 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
        transformers.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_positions
+
     def __init__(
         self,
         n_outputs=None,
@@ -290,14 +293,9 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
         self.apply(init_weights_)
 
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
-        if x.ndim != 3 or x.shape[-2] != self.n_chans:
+        if x.ndim != 3:
             raise ValueError(
                 f"expected (batch, {self.n_chans}, T) input; got {list(x.shape)}."
-            )
-        if x.shape[-1] < self._min_n_times:
-            raise ValueError(
-                f"n_times={x.shape[-1]} is shorter than the minimum input "
-                f"length ({self._min_n_times} samples = one conv kernel)."
             )
         x = self.input_drop(x)
         if self.conv.merger is not None:

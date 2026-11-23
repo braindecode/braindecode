@@ -163,6 +163,9 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
        https://arxiv.org/abs/2602.02494
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -263,6 +266,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
             "(batch chans) features -> batch chans features", chans=self.n_chans
         )
         self.final_layer = nn.Linear(self.n_chans * latent_dim, self.n_outputs)
+        self._min_n_times = 1
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for ``n_outputs`` classes."""

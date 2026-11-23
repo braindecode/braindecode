@@ -113,6 +113,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
     .. [2] https://sleepdata.org/datasets/shhs
     """
 
+    _time_axis = "fixed"  # fixed: feature_extractor.1.layers.0.self_attn.linear.weight is sized by n_times
+    _channel_axis = (
+        "fixed"  # fixed: feature_extractor.0.features1.0.weight is sized by n_chans
+    )
+
     def __init__(
         self,
         sfreq=None,

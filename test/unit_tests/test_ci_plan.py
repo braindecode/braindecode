@@ -139,6 +139,7 @@ __all__ = ["trial_preds_from_window_preds"]
             "    if model_class in [EEGNet]:\n"
             "        return\n",
         ),
+        ("test/unit_tests/models/test_input_contract.py", "def test_ic():\n    pass\n"),
         ("test/unit_tests/models/test_model_contract.py", "def test_c():\n    pass\n"),
         (
             "test/unit_tests/models/test_pretrained_compat.py",
@@ -280,6 +281,7 @@ def test_barrel_symbol_resolution_isolates_unrelated_models_and_modules(
     files2 = set().union(*plan2["shard_files"].values())
     assert plan2["select_models"] == "EEGNet"
     assert "test/unit_tests/models/test_eegnet_only.py" in files2
+    assert "test/unit_tests/models/test_input_contract.py" in files2
     assert "test/unit_tests/models/test_samba.py" not in files2
 
     # 3. Add a new symbol to braindecode/training/__init__.py + scoring.py
@@ -292,7 +294,7 @@ def test_barrel_symbol_resolution_isolates_unrelated_models_and_modules(
     _write(
         mini_repo,
         "braindecode/training/__init__.py",
-        'from .scoring import szcore_event_scores, trial_preds_from_window_preds\n'
+        "from .scoring import szcore_event_scores, trial_preds_from_window_preds\n"
         '__all__ = ["szcore_event_scores", "trial_preds_from_window_preds"]\n',
     )
     _git(mini_repo, "commit", "-am", "add szcore_event_scores")
@@ -331,6 +333,9 @@ models_mandatory_parameters = [
     plan_mmp = ci_plan.compute_plan(mini_repo, mini_repo, base, head_mmp)
     assert plan_mmp["full_suite"] is False
     assert plan_mmp["select_models"] == "SAMBA"
+    assert "test/unit_tests/models/test_input_contract.py" in set().union(
+        *plan_mmp["shard_files"].values()
+    )
 
     # 2. Edit non-core helper _samba_helper referenced by SAMBA -> surgical SAMBA!
     _write(
@@ -397,6 +402,7 @@ def test_summary_csv_and_jinja_data_assets(
     assert plan_csv["select_models"] == "SAMBA"
     csv_files = set().union(*plan_csv["shard_files"].values())
     assert "test/unit_tests/models/test_integration.py" in csv_files
+    assert "test/unit_tests/models/test_input_contract.py" in csv_files
 
     # 2. Header/schema change in summary.csv disables model filter
     _write(
@@ -408,6 +414,9 @@ def test_summary_csv_and_jinja_data_assets(
     head_schema = _git(mini_repo, "rev-parse", "HEAD")
     plan_schema = ci_plan.compute_plan(mini_repo, mini_repo, head_csv, head_schema)
     assert plan_schema["select_models"] == ""
+    assert "test/unit_tests/models/test_input_contract.py" in set().union(
+        *plan_schema["shard_files"].values()
+    )
 
     # 3. model.html.jinja edit selects test_huggingface.py + test_base.py
     _write(
@@ -480,12 +489,11 @@ def test_deleted_and_renamed_files_and_inline_skip_lists(
     _git(mini_repo, "rm", "braindecode/models/samba.py")
     _git(mini_repo, "commit", "-m", "delete samba.py")
     head_del_model = _git(mini_repo, "rev-parse", "HEAD")
-    plan_del_model = ci_plan.compute_plan(
-        mini_repo, mini_repo, head_mv, head_del_model
-    )
+    plan_del_model = ci_plan.compute_plan(mini_repo, mini_repo, head_mv, head_del_model)
     del_files = set().union(*plan_del_model["shard_files"].values())
     assert plan_del_model["select_models"] == ""
     assert "test/unit_tests/models/test_integration.py" in del_files
+    assert "test/unit_tests/models/test_input_contract.py" in del_files
     assert "test/unit_tests/test_lazy_imports.py" in del_files
 
 

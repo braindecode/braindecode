@@ -206,6 +206,9 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
        Systems 38. https://arxiv.org/abs/2512.12135
     """
 
+    _time_axis = "fixed"  # fixed: token_pooling.weight
+    _channel_axis = "fixed"  # fixed: token_pooling.weight
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -345,7 +348,20 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             nn.Linear(self.n_tokens, 1, bias=False) if pooling == "learned" else None
         )
         self.final_layer = nn.Linear(d_model, self.n_outputs)
+        self._n_times_step = patch_size
+        if pooling == "mean":
+            self._time_axis = "free"
+            self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
         self._init_parameters()
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        if self.token_pooling is not None:
+            return False
+        spatial = self._call_arg(args, kwargs, "spatial_indices")
+        ch_mask = self._call_arg(args, kwargs, "ch_mask")
+        return spatial is not None or (ch_mask is not None and self.spatial_emb is None)
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

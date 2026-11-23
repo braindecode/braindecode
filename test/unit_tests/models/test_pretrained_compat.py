@@ -210,8 +210,8 @@ COMPAT = {
         n_times=2048,
         canon=TEN_TWENTY,
         channels="names",
-        min_n_times=160,
-        short_match="Kernel size",
+        min_n_times=152,
+        short_match="needs at least 152 time samples",
     ),
     # Downstream heads that load the SignalJEPA checkpoint (strict=False).
     **{
@@ -221,8 +221,8 @@ COMPAT = {
             n_times=2048,
             canon=TEN_TWENTY,
             channels="names",
-            min_n_times=160,
-            short_match="Kernel size",
+            min_n_times=152,
+            short_match="needs at least 152 time samples",
         )
         for cls in (SignalJEPA_Contextual, SignalJEPA_PostLocal, SignalJEPA_PreLocal)
     },

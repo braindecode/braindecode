@@ -595,11 +595,11 @@ def test_custom_weights_missing_does_not_use_default_pickle_fallback(tmp_path, m
     if filename is not None:
         with pytest.raises(EntryNotFoundError, match="missing weights"):
             DummyModuleConfigRoundTrip._from_pretrained(**kwargs)
-        assert calls == ["config.json", filename]
+        assert calls == [filename]
         assert loaded == []
     else:
         DummyModuleConfigRoundTrip._from_pretrained(**kwargs)
-        assert calls == ["config.json", "model.safetensors", "pytorch_model.bin"]
+        assert calls == ["model.safetensors", "pytorch_model.bin"]
         assert loaded == [(str(tmp_path / "pytorch_model.bin"), "cpu", True)]
 
 
@@ -630,6 +630,18 @@ def test_custom_weights_legacy_options_do_not_reach_constructor(tmp_path, monkey
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
 
 
+def test_save_pretrained_falls_back_to_bin_for_partial_shared_tensors(tmp_path):
+    model = EEGNet(n_chans=2, n_outputs=2, n_times=128)
+    storage = torch.zeros(4)
+    model.register_buffer("head_half", storage[:2])  # neither view covers
+    model.register_buffer("tail_half", storage[2:])  # the whole storage
+    (tmp_path / "model.safetensors").write_bytes(b"stale")
+    with pytest.warns(UserWarning, match="no complete storage"):
+        model.save_pretrained(tmp_path)
+    assert (tmp_path / "pytorch_model.bin").is_file()
+    assert not (tmp_path / "model.safetensors").exists()
+
+
 def test_model_card_datasets_roundtrip(tmp_path):
     from .test_base import DummyModuleConfigRoundTrip
 
@@ -657,17 +669,30 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
     readme.write_text("---\ndatasets:\n- PREST\n- SHHS\n---\ncard\n")
     calls = []
 
-    def download(*args, **kwargs):
+    def cached(*args, **kwargs):
         calls.append((args, kwargs))
         return str(readme)
 
-    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", cached)
     data = _load_card_data("org/repo", revision="v1", local_files_only=True, n_outputs=3)
     assert data.datasets == ["PREST", "SHHS"]
-    assert calls == [(("org/repo", "README.md"), {"revision": "v1", "local_files_only": True})]
+    assert calls == [(("org/repo", "README.md"), {"cache_dir": None, "revision": "v1"})]
 
     monkeypatch.undo()  # real hub, nothing cached, no network: None, no error
     assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None
+
+
+def test_model_card_offline_never_queries_hub(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from braindecode.models.base import _load_card_data
+
+    def no_network(*args, **kwargs):
+        raise ConnectionError("network down")
+
+    monkeypatch.setattr(huggingface_hub, "file_exists", no_network)
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", True)
+    assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path) is None
 
 
 def test_pretrained_provenance_in_repr(tmp_path):

@@ -18,7 +18,6 @@ from torch import Tensor, nn
 
 from braindecode.functional import (
     check_ch_mask,
-    check_n_chans,
     init_weights_,
     pad_or_crop_to_patches,
 )
@@ -203,6 +202,9 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     `License <https://github.com/OHBA-analysis/MEG-GPT/blob/main/LICENSE>`_
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_embedding
+
     def __init__(
         self,
         # braindecode parameters
@@ -279,7 +281,16 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Sequential(
             nn.Flatten(), nn.Linear(self.n_chans * embed_dim, self.n_outputs)
         )
+        self._n_times_step = self.segment_len
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.segment_len
         self._init_parameters()
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        ret = self._call_arg(args, kwargs, "return_features")
+        return bool(self.return_features if ret is None else ret)
 
     def _init_parameters(self) -> None:
         # Reference initialisation (meg_gpt/optim/initializer.py): Xavier linear
@@ -308,13 +319,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         """
         if return_features is None:
             return_features = self.return_features
-        if not return_features:  # the flattened head is tied to the channels
-            check_n_chans(
-                x,
-                self.n_chans,
-                "MEGGPT",
-                "build the model with the chs_info of this montage.",
-            )
         ch_mask = check_ch_mask(ch_mask, x)  # (batch, n_chans) or None
         if ch_mask is not None:
             if not return_features:

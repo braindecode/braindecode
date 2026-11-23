@@ -163,6 +163,9 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
        and Rehabilitation Engineering, 25(11), 1998-2008.
     """
 
+    _time_axis = "fixed"  # fixed: bilstm.weight_ih_l0
+    _channel_axis = "fixed"  # fixed: bilstm.weight_ih_l0
+
     def __init__(
         self,
         n_outputs=5,
@@ -289,6 +292,11 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             if return_feats
             else nn.Linear(fc_out_features, self.n_outputs)
         )
+
+    def _input_chans_and_times(self, x: torch.Tensor) -> tuple[int, int | None, bool]:
+        if x.ndim == 4 and x.shape[1] == 1:
+            return x.shape[2], x.shape[3], True
+        return super()._input_chans_and_times(x)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
