@@ -125,10 +125,7 @@ def test_html_redirects_stub_generation_and_guards(tmp_path):
         'auto_examples/model_building/plot_bcic_iv_2a_moabb_cropped.html" />'
         in crop_stub
     )
-    assert (
-        "#cropped-inference"
-        not in crop_stub.split('<link rel="canonical"', 1)[1].split(">", 1)[0]
-    )
+    assert "#cropped-inference" not in crop_stub.split("<link rel=\"canonical\"", 1)[1].split(">", 1)[0]
     assert (
         '<meta http-equiv="refresh" content="0; url=../auto_examples/model_building/'
         'plot_bcic_iv_2a_moabb_cropped.html#cropped-inference" />' in crop_stub
@@ -267,14 +264,16 @@ def test_conf_html_redirects_resolve_to_existing_docs():
     redirects = conf_values["html_redirects"]
     assert set(redirects) == {
         "user_guide/channel_strategies.html",
-        "user_guide/cropped_inference.html",
         "auto_examples/applied_examples/bcic_iv_4_ecog_trial.html",
         "auto_examples/applied_examples/tutorial_create_fixed_window_length.html",
+        "user_guide/cropped_inference.html",
     }
 
     for src, target in redirects.items():
         target_no_frag, frag = urldefrag(target)
-        resolved = posixpath.normpath(str(PurePosixPath(src).parent / target_no_frag))
+        resolved = posixpath.normpath(
+            str(PurePosixPath(src).parent / target_no_frag)
+        )
         assert not resolved.startswith("..")
         assert resolved.endswith(".html")
         stem = resolved.removesuffix(".html")
@@ -296,6 +295,4 @@ def test_ci_plan_docs_contract_targets():
     assert "docs/sphinxext/html_redirects.py" in targets
     assert "docs/user_guide/channel_strategies.rst" not in targets
     for rel_path in targets:
-        assert (REPO_ROOT / rel_path).is_file(), (
-            f"Missing CI contract target: {rel_path}"
-        )
+        assert (REPO_ROOT / rel_path).is_file(), f"Missing CI contract target: {rel_path}"
