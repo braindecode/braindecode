@@ -874,7 +874,15 @@ def test_reset_head_checks_n_outputs_before_touching_the_head():
 def test_autocast_bfloat16_forward(model_name, required_params, signal_params):
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
-    with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+    # Under bfloat16 autocast PyTorch sends an LSTM to oneDNN, which cannot build
+    # it on some CI runners ("could not create a primitive descriptor", as with
+    # ONEDNN_MAX_CPU_ISA=AVX2); PyTorch's own kernel runs the same recurrence.
+    lstm = any(isinstance(m, torch.nn.LSTM) for m in model.modules())
+    with (
+        torch.no_grad(),
+        torch.autocast("cpu", dtype=torch.bfloat16),
+        torch.backends.mkldnn.flags(enabled=not lstm),
+    ):
         out = model(x)
     assert all(torch.isfinite(t).all() for t in _tensor_leaves(out))
 
