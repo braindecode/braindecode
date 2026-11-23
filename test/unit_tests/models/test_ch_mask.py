@@ -126,7 +126,7 @@ _CASES = {
         LUNA(n_chans=3, n_outputs=3, n_times=80, patch_size=20, embed_dim=32,
              num_queries=2, depth=1),
         80,
-        ("channel_locations", _positions, True),
+        ("pos", _positions, True),
     ),
     "BIOT": lambda: (
         BIOT(n_chans=3, n_outputs=3, n_times=400, sfreq=200, embed_dim=32,
@@ -379,23 +379,25 @@ def test_cbramod_ch_mask_tokens_match_each_recording_alone():
     """CBraMod's heads flatten the channels; its encoder output is masked."""
     torch.manual_seed(0)
     model = CBraMod(n_outputs=3, n_chans=3, n_times=400, n_layer=1, nhead=2,
-                    dim_feedforward=64, return_encoder_output=True).eval()
+                    dim_feedforward=64).eval()
     xs = [torch.randn(n_real, 400) for n_real in N_REAL]
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
     x = torch.full((len(N_REAL), 3, 400), float("nan"))
     for i, xi in enumerate(xs):
         x[i, : len(xi)] = xi
     x.requires_grad_(True)
-    out = model(x, ch_mask=mask)  # (batch, n_chans, n_patches, emb_dim)
+    # (batch, n_chans, n_patches, emb_dim)
+    out = model(x, ch_mask=mask, return_features=True)["features"]
     out.sum().backward()
     assert torch.equal(x.grad[~mask], torch.zeros_like(x.grad[~mask]))
     assert torch.equal(out[~mask], torch.zeros_like(out[~mask]))
     with torch.no_grad():
         for i, xi in enumerate(xs):
-            torch.testing.assert_close(out[i, : len(xi)], model(xi[None])[0])
-        features = model(x, ch_mask=mask, return_features=True)["features"]
-        scripted = torch.jit.script(model)(x.detach(), ch_mask=mask)
-    torch.testing.assert_close(features, out.detach())
+            alone = model(xi[None], return_features=True)["features"][0]
+            torch.testing.assert_close(out[i, : len(xi)], alone)
+        scripted = torch.jit.script(model)(
+            x.detach(), ch_mask=mask, return_features=True
+        )["features"]
     torch.testing.assert_close(scripted, out.detach())
 
 

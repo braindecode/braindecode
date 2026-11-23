@@ -78,9 +78,6 @@ _OUTPUT_B_TIME_OUT: frozenset[str] = frozenset(
         "VEMG2Pose",
     }
 )
-_INITIAL_CROPPED_MODELS: frozenset[str] = frozenset(
-    {"Deep4Net", "EEGNet", "EMG2QwertyNet", "NeuroPose", "ShallowFBCSPNet"}
-)
 
 # Models whose __init__ (or lazy-head materialization) executes data-dependent
 # host ops (.item(), _unique2, CPU-only tensor copies) that cannot run on meta.
@@ -553,7 +550,7 @@ def _capabilities(
 
     head = name not in _TOKENIZERS
     flags = {
-        "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
+        "Cropped decoding": cls._dense_conversion,
         # the rule adapt_input applies: one input of EEG electrodes
         "adapt_input": "EEG" in _modalities(modality) and len(cls._time_inputs) == 1,
         "reset_head": head and model is not None and model._can_reset_head(),

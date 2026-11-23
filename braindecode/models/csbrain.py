@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from braindecode.functional import init_weights_, patch_count
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
 from braindecode.modules.blocks import PatchTokenizer
@@ -177,6 +177,10 @@ def build_region_attention_mask(
     return mask
 
 
+@deprecated_init_flags(
+    identity_head=("return_encoder_output",),
+    return_encoder_output="features",
+)
 class CSBrain(EEGModuleMixin, nn.Module):
     r"""Cross-scale Spatiotemporal Brain Foundation Model from Zhou et al. (2025)
     [zhou2025csbrain]_.
@@ -263,6 +267,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         quadratically with the window length by default (about 2.3e9 for 64
         channels and 30 s), so set a smaller width for long windows.
     return_encoder_output : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If False (default), the projected encoder output is flattened and
         passed through the task head to produce class logits of size
         ``n_outputs``. If True, return the encoder output features.
@@ -411,13 +416,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._d_model = d_model
         self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
-        self._encoder_output = return_encoder_output
         self._init_parameters()
-
-        if return_encoder_output:
-            self.final_layer = nn.Identity()
-        else:
-            self.final_layer = self._make_task_head()
+        self.final_layer = self._make_task_head()
         self.on_non_divisible = on_non_divisible
         self._n_times_step = patch_size
         self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
@@ -428,8 +428,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         return self.sorted_indices is None and self._accepts_any_n_times(args, kwargs)
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        ret_feat = self._call_arg(args, kwargs, "return_features", False)
-        return bool(self._encoder_output or ret_feat)
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def _n_patch(self) -> int | None:
         n_times = self._signal_param("n_times")
@@ -469,16 +468,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
             nn.Linear(self._emb_dim, self.n_outputs),
         )
 
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        if "_encoder_output" not in state:
-            # Earlier pickles select encoder output with this identity head.
-            self._encoder_output = isinstance(self.final_layer, nn.Identity)
-
     def reset_head(self, n_outputs):
         self._set_n_outputs(n_outputs)
-        self._update_init_kwargs(return_encoder_output=False)
-        self._encoder_output = False
         self.final_layer = self._make_task_head()
 
     def _init_parameters(self):

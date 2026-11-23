@@ -187,7 +187,7 @@ Enhancements
   different montages and channel counts; ``return_features`` also returns the
   per-channel ``"tokens"``, zero for padded channels (:gh:`1550` by
   `Julien Gadonneix`_).
-- :class:`braindecode.models.CBraMod` accepts ``ch_mask`` with the encoder output (``return_encoder_output=True``): padded channels are masked in the spatial attention and the GroupNorm statistics, and their tokens are zero. The flattened classification head is tied to the channels and refuses the mask (:gh:`1544` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.CBraMod` accepts ``ch_mask`` with the encoder output (``return_features=True``): padded channels are masked in the spatial attention and the GroupNorm statistics, and their tokens are zero. The flattened classification head is tied to the channels and refuses the mask (:gh:`1544` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are left out of the GroupNorm statistics, the location normalisation and the channel cross-attention, and each recording gets the output it gets alone. LUNA also scripts without a first eager forward (:gh:`1543` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BIOT` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are masked in the linear attention and in pooling, and each recording gets the output it gets alone (:gh:`1542` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.REVE` and :class:`~braindecode.models.Labram` accept a
@@ -226,6 +226,14 @@ Enhancements
 API and behavior changes
 ========================
 
+- Every model's ``forward`` takes its signal as ``x`` and :class:`braindecode.models.LUNA` its
+  positions as ``pos``. Calling a model with the old keywords (``X``, ``input``, ``inputs``, ``eeg``,
+  ``input_tensor``, ``channel_locations``) warns and keeps working until 2.3 (by `Bruno Aristimunha`_).
+- The 2.0 constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
+  ``return_features`` of 16 models warn and keep their 2.0 output and head until 2.3 (eager only);
+  call ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
+- ``to_dense_prediction_model`` raises ``ValueError`` on every model except Deep4Net, EEGNet,
+  ShallowFBCSPNet, EMG2QwertyNet and NeuroPose, which affects code that converted any other model (by `Bruno Aristimunha`_).
 - Registered models declare their time and channel axes, and :class:`braindecode.models.EEGModuleMixin` checks channel counts
   and lengths before ``forward``: a length off by at most 1% of ``n_times`` and one step snaps to it with a one-time
   ``UserWarning`` unless ``on_non_divisible="error"``; larger mismatches raise ``ValueError`` (by `Bruno Aristimunha`_).
@@ -256,8 +264,9 @@ API and behavior changes
   ``colin27_*`` names MNE 1.13 gives them (:gh:`1615` by `Bruno Aristimunha`_).
 
 - :class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager` take
-  ``ch_mask`` by keyword, ``True`` for real channels; ``channel_mask`` is removed in 2.2.
-  SleepFM no longer attends over a lone real channel (:gh:`1603` by `Julien Gadonneix`_).
+  ``ch_mask``, ``True`` for real channels; the 2.0 ``channel_mask`` (also positional and in
+  ``SleepFM.encode``) warns and is inverted until 2.3. SleepFM no longer attends over a lone real
+  channel (:gh:`1603` by `Julien Gadonneix`_).
 - Looking up the removed ``braindecode.datautil.scale`` now raises
   :class:`AttributeError`, so ``hasattr`` and ``getattr`` with a default work
   for this name (:gh:`1674` by `Bruno Aristimunha`_).

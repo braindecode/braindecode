@@ -628,7 +628,10 @@ _CH_MASK_EXTRAS = {
 # Channels tied to slots of the configuration: a recording keeps all of them and
 # masks the missing ones, so it has no shorter input to run alone
 # (test_sleepfm_masked_input_is_ignored covers its ch_mask).
-_CH_MASK_SLOTS = {"SleepFMStager": "channels are grouped by channel_modalities slot"}
+_CH_MASK_SLOTS = {
+    "SleepFMStager": "channels are grouped by channel_modalities slot",
+    "JungMAE": "a padded channel is a missing (NaN) slot of a fixed HbO/HbR montage",
+}
 
 
 def _ch_mask_case(model_name, required_params, signal_params):

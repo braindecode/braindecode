@@ -9,7 +9,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -17,6 +17,9 @@ from braindecode.modules import (
 )
 
 
+@deprecated_init_flags(
+    return_features="tokens",
+)
 class EEGConformer(EEGModuleMixin, nn.Module):
     r"""EEG Conformer from Song et al (2022) [song2022]_.
 
@@ -175,6 +178,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     final_fc_length : int | str
         The dimension of the fully connected layer.
     return_features : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If True, the forward method returns the features before the
         last classification layer. Defaults to False.
     activation : nn.Module
@@ -229,7 +233,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        *,
         activation_checkpointing=False,
     ):
         super().__init__(
@@ -249,7 +252,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
 
-        self.return_features = return_features
         self.activation_checkpointing = activation_checkpointing
 
         self.patch_embedding = _PatchEmbedding(
@@ -318,9 +320,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
                 "cls_token": None,
                 "tokens": feature,
             }
-
-        if self.return_features:
-            return feature
 
         x = self.fc(feature)
         x = self.final_layer(x)

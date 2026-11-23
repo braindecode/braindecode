@@ -8,7 +8,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import glorot_weight_zero_bias
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import DepthwiseConv2d, Ensure4d, InceptionBlock
 
 
@@ -337,6 +337,13 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         self._init_parameters()
+
+    @deprecated_forward_kwargs(input="x")
+    def forward(self, x):
+        """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

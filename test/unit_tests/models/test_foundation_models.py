@@ -1423,7 +1423,7 @@ def test_luna_impulse_patch_has_real_spectrum(device, n_times):
     model.freq_embed.frequency_to_embed.register_forward_pre_hook(
         lambda module, args: captured.append(args[0])
     )
-    model(signal, channel_locations=torch.ones(1, 3, 3, device=device))
+    model(signal, pos=torch.ones(1, 3, 3, device=device))
 
     magnitude, phase = captured[0][0, :, -1].chunk(2, dim=-1)
     expected = torch.tensor([torch.pi, 0, 0], device=device)[:, None]
@@ -1467,7 +1467,7 @@ def test_luna_matches_explicit_locations_when_channel_count_changes():
         x = torch.randn(2, len(expected), 80)
         explicit = expected.expand(len(x), -1, -1)
         with torch.no_grad():
-            torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
+            torch.testing.assert_close(model(x), model(x, pos=explicit))
 
 
 @pytest.mark.parametrize("assign", [False, True], ids=["to_empty", "assign"])
@@ -1785,7 +1785,7 @@ def test_reve_fourier_emb_4d_computes_in_float32():
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_cbramod_load_weights():
-    model = CBraMod(return_encoder_output=True)
+    model = CBraMod()  # headless: n_outputs=None
     state_dict = torch.hub.load_state_dict_from_url(
         "https://huggingface.co/braindecode/cbramod-pretrained/resolve/main/pytorch_model.bin",
         map_location="cpu",
@@ -2013,16 +2013,14 @@ def test_sleepfm_masked_training_with_autocast(cls):
     assert not torch.equal(before, model.final_layer.weight)
 
 
-def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
+def test_sleepfm_scripted_encode_matches_eager_with_ch_mask():
     model = _small(SleepFM).eval()
     x = torch.randn(2, 3, 1280)
-    missing = torch.tensor([[False, True, False], [False, True, True]])
-    with torch.no_grad(), pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
-        pooled, tokens = model.encode(x, missing)
-    for net in (model, torch.jit.script(model)):
-        expected = net.encode(x, ch_mask=~missing)
-        torch.testing.assert_close(pooled, expected[0])
-        torch.testing.assert_close(tokens, expected[1])
+    real = torch.tensor([[True, False, True], [True, False, False]])
+    with torch.no_grad():
+        expected = model.encode(x, ch_mask=real)
+        scripted = torch.jit.script(model).encode(x, ch_mask=real)
+    torch.testing.assert_close(scripted, expected)
 
 
 @pytest.mark.parametrize(
@@ -2046,19 +2044,6 @@ def test_sleepfm_padded_sample_gives_its_unpadded_output(cls, n_real):
     ch_mask = (torch.arange(3) < n_real).expand(2, 3)
     with torch.no_grad():
         torch.testing.assert_close(padded(x_padded, ch_mask=ch_mask), unpadded(x))
-
-
-@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
-def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
-    model = _small(cls).eval()
-    x = torch.randn(2, 3, 1280)
-    missing = torch.tensor([[False, True, False], [False, False, False]])
-    with torch.no_grad():
-        with pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
-            old = model(x, channel_mask=missing)
-        torch.testing.assert_close(old, model(x, ch_mask=~missing))
-        with pytest.raises(ValueError, match="ch_mask only"):
-            model(x, ch_mask=~missing, channel_mask=missing)
 
 
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
@@ -3858,12 +3843,12 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
     x = torch.randn(2, 4, 80)
     locations = torch.randn(2, 4, 3)
     with torch.no_grad():
-        expected = old(x, channel_locations=locations)
+        expected = old(x, pos=locations)
         if scripted:
             old_script = torch.jit.script(old)
             model = torch.jit.script(model)
             torch.testing.assert_close(
-                old_script(x, channel_locations=locations), expected
+                old_script(x, pos=locations), expected
             )
-        actual = model(x, channel_locations=locations)
+        actual = model(x, pos=locations)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)

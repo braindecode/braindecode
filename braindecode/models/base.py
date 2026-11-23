@@ -242,6 +242,129 @@ def deprecated_args(obj, *old_new_args):
     return out_args
 
 
+def deprecated_forward_kwargs(*, removed_in="2.3", old_positional=None, **aliases):
+    """Keep the old ``forward`` arguments of braindecode 2.0 working until ``removed_in``.
+
+    Each alias maps an old keyword to its new name, or to ``(new_name, convert)``
+    when the value changes meaning too (``convert`` is skipped for ``None``).
+    ``old_positional`` names the arguments after ``x`` in their 2.0 order; it is
+    used when the argument after ``x`` is a tensor or ``None``, i.e. a 2.0
+    positional call. The decorated ``forward`` is returned unchanged, so
+    TorchScript, ``torch.export`` and ``torch.compile`` see only the new names:
+    :meth:`EEGModuleMixin.__call__` maps the old arguments, with a
+    ``FutureWarning``, before the call reaches ``forward``. Calling
+    ``model.forward`` directly takes the new names only.
+    """
+
+    def mark(forward):
+        forward._deprecated_kwargs = (removed_in, aliases, old_positional)
+        return forward
+
+    return mark
+
+
+def deprecated_init_flags(*, removed_in="2.3", identity_head=(), **flags):
+    """Keep the constructor feature flags of braindecode 2.0 working until ``removed_in``.
+
+    Each flag maps to its 2.0 output, read from ``model(x, return_features=True)``:
+    a key, a tuple or a dict of keys, or a function of that dict (``"logits"``
+    falls back to ``model(x)``). Passing a flag warns; when it is true, calling
+    the model returns that output, and the last true flag wins. A true flag
+    listed in ``identity_head`` also replaces ``final_layer`` by
+    ``nn.Identity``, as 2.0 did, so its checkpoints load; :meth:`reset_head`
+    puts a head back and clears the flag. Eager only: ``torch.jit.script``
+    refuses a model built with a true flag.
+    """
+
+    def mark(cls):
+        cls._deprecated_init_flags = (removed_in, flags, frozenset(identity_head))
+        return cls
+
+    return mark
+
+
+def _forward_deprecation(cls):
+    """The old ``forward`` arguments that ``cls`` still maps, or ``None``.
+
+    Read from the nearest decorated ``forward`` in the MRO, and kept only where
+    ``cls``'s own ``forward`` does not take the old name and takes the new one
+    (or ``**kwargs``): a subclass whose ``forward`` still says ``input`` keeps it.
+    """
+    owner = next((k for k in cls.__mro__ if "forward" in vars(k)), None)
+    decorated = next(
+        (
+            vars(k)["forward"]
+            for k in cls.__mro__
+            if hasattr(vars(k).get("forward"), "_deprecated_kwargs")
+        ),
+        None,
+    )
+    if owner is None or decorated is None:
+        return None
+    removed_in, aliases, old_positional = decorated._deprecated_kwargs
+    params = inspect.signature(vars(owner)["forward"]).parameters
+    takes_any = any(p.kind is p.VAR_KEYWORD for p in params.values())
+    kept = {
+        old: new
+        for old, new in aliases.items()
+        if old not in params
+        and (takes_any or (new[0] if isinstance(new, tuple) else new) in params)
+    }
+    positional = old_positional if vars(owner)["forward"] is decorated else None
+    return (removed_in, kept, positional) if kept or positional else None
+
+
+def _warn_deprecated_argument(
+    owner, old, new, convert=None, *, removed_in="2.3", note="", stacklevel=3
+):
+    """``FutureWarning`` for an old argument, silent under ``torch.compile``."""
+    if torch.compiler.is_compiling():
+        return
+    value = f"{convert.__name__}({old})" if convert is not None else "..."
+    warnings.warn(
+        f"Calling {owner} with {old}=... is deprecated and will be removed in "
+        f"braindecode {removed_in}; pass {new}={value} instead.{note}",
+        FutureWarning,
+        stacklevel=stacklevel,
+    )
+
+
+def _map_deprecated_args(name, args, kwargs, removed_in, aliases, old_positional):
+    """Map 2.0 positional order and old keywords to the new ones, with a warning."""
+    if (
+        old_positional
+        and len(args) > 1
+        and (args[1] is None or torch.is_tensor(args[1]))
+    ):
+        extra = args[1:]
+        if len(extra) > len(old_positional):
+            raise TypeError(
+                f"{name} takes at most {len(old_positional) + 1} positional "
+                f"arguments in the 2.0 order, got {len(args)}."
+            )
+        for key in old_positional[: len(extra)]:
+            if key in kwargs:
+                raise TypeError(f"{name} got multiple values for argument {key!r}.")
+        kwargs = {**kwargs, **dict(zip(old_positional, extra))}
+        args = args[:1]
+    renames = [old for old in aliases if old in kwargs]
+    if not renames:
+        return args, kwargs
+    kwargs = dict(kwargs)
+    for old in renames:
+        new, convert = (
+            aliases[old] if isinstance(aliases[old], tuple) else (aliases[old], None)
+        )
+        if new in kwargs:
+            raise TypeError(f"{name} got both {old!r} (deprecated) and {new!r}.")
+        value = kwargs.pop(old)
+        kwargs[new] = value if convert is None or value is None else convert(value)
+        _warn_deprecated_argument(
+            name, old, new, convert, removed_in=removed_in, stacklevel=4
+        )
+    return args, kwargs
+
+
 class _BraindecodeDocstringMeta(_DocstringMetaBase):
     """Defer ``__init__`` wrapping until after docstring inheritance.
 
@@ -258,6 +381,8 @@ class _BraindecodeDocstringMeta(_DocstringMetaBase):
         # overwrite _braindecode_init_kwargs captured by the subclass.
         if any(isinstance(b, _BraindecodeDocstringMeta) for b in class_bases):
             track_model_init_kwargs(cls)
+        # Once per class: __call__ only reads a plain attribute (torch.compile).
+        cls._forward_deprecation = _forward_deprecation(cls)
 
 
 def _new_head_follows_model(reset_head):
@@ -289,6 +414,10 @@ def _new_head_follows_model(reset_head):
         finally:
             if head is not None and not done:  # refused: the model stays headless
                 self._head_spec, self.final_layer = head, torch.nn.Identity()
+        flag = self.__dict__.pop("_legacy_head_flag", None)
+        if flag is not None:  # as in 2.0, a new head clears that flag (not a refusal)
+            self._update_init_kwargs(**{flag: False})
+            self._legacy_flag = self._true_legacy_flag()
         if ref is not None:
             for module in self.modules():
                 tensors = [*module.parameters(), *module.buffers()]
@@ -472,6 +601,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "_has_ensure4d",
         "_materialized_n_chans",
         "_materialized_n_times",
+        "_dense_conversion",
         "_input_sfreq",
         "_adapt_config",
     ]
@@ -962,6 +1092,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
+    #: The true deprecated constructor flag that decides the output (deprecated_init_flags).
+    _legacy_flag = None
+
     def __prepare_scriptable__(self):
         # Called by torch.jit.script before compiling the model.
         if self._adapt_config is not None:
@@ -969,7 +1102,54 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 f"TorchScript does not compile {type(self).__name__}.adapt_input: "
                 "use torch.export or torch.jit.trace on the adapted model."
             )
+        if self._legacy_flag is not None:
+            raise RuntimeError(
+                f"{type(self).__name__} was built with a deprecated constructor "
+                "feature flag, whose 2.0 output TorchScript does not reproduce; "
+                "build it without the flag and call forward(x, return_features=True)."
+            )
         return make_parametrizations_scriptable(self)
+
+    def _apply_deprecated_init_flags(self) -> None:
+        """Warn for a 2.0 constructor feature flag; remember a true one's output."""
+        spec = getattr(type(self), "_deprecated_init_flags", None)
+        if spec is None:
+            return
+        removed_in, flags, identity_head = spec
+        for flag in flags:
+            if flag in self._braindecode_explicit_init_keys:
+                warnings.warn(
+                    f"{type(self).__name__}({flag}=...) is deprecated and will be "
+                    f"removed in braindecode {removed_in}; call "
+                    "model(x, return_features=True) instead.",
+                    FutureWarning,
+                    stacklevel=3,
+                )
+            if flag in identity_head and self._braindecode_init_kwargs.get(flag):
+                if self._head_spec is None:  # 2.0 built no head: like n_outputs=None
+                    self._head_spec = (self.final_layer,)
+                    self.final_layer = torch.nn.Identity()
+                self._legacy_head_flag = flag
+        self._legacy_flag = self._true_legacy_flag()
+
+    def _true_legacy_flag(self):
+        """The last true deprecated flag, which decides the output (as in 2.0)."""
+        flags = type(self)._deprecated_init_flags[1]
+        kwargs = self._braindecode_init_kwargs
+        return next((f for f in reversed(list(flags)) if kwargs.get(f)), None)
+
+    def _legacy_call(self, args, kwargs):
+        """The 2.0 output of the true constructor feature flag."""
+        output = type(self)._deprecated_init_flags[1][self._legacy_flag]
+        kwargs = {k: v for k, v in kwargs.items() if k != "return_features"}
+        out = self(*args, return_features=True, **kwargs)
+        if callable(output):
+            return output(out)
+        if isinstance(output, str):
+            return out[output]
+        if isinstance(output, tuple):
+            return tuple(out[k] for k in output)
+        return {k: out.get(v) for k, v in output.items()}
 
     def _signal_param(self, name: str) -> Any | None:
         """Return signal parameter ``name`` or ``None`` if unset and not inferable."""
@@ -1264,6 +1444,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     self._materialized_n_times = self._snap_grid_target(n_times)
 
     def __call__(self, *args, **kwargs):
+        spec = type(self)._forward_deprecation
+        if spec is not None:
+            args, kwargs = _map_deprecated_args(
+                type(self).__name__, args, kwargs, *spec
+            )
+        # 2.0: an explicit return_features=False or None kept the flag's output.
+        if self._legacy_flag is not None and not kwargs.get("return_features"):
+            return self._legacy_call(args, kwargs)
         if self._head_spec is not None and not self._call_arg(
             args, kwargs, "return_features", False
         ):
@@ -1454,10 +1642,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         head and position tables keep their shapes; a new model defaults to
         ``"pad"``. A config saved while a model that reads its input natively
         still took ``channel_strategy`` (2.1 development builds) loses its
-        ``"native"`` strategy keys.
+        ``"native"`` strategy keys. Configs of released weights also lose the
+        constructor feature flags (``return_feats`` and the like) that are false,
+        the default, so that loading them does not warn, and those removed since.
         """
         params = inspect.signature(cls.__init__).parameters
         takes_any = any(p.kind is p.VAR_KEYWORD for p in params.values())
+        for flag in (
+            "return_feats",
+            "return_feature",
+            "return_encoder_output",
+            "return_features",
+        ):
+            if not kwargs.get(flag) or (not takes_any and flag not in params):
+                kwargs.pop(flag, None)
         if not takes_any and "channel_strategy" not in params:
             if kwargs.get("channel_strategy", "native") == "native" and not kwargs.get(
                 "channel_strategy_kwargs"
@@ -1647,6 +1845,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _time_axis: str | None = None
     _channel_axis: str | None = None
     _time_inputs: ClassVar[tuple[str, ...]] = ("x",)
+    #: Whether :meth:`to_dense_prediction_model` can convert this model.
+    _dense_conversion: ClassVar[bool] = False
     # Set by adapt_input; class defaults also serve unpickled v2.0.0 models.
     _input_sfreq: Optional[float] = None
     _adapt_config: Optional[dict] = None
@@ -1711,7 +1911,21 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         Does not yet work correctly for average pooling.
         Prior to version 0.1.7, there had been a bug that could move strides
         backwards one layer.
+
+        Raises
+        ------
+        ValueError
+            If the model does not support dense conversion.
         """
+        if not self._dense_conversion:
+            reason = (
+                "it already gives dense predictions"
+                if self._time_axis == "dense"
+                else "it pools, tokenizes or fixes its window"
+            )
+            raise ValueError(
+                f"{type(self).__name__} cannot give dense predictions: {reason}"
+            )
         if not hasattr(axis, "__iter__"):
             axis = (axis,)
         assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]

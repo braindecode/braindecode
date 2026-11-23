@@ -10,9 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    return_features=("features", "logits"),
+)
 class SSTDPN(EEGModuleMixin, nn.Module):
     r"""SSTDPN from Can Han et al (2025) [Han2025]_.
 
@@ -172,8 +175,8 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     mvp_kernel_sizes : list[int], optional
         Kernel sizes for Multi-scale Variance Pooling (MVP) module.
         Larger kernels capture long-term temporal dependencies .
-
     return_features : bool, optional
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If True, the forward pass returns (features, logits). If False, returns only logits.
         Default is False.
 
@@ -264,7 +267,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self.mvp_kernel_sizes = (
             mvp_kernel_sizes if mvp_kernel_sizes is not None else [50, 100, 200]
         )
-        self.return_features = return_features
         self.proto_sep_maxnorm = proto_sep_maxnorm
         self.proto_cpt_std = proto_cpt_std
         self.spt_attn_global_context_kernel = spt_attn_global_context_kernel
@@ -312,11 +314,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
-    ) -> Union[
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-        Dict[str, Optional[torch.Tensor]],
-    ]:
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Classification is based on the dot product similarity with
         Inter-class Separation Prototypes (:attr:`SSTDPN.proto_sep`).
@@ -328,25 +326,17 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             Input tensor. Supported shapes:
               - (batch, n_chans, n_times)
         return_features : bool, default=False
-            If True, return a dictionary with ``"features"``, ``"embedding"``,
-            and ``"cls_token"`` before the prototype readout.
+            If True, return a dictionary with ``"features"`` (before the
+            prototype readout), ``"logits"`` and ``"cls_token"``.
 
         Returns
         -------
-        logits : torch.Tensor or dict or tuple
+        logits : torch.Tensor or dict
             If input was 3D: (batch, n_outputs)
             Or if ``return_features=True``: dict with encoder features and embedding.
-            Or if ``self.return_features`` is True:
-            (features, logits) where features shape is (batch, feat_dim)
         """
 
         features = self.encoder(x)  # (b, feat_dim)
-        if not torch.jit.is_scripting() and return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {
-                "features": features,
-                "cls_token": None,
-            }
-            return out
         # Project each class prototype before computing its dot-product gradient.
         # ``proto_sep`` is (n_outputs, feat_dim): renorm along dim=0 bounds each
         # class row (``||s_i|| <= S``). The in-place copy into a detached alias
@@ -357,10 +347,13 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
-
-        if self.return_features:
-            return features, logits
-
+        if not torch.jit.is_scripting() and return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": features,
+                "logits": logits,
+                "cls_token": None,
+            }
+            return out
         return logits
 
     def reset_head(self, n_outputs: int) -> None:

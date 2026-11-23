@@ -1,6 +1,7 @@
 """Tests for the unified ``return_features`` and ``reset_head`` API."""
 
 import inspect
+import warnings
 
 import mne
 import pytest
@@ -10,8 +11,7 @@ from torch import nn
 from braindecode.models import (
     BDTCN,
     BENDR,
-    BIOT,
-    EEGPT,
+    EEGDINO,
     Labram,
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
@@ -39,6 +39,7 @@ _HAS_CLS_TOKEN = {
     "FNIRSPreT",
     "FNIRST",
     "Labram",
+    "MSVTNet",
     "PopulationTransformer",
     "STEEGFormer",
 }
@@ -197,20 +198,6 @@ def test_feature_fallback_refuses_repeated_heads():
 
 _LEGACY = [
     pytest.param(
-        EEGPT,
-        {"return_encoder_output": True},
-        {},
-        lambda out: isinstance(out, torch.Tensor) and out.ndim == 4,
-        id="EEGPT-encoder_output",
-    ),
-    pytest.param(
-        BIOT,
-        {"return_feature": True},
-        {},
-        lambda out: isinstance(out, tuple) and len(out) == 2,
-        id="BIOT-return_feature",
-    ),
-    pytest.param(
         Labram,
         {"patch_size": 200, "chs_info": _LABRAM_TARGET_CHS_INFO},
         {"return_all_tokens": True},
@@ -268,6 +255,17 @@ def test_reset_head_model_reloads_after_saving(name, tmp_path):
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
 
 
+def test_from_config_loads_false_feature_flags_silently():
+    # The released EEG-DINO config still holds both deprecated flags, false.
+    config = _build_registered("EEGDINO").get_config()
+    config.update(return_features=False, return_encoder_output=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        loaded = EEGDINO.from_config(config).get_config()
+    assert loaded["return_features"] is False
+    assert loaded["return_encoder_output"] is False
+
+
 # A constrained last layer, or a head of several layers: the default swap would
 # drop the constraint or leave the other layers behind.
 @pytest.mark.parametrize("name", ["EEGNeX", "FBCNet", "MSVTNet", "USleep"])
@@ -301,8 +299,8 @@ def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
     "name, kwargs",
     [
         pytest.param("BENDR", {"final_layer": False}, id="BENDR"),
-        pytest.param("CBraMod", {"return_encoder_output": True}, id="CBraMod"),
-        pytest.param("EEGDINO", {"return_encoder_output": True}, id="EEGDINO"),
+        pytest.param("CBraMod", {"n_outputs": None}, id="CBraMod"),
+        pytest.param("EEGDINO", {"n_outputs": None}, id="EEGDINO"),
         pytest.param("LUNA", {"n_outputs": 0}, id="LUNA"),
     ],
 )

@@ -10,7 +10,7 @@ from torch import nn
 from torch.nn.utils.parametrize import is_parametrized, register_parametrization
 
 from braindecode.functional import scaled_dot_product_attention
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import (
     CausalConv1d,
     Ensure4d,
@@ -432,15 +432,16 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.n_windows * self.conv_block_pool_size_1 * self.conv_block_pool_size_2
         )
 
-    def forward(self, X: torch.Tensor, return_features: bool = False):
+    @deprecated_forward_kwargs(X="x")
+    def forward(self, x: torch.Tensor, return_features: bool = False):
         # Dimension: (batch_size, C, T)
-        X = self.ensuredims(X)
+        x = self.ensuredims(x)
         # Dimension: (batch_size, C, T, 1)
-        X = self.dimshuffle(X)
+        x = self.dimshuffle(x)
         # Dimension: (batch_size, 1, T, C)
 
         # ----- Sliding window -----
-        conv_feat = self.conv_block(X)
+        conv_feat = self.conv_block(x)
         # Dimension: (batch_size, F2, Tc, 1)
         tc = conv_feat.shape[2]
         conv_feat = conv_feat.view(-1, self.F2, tc)

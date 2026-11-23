@@ -16,6 +16,7 @@ from einops.layers.torch import Rearrange, Reduce
 from torch import nn
 
 from braindecode.functional import (
+    check_ch_mask,
     init_weights_,
     pad_or_crop_to_patches,
     patch_count,
@@ -318,6 +319,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
         self,
         x: torch.Tensor,
         return_features: bool = False,
+        ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Forward pass of the JungMAE model.
 
@@ -329,6 +331,10 @@ class JungMAE(EEGModuleMixin, nn.Module):
         return_features : bool, default=False
             If True, return the input of ``final_layer`` instead of the
             logits.
+        ch_mask : torch.Tensor | None, default=None
+            Pass by keyword. ``(batch_size, n_chans)`` mask with ``True`` for
+            real channels, see :func:`~braindecode.functional.check_ch_mask`.
+            Padded channels are read as missing samples (NaN).
 
         Returns
         -------
@@ -340,6 +346,10 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # Shapes use the symbols of the class docstring: C pairs, P patches of
         # Q samples, tokens of width D.
 
+        # Padded channels become missing samples: (batch, 2C, n_times)
+        ch_mask = check_ch_mask(ch_mask, x)
+        if ch_mask is not None:
+            x = x.masked_fill(~ch_mask.unsqueeze(-1), float("nan"))
         # A token per patch of each pair, zero where the patch is invalid:
         # (batch, 2C, n_times) -> (batch, C, P, D)
         x = self.encode(x)["foundation"]

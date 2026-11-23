@@ -35,10 +35,14 @@ import torch
 from torch import nn
 
 from braindecode.functional import scaled_dot_product_attention
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import CausalConv1d
 
 
+@deprecated_init_flags(
+    identity_head=("return_feats",),
+    return_feats="features",
+)
 class AttnSleep(EEGModuleMixin, nn.Module):
     r"""Sleep Staging Architecture from Eldele et al  (2021) [Eldele2021]_.
 
@@ -84,6 +88,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
     after_reduced_cnn_size : int
         Number of output channels produced by the convolution in the AFR module.
     return_feats : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
@@ -216,13 +221,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
 
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = feature_length * after_reduced_cnn_size
-        self.return_feats = return_feats
 
-        # TODO: Add new way to handle return features
-        """if return_feats:
-            raise ValueError("return_feat == True is not accepted anymore")"""
-        if not return_feats:
-            self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
+        self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
     @classmethod
     def _fill_legacy_defaults(cls, kwargs):
@@ -259,9 +259,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         encoded_features = encoded_features.contiguous().view(
             encoded_features.shape[0], -1
         )
-
-        if self.return_feats:
-            return encoded_features
 
         # Classification head: (batch, n_outputs)
         return self.final_layer(encoded_features)

@@ -221,7 +221,11 @@ class CombinedConv(nn.Module):
         bias = calculated_bias
 
         return F.conv2d(
-            x, weight=combined_weight, bias=bias, stride=self.conv_spat.stride
+            x,
+            weight=combined_weight,
+            bias=bias,
+            stride=self.conv_spat.stride,
+            dilation=self.conv_time.dilation,
         )
 
 
