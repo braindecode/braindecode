@@ -1650,6 +1650,8 @@ html[data-theme="dark"] .bd-landing .inst-logos .inst-freiburg {
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   padding: 4px max(28px, calc((100vw - 1280px) / 2)) 14px;
+
+
   /* Without it, mandatory snapping pins the first card to the viewport edge. */
   scroll-padding-inline: max(28px, calc((100vw - 1280px) / 2));
 }
