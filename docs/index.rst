@@ -629,41 +629,65 @@
             <span class="venue-subtag bd-mono">eBIOMEDICINE</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Machine learning of brain-specific wavelet biomarkers from clinical EEG across neurological cohorts.</p>
-            <p class="venue-cite">Bomatter, Paillard, Garces, Hipp &amp; Engemann · F. Hoffmann-La Roche (2024)</p>
+            <p class="venue-quote">Braindecode ConvNets detect pathology in clinical EEG and predict age and sex from over 2,600 recordings, separating brain from peripheral signals.</p>
+            <p class="venue-cite">Bomatter et al. · F. Hoffmann-La Roche (eBioMedicine, 2024) · Gemein et al. · Univ. Freiburg (NeuroImage, 2020)</p>
             <span class="venue-cta bd-mono">Read clinical study →</span>
           </div>
         </a>
 
-        <a class="venue-card tone-invite" href="https://github.com/braindecode/braindecode/discussions" target="_blank" rel="noopener">
+        <a class="venue-card tone-cerulean" href="https://doi.org/10.1088/1741-2552/abca18" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <circle cx="312" cy="96" r="96" stroke="rgba(243,178,120,0.28)" stroke-dasharray="5 5" stroke-width="1.4"/>
-            <path d="M24 188 Q86 154 148 188 T272 188 T396 188" stroke="rgba(243,178,120,0.34)" stroke-width="1.6"/>
+            <g stroke="rgba(255,255,255,0.15)" stroke-width="1">
+              <line x1="40" y1="84" x2="344" y2="204"/>
+              <line x1="40" y1="144" x2="344" y2="204"/>
+              <line x1="40" y1="204" x2="344" y2="124"/>
+              <line x1="40" y1="144" x2="344" y2="124"/>
+            </g>
+            <circle cx="344" cy="124" r="8" fill="rgba(242,176,119,0.55)"/>
+            <circle cx="344" cy="204" r="10" fill="rgba(137,200,247,0.6)"/>
           </svg>
           <div class="venue-brand-head">
-            <img class="venue-logo is-compact dark-light" src="_static/braindecode_long_dark.svg" alt="Braindecode" width="168" height="27" loading="lazy" decoding="async"/>
-            <span class="venue-subtag is-invite bd-mono">COMMUNITY</span>
+            <span class="venue-wordmark">J. Neural Eng.</span>
+            <span class="venue-subtag bd-mono">SELF-SUPERVISED</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote venue-invite-title">Your next paper here :)</p>
-            <p class="venue-cite">Working on an EEG, iEEG, MEG, fNIRS, or sEMG study with Braindecode? Tell us about your paper, push weights to Hugging Face, or add your architecture to the zoo.</p>
-            <span class="venue-cta bd-mono">Share your work with us →</span>
+            <p class="venue-quote">Self-supervised pretraining on unlabeled sleep and clinical EEG, the origin of Braindecode's relative-positioning sampler, and dynamic spatial filtering that learns to ignore corrupted channels.</p>
+            <p class="venue-cite">Banville, Chehab, Hyvärinen, Engemann &amp; Gramfort (J. Neural Eng., 2021) · Dynamic spatial filtering, Banville et al. (NeuroImage, 2022)</p>
+            <span class="venue-cta bd-mono">Read SSL paper →</span>
           </div>
         </a>
 
-        <a class="venue-card tone-cerulean" href="https://openreview.net/forum?id=5W7n3aXjGP" target="_blank" rel="noopener">
+        <a class="venue-card tone-slate" href="https://doi.org/10.3389/fnins.2019.01275" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <path d="M18 176 Q68 124 118 176 T218 176 T318 176 T396 176" stroke="rgba(242,176,119,0.36)" stroke-width="1.6"/>
-            <path d="M18 212 Q68 164 118 212 T218 212 T318 212 T396 212" stroke="rgba(137,200,247,0.28)" stroke-width="1.3"/>
+            <circle cx="110" cy="150" r="48" stroke="rgba(255,255,255,0.16)" stroke-width="1.2"/>
+            <circle cx="200" cy="150" r="48" stroke="rgba(137,200,247,0.34)" stroke-width="1.4"/>
+            <circle cx="290" cy="150" r="48" stroke="rgba(242,176,119,0.38)" stroke-width="1.4"/>
           </svg>
           <div class="venue-brand-head">
-            <img class="venue-logo is-tall dark-light" src="_static/venue_logos/neurips-lockup-white.svg" alt="NeurIPS" width="142" height="42" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">METHODS</span>
+            <span class="venue-wordmark">Front. Neurosci.</span>
+            <span class="venue-subtag bd-mono">MOTOR IMAGERY</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Convolutional Monge-mapping normalization for sleep EEG, differentiable invariance layers, and multi-scale wavelet pretraining run on Braindecode.</p>
-            <p class="venue-cite">CMMN (Gnassounou et al., 2023) · AugNet (Rommel et al., 2022) · PhysioWave (Chen et al., 2025)</p>
-            <span class="venue-cta bd-mono">Read NeurIPS paper →</span>
+            <p class="venue-quote">Teams in Xi'an, Gumi and Beijing decode motor imagery with Braindecode: a multiscale filter-bank CNN, a capsule network, and same-limb baselines.</p>
+            <p class="venue-cite">Wu et al. · Xidian Univ. (Front. Neurosci., 2019) · Ha &amp; Jeong · Kumoh National Institute of Technology (Sensors, 2019) · Ma, Qiu &amp; He · CAS (IEEE TNSRE, 2022)</p>
+            <span class="venue-cta bd-mono">Read Frontiers paper →</span>
+          </div>
+        </a>
+
+        <a class="venue-card tone-navy" href="https://arxiv.org/abs/2411.07249" target="_blank" rel="noopener">
+          <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
+            <ellipse cx="198" cy="152" rx="124" ry="54" stroke="rgba(137,200,247,0.28)" stroke-width="1.4"/>
+            <ellipse cx="198" cy="152" rx="124" ry="54" transform="rotate(26 198 152)" stroke="rgba(255,255,255,0.14)" stroke-width="1.2"/>
+            <ellipse cx="198" cy="152" rx="124" ry="54" transform="rotate(-26 198 152)" stroke="rgba(242,176,119,0.26)" stroke-width="1.2"/>
+          </svg>
+          <div class="venue-brand-head">
+            <img class="venue-logo dark-light" src="_static/venue_logos/iclr-white.svg" alt="ICLR" width="136" height="38" loading="lazy" decoding="async"/>
+            <span class="venue-subtag bd-mono">DOMAIN SHIFT</span>
+          </div>
+          <div class="venue-body">
+            <p class="venue-quote">Source-free EEG adaptation under label shift, tested on Braindecode sleep-staging models, and domain-adversarial training with Braindecode's Deep ConvNet.</p>
+            <p class="venue-cite">SPDIM · Li, Kawanabe &amp; Kobler · ATR, RIKEN &amp; NAIST (ICLR 2025) · ELS · Zhang et al. · CAS Inst. of Automation (ICLR 2023)</p>
+            <span class="venue-cta bd-mono">Read ICLR paper →</span>
           </div>
         </a>
 
@@ -683,25 +707,19 @@
           </div>
         </a>
 
-        <a class="venue-card tone-navy" href="https://openreview.net/forum?id=rWkk4373xa" target="_blank" rel="noopener">
+        <a class="venue-card tone-copper" href="https://pure.ulster.ac.uk/en/publications/9f9d76be-d102-42a9-aa17-300b5df0451a" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <g stroke="rgba(255,255,255,0.15)" stroke-width="1">
-              <line x1="40" y1="84" x2="344" y2="204"/>
-              <line x1="40" y1="144" x2="344" y2="204"/>
-              <line x1="40" y1="204" x2="344" y2="124"/>
-              <line x1="40" y1="144" x2="344" y2="124"/>
-            </g>
-            <circle cx="344" cy="124" r="8" fill="rgba(242,176,119,0.55)"/>
-            <circle cx="344" cy="204" r="10" fill="rgba(137,200,247,0.6)"/>
+            <path d="M18 176 Q68 124 118 176 T218 176 T318 176 T396 176" stroke="rgba(242,176,119,0.36)" stroke-width="1.6"/>
+            <path d="M18 212 Q68 164 118 212 T218 212 T318 212 T396 212" stroke="rgba(137,200,247,0.28)" stroke-width="1.3"/>
           </svg>
           <div class="venue-brand-head">
-            <img class="venue-logo dark-light" src="_static/venue_logos/iclr-white.svg" alt="ICLR" width="136" height="38" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">AUGMENTATION</span>
+            <span class="venue-wordmark">IEEE TBME</span>
+            <span class="venue-subtag bd-mono">SPEECH · fNIRS</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Class-wise automatic differentiable data augmentation for sleep staging and motor-imagery EEG, contributed directly to braindecode.augmentation.</p>
-            <p class="venue-cite">CADDA · Rommel, Moreau, Paillard &amp; Gramfort (ICLR 2022)</p>
-            <span class="venue-cta bd-mono">Read ICLR paper →</span>
+            <p class="venue-quote">Bimodal EEG-fNIRS decoding of overt and imagined speech, and image classification from low-density EEG with Braindecode's EEGNet.</p>
+            <p class="venue-cite">Cooney, Folli &amp; Coyle · Ulster Univ. (IEEE TBME, 2021) · Guenther, Kosmyna &amp; Maes · MIT Media Lab &amp; TUM (Sci. Reports, 2024)</p>
+            <span class="venue-cta bd-mono">Read TBME paper →</span>
           </div>
         </a>
 
@@ -723,37 +741,19 @@
           </div>
         </a>
 
-        <a class="venue-card tone-cerulean" href="https://github.com/facebookresearch/neuroai" target="_blank" rel="noopener">
+        <a class="venue-card tone-invite" href="https://github.com/braindecode/braindecode/discussions" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <ellipse cx="198" cy="152" rx="124" ry="54" stroke="rgba(137,200,247,0.28)" stroke-width="1.4"/>
-            <ellipse cx="198" cy="152" rx="124" ry="54" transform="rotate(26 198 152)" stroke="rgba(255,255,255,0.14)" stroke-width="1.2"/>
-            <ellipse cx="198" cy="152" rx="124" ry="54" transform="rotate(-26 198 152)" stroke="rgba(242,176,119,0.26)" stroke-width="1.2"/>
+            <circle cx="312" cy="96" r="96" stroke="rgba(243,178,120,0.28)" stroke-dasharray="5 5" stroke-width="1.4"/>
+            <path d="M24 188 Q86 154 148 188 T272 188 T396 188" stroke="rgba(243,178,120,0.34)" stroke-width="1.6"/>
           </svg>
           <div class="venue-brand-head">
-            <img class="venue-logo is-compact dark-light" src="_static/venue_logos/meta-brainai-white.png" alt="Meta Brain &amp; AI" width="156" height="33" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">BRAIN &amp; AI</span>
+            <img class="venue-logo is-compact dark-light" src="_static/braindecode_long_dark.svg" alt="Braindecode" width="168" height="27" loading="lazy" decoding="async"/>
+            <span class="venue-subtag is-invite bd-mono">COMMUNITY</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Meta Brain &amp; AI co-leads tracks in the NeurIPS 2026 EEG/EMG Challenge and builds NeuralTrain and NeuralBench directly on Braindecode.</p>
-            <p class="venue-cite">Meta Brain &amp; AI · facebookresearch/neuroai · NeurIPS 2026 Challenge</p>
-            <span class="venue-cta bd-mono">Explore NeuroAI suite →</span>
-          </div>
-        </a>
-
-        <a class="venue-card tone-copper" href="https://github.com/scikit-adaptation/skada-bench" target="_blank" rel="noopener">
-          <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <circle cx="110" cy="150" r="48" stroke="rgba(255,255,255,0.16)" stroke-width="1.2"/>
-            <circle cx="200" cy="150" r="48" stroke="rgba(137,200,247,0.34)" stroke-width="1.4"/>
-            <circle cx="290" cy="150" r="48" stroke="rgba(242,176,119,0.38)" stroke-width="1.4"/>
-          </svg>
-          <div class="venue-brand-head">
-            <img class="venue-logo is-compact dark-light" src="_static/venue_logos/tmlr-white.svg" alt="TMLR" width="128" height="32" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">+ CVPR 2026</span>
-          </div>
-          <div class="venue-body">
-            <p class="venue-quote">Realistic unsupervised domain-adaptation validation across cross-subject BCI cohorts and test-time calibration for EEG-to-image retrieval.</p>
-            <p class="venue-cite">SKADA-Bench (Lalou, Gnassounou et al., TMLR) · SATTC (Huang &amp; Zhu, CVPR 2026)</p>
-            <span class="venue-cta bd-mono">Explore benchmark code →</span>
+            <p class="venue-quote venue-invite-title">Your next paper here :)</p>
+            <p class="venue-cite">Working on an EEG, iEEG, MEG, fNIRS, or sEMG study with Braindecode? Tell us about your paper, push weights to Hugging Face, or add your architecture to the zoo.</p>
+            <span class="venue-cta bd-mono">Share your work with us →</span>
           </div>
         </a>
       </div>
