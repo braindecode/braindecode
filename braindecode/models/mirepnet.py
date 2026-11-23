@@ -12,7 +12,7 @@ from typing import Dict, Optional, Union
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import (
     FeedForwardBlock,
@@ -31,6 +31,9 @@ MIREPNET_CHANNEL_ORDER = [
 ]
 
 
+@deprecated_init_flags(
+    return_features={"features": "features", "cls_token": "cls_token"},
+)
 class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""MIRepNet from Liu et al. (2026) [liu2026mirepnet]_.
 
@@ -137,6 +140,9 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     attention_scale : float or None, default=None
         Attention-score multiplier. ``None`` uses the released
         ``embed_dim ** -0.5`` scale.
+    return_features : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        Whether ``forward`` returns the unified feature dictionary by default.
 
     Notes
     -----
@@ -186,6 +192,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         att_drop_prob: float = 0.5,
         feedforward_drop_prob: float = 0.5,
         attention_scale: float | None = None,
+        return_features: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):

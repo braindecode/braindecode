@@ -9,7 +9,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -17,6 +17,9 @@ from braindecode.modules import (
 )
 
 
+@deprecated_init_flags(
+    return_features="tokens",
+)
 class EEGConformer(EEGModuleMixin, nn.Module):
     r"""EEG Conformer from Song et al (2022) [song2022]_.
 
@@ -174,6 +177,10 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         Dropout rate of the self-attention layer.
     final_fc_length : int | str
         The dimension of the fully connected layer.
+    return_features : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, the forward method returns the features before the
+        last classification layer. Defaults to False.
     activation : nn.Module
         Activation function as parameter. Default is nn.ELU
     activation_transfor : nn.Module
@@ -219,7 +226,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         num_heads=10,
         att_drop_prob=0.5,
         final_fc_length="auto",
-        *,
+        return_features=False,
         activation: type[nn.Module] = nn.ELU,
         activation_transfor: type[nn.Module] = nn.GELU,
         n_times=None,

@@ -8,9 +8,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    return_features=("logits", "branch_logits"),
+)
 class MSVTNet(EEGModuleMixin, nn.Module):
     r"""MSVTNet model from Liu K et al (2024) from [msvt2024]_.
 
@@ -50,6 +53,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         Number of transformer encoder layers, by default 2.
     activation : Type[nn.Module], optional
         Activation function class to use, by default nn.ELU.
+    return_features : bool, optional
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        Whether to return predictions from branch classifiers, by default False.
 
     Notes
     -----
@@ -91,6 +97,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         att_drop_prob: float = 0.5,
         num_layers: int = 2,
         activation: Type[nn.Module] = nn.ELU,
+        return_features: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,

@@ -210,6 +210,7 @@ def track_model_init_kwargs(cls) -> None:
         self._braindecode_init_kwargs = captured_kwargs
         init(self, *args, **kwargs)
         self._drop_headless_head()
+        self._apply_deprecated_init_flags()
 
     setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
     cls.__init__ = wrapped

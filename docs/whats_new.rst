@@ -222,9 +222,9 @@ API and behavior changes
 - Every model's ``forward`` takes its signal as ``x`` and :class:`braindecode.models.LUNA` its
   positions as ``pos``. Calling a model with the old keywords (``X``, ``input``, ``inputs``, ``eeg``,
   ``input_tensor``, ``channel_locations``) warns and keeps working until 2.3 (by `Bruno Aristimunha`_).
-- The constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
-  ``return_features`` of 17 models are removed, and saved configs drop them; call
-  ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
+- The 2.0 constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
+  ``return_features`` of 16 models warn and keep their 2.0 output and head until 2.3 (eager only);
+  call ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
 - ``to_dense_prediction_model`` also converts already dilated convolution stacks and raises
   ``ValueError`` with the reason on models it cannot convert, including EMG2QwertyNet and NeuroPose,
   which did not raise before (by `Bruno Aristimunha`_).

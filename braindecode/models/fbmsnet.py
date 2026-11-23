@@ -7,7 +7,7 @@ from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.fbcnet import _valid_layers
 from braindecode.modules import (
     Conv2dWithConstraint,
@@ -16,6 +16,9 @@ from braindecode.modules import (
 )
 
 
+@deprecated_init_flags(
+    return_features=("logits", "features"),
+)
 class FBMSNet(EEGModuleMixin, nn.Module):
     r"""FBMSNet from Liu et al (2022) [fbmsnet]_.
 
@@ -79,6 +82,10 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Dictionary of parameters to use for the FilterBankLayer.
         If None, a default Chebyshev Type II filter with transition bandwidth of
         2 Hz and stop-band ripple of 30 dB will be used.
+    return_features : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, the forward method returns the class logits and the flattened
+        features before the final classification layer.
     verbose : bool, default False
         Verbose parameter to create the filter using mne.
 
@@ -120,6 +127,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         linear_max_norm: float = 0.5,
         verbose: bool = False,
         filter_parameters: dict[Any, Any] | None = None,
+        return_features: bool = False,
     ):
         super().__init__(
             n_chans=n_chans,

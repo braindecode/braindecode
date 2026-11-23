@@ -247,6 +247,26 @@ def deprecated_forward_kwargs(*, removed_in="2.3", old_positional=None, **aliase
     return mark
 
 
+def deprecated_init_flags(*, removed_in="2.3", identity_head=(), **flags):
+    """Keep the constructor feature flags of braindecode 2.0 working until ``removed_in``.
+
+    Each flag maps to its 2.0 output, read from ``model(x, return_features=True)``:
+    a key, a tuple or a dict of keys, or a function of that dict (``"logits"``
+    falls back to ``model(x)``). Passing a flag warns; when it is true, calling
+    the model returns that output, and the last true flag wins. A true flag
+    listed in ``identity_head`` also replaces ``final_layer`` by
+    ``nn.Identity``, as 2.0 did, so its checkpoints load; :meth:`reset_head`
+    puts a head back and clears the flag. Eager only: ``torch.jit.script``
+    refuses a model built with a true flag.
+    """
+
+    def mark(cls):
+        cls._deprecated_init_flags = (removed_in, flags, frozenset(identity_head))
+        return cls
+
+    return mark
+
+
 def _forward_deprecation(cls):
     """The old ``forward`` arguments that ``cls`` still maps, or ``None``.
 
@@ -363,6 +383,10 @@ def _new_head_follows_model(reset_head):
         head = self.__dict__.pop("_head_spec", None)
         if head is not None:  # headless build: put back its head, then resize it
             self.final_layer = head[0]
+        flag = self.__dict__.pop("_legacy_head_flag", None)
+        if flag is not None:  # as in 2.0, asking for a head clears the flag
+            self._legacy_output = None
+            self._update_init_kwargs(**{flag: False})
         out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
@@ -871,9 +895,60 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
+    #: 2.0 output of a true deprecated constructor flag (deprecated_init_flags).
+    _legacy_output = None
+
     def __prepare_scriptable__(self):
         # Called by torch.jit.script before compiling the model.
+        if self._legacy_output is not None:
+            raise RuntimeError(
+                f"{type(self).__name__} was built with a deprecated constructor "
+                "feature flag, whose 2.0 output TorchScript does not reproduce; "
+                "build it without the flag and call forward(x, return_features=True)."
+            )
         return make_parametrizations_scriptable(self)
+
+    def _apply_deprecated_init_flags(self) -> None:
+        """Warn for a 2.0 constructor feature flag; remember a true one's output."""
+        spec = getattr(type(self), "_deprecated_init_flags", None)
+        if spec is None:
+            return
+        removed_in, flags, identity_head = spec
+        for flag, output in flags.items():
+            if flag in self._braindecode_explicit_init_keys:
+                warnings.warn(
+                    f"{type(self).__name__}({flag}=...) is deprecated and will be "
+                    f"removed in braindecode {removed_in}; call "
+                    "model(x, return_features=True) instead.",
+                    FutureWarning,
+                    stacklevel=3,
+                )
+            if not self._braindecode_init_kwargs.get(flag):
+                continue
+            self._legacy_output = output
+            if flag in identity_head:  # 2.0 built no head: same as n_outputs=None
+                if self._head_spec is None:
+                    self._head_spec = (self.final_layer,)
+                    self.final_layer = torch.nn.Identity()
+                self._legacy_head_flag = flag
+
+    def _legacy_call(self, output, args, kwargs):
+        """The 2.0 output of a true constructor feature flag."""
+        out = self(*args, return_features=True, **kwargs)
+        if callable(output):
+            return output(out)
+        keys = (
+            (output,)
+            if isinstance(output, str)
+            else tuple(output.values() if isinstance(output, dict) else output)
+        )
+        if "logits" in keys and "logits" not in out:
+            out = {**out, "logits": self(*args, return_features=False, **kwargs)}
+        if isinstance(output, str):
+            return out[output]
+        if isinstance(output, tuple):
+            return tuple(out[k] for k in output)
+        return {k: out.get(v) for k, v in output.items()}
 
     def _signal_param(self, name: str) -> Any | None:
         """Return signal parameter ``name`` or ``None`` if unset and not inferable."""
@@ -1158,6 +1233,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             args, kwargs = _map_deprecated_args(
                 type(self).__name__, args, kwargs, *spec
             )
+        if self._legacy_output is not None and "return_features" not in kwargs:
+            return self._legacy_call(self._legacy_output, args, kwargs)
         if self._head_spec is not None and not kwargs.get("return_features"):
             raise ValueError(
                 f"{type(self).__name__} was built with n_outputs=None (headless); "
@@ -1344,19 +1421,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ``"pad"``. A config saved while a model that reads its input natively
         still took ``channel_strategy`` (2.1 development builds) loses its
         ``"native"`` strategy keys. Configs of released weights also lose the
-        removed constructor feature flags (``return_feats`` and the like).
+        constructor feature flags (``return_feats`` and the like) that are false,
+        the default, so that loading them does not warn, and those removed since.
         """
         params = inspect.signature(cls.__init__).parameters
         takes_any = any(p.kind is p.VAR_KEYWORD for p in params.values())
-        if not takes_any:
-            for flag in (
-                "return_feats",
-                "return_feature",
-                "return_encoder_output",
-                "return_features",
-            ):
-                if flag not in params:
-                    kwargs.pop(flag, None)
+        for flag in (
+            "return_feats",
+            "return_feature",
+            "return_encoder_output",
+            "return_features",
+        ):
+            if not kwargs.get(flag) or (not takes_any and flag not in params):
+                kwargs.pop(flag, None)
         if not takes_any and "channel_strategy" not in params:
             if kwargs.get("channel_strategy", "native") == "native" and not kwargs.get(
                 "channel_strategy_kwargs"

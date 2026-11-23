@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from braindecode.functional import init_weights_, patch_count
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
 from braindecode.modules.blocks import PatchTokenizer
@@ -177,6 +177,10 @@ def build_region_attention_mask(
     return mask
 
 
+@deprecated_init_flags(
+    identity_head=("return_encoder_output",),
+    return_encoder_output="features",
+)
 class CSBrain(EEGModuleMixin, nn.Module):
     r"""Cross-scale Spatiotemporal Brain Foundation Model from Zhou et al. (2025)
     [zhou2025csbrain]_.
@@ -262,6 +266,11 @@ class CSBrain(EEGModuleMixin, nn.Module):
         ``n_chans * n_patch * d_model * head_hidden_dim`` weights, which grows
         quadratically with the window length by default (about 2.3e9 for 64
         channels and 30 s), so set a smaller width for long windows.
+    return_encoder_output : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If False (default), the projected encoder output is flattened and
+        passed through the task head to produce class logits of size
+        ``n_outputs``. If True, return the encoder output features.
     channel_strategy : str
         How another montage reaches the encoder; see
         :class:`~braindecode.models.base.EEGModuleMixin`. The encoder keeps the
@@ -317,7 +326,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         brain_regions: Sequence[int] | None = None,
         channel_order: Sequence[int] | None = None,
         head_hidden_dim: int | None = None,
-        *,
+        return_encoder_output: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):

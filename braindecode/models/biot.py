@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from braindecode.functional import check_ch_mask, masked_mean, spectral_input
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import SinusoidalPositionalEncoding
 from braindecode.modules.linear_attention import LinearAttentionTransformer
@@ -40,6 +40,9 @@ BIOT_CHANNEL_ORDER = [
 ]
 
 
+@deprecated_init_flags(
+    return_feature=("logits", "features"),
+)
 class BIOT(EEGModuleMixin, nn.Module):
     r"""BIOT from Yang et al (2023) [Yang2023]_
 
@@ -118,6 +121,11 @@ class BIOT(EEGModuleMixin, nn.Module):
     hop_length : int, optional
         The hop length for the torch.stft transformation in the
         encoder. The default is 100.
+    return_feature : bool, optional
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        Changing the output for the neural network. Default is single tensor
+        when return_feature is True, return embedding space too.
+        Default is False.
     sfreq : int, optional
         The sfreq parameter for the encoder. The default is 200, unless
         ``n_times`` and ``input_window_seconds`` are both given, in which
@@ -146,7 +154,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         num_layers=4,
         sfreq=None,
         hop_length=100,
-        *,
+        return_feature=False,
         n_outputs=None,
         n_chans=None,
         chs_info=None,

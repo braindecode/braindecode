@@ -35,10 +35,14 @@ import torch
 from torch import nn
 
 from braindecode.functional import scaled_dot_product_attention
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import CausalConv1d
 
 
+@deprecated_init_flags(
+    identity_head=("return_feats",),
+    return_feats="features",
+)
 class AttnSleep(EEGModuleMixin, nn.Module):
     r"""Sleep Staging Architecture from Eldele et al  (2021) [Eldele2021]_.
 
@@ -83,6 +87,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         Dropout rate in the PositionWiseFeedforward layer and the TCE layers.
     after_reduced_cnn_size : int
         Number of output channels produced by the convolution in the AFR module.
+    return_feats : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If False, pass the features through
+        the final linear layer.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply in the AFR block and the TCE
         feed-forward block. Should be a PyTorch activation
@@ -127,7 +136,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         n_outputs=None,
         after_reduced_cnn_size=30,
-        *,
+        return_feats=False,
         chs_info=None,
         n_chans=None,
         n_times=None,

@@ -7,9 +7,13 @@ import math
 import torch
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    identity_head=("return_feats",),
+    return_feats="features",
+)
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     r"""Sleep staging architecture from Chambon et al. (2018) [Chambon2018]_.
 
@@ -39,6 +43,11 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
         layers.
+    return_feats : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If False, pass the features through
+        the final linear layer.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
@@ -68,7 +77,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         n_outputs=5,
         drop_prob=0.25,
         apply_batch_norm=False,
-        *,
+        return_feats=False,
         chs_info=None,
         n_times=None,
     ):

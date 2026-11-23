@@ -7,10 +7,14 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
+@deprecated_init_flags(
+    identity_head=("return_feats",),
+    return_feats="features",
+)
 class DeepSleepNet(EEGModuleMixin, nn.Module):
     r"""DeepSleepNet from Supratak et al (2017) [Supratak2017]_.
 
@@ -94,6 +98,9 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    return_feats : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, return features before the final linear layer.
     activation_large : type[nn.Module], default=nn.ELU
         Activation class for the large-filter CNN path.
     activation_small : type[nn.Module], default=nn.ReLU
@@ -168,7 +175,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
     def __init__(
         self,
         n_outputs=5,
-        *,
+        return_feats=False,
         n_chans=None,
         chs_info=None,
         n_times=None,

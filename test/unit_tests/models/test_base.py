@@ -3,6 +3,7 @@
 # License: BSD-3
 
 
+import ast
 import inspect
 import json
 import subprocess
@@ -1260,3 +1261,73 @@ def test_old_sleepfm_channel_mask_is_the_inverse_of_ch_mask():
         with pytest.warns(FutureWarning, match="second positional argument is ch_mask"):
             old = model.encode(x, missing)[0]
         assert torch.equal(old, model.encode(x, ch_mask=~missing)[0])
+
+
+# Constructor feature flags of v2.0.0 keep their 2.0 output until 2.3
+# (deprecated_init_flags). Shapes recorded with v2.0.0 for the test fixtures.
+_V2_FLAG_OUTPUTS = [
+    (name, flag, ast.literal_eval(output))
+    for name, flag, output in (
+        line.split(" ", 2)
+        for line in (_V2_DATA / "v2_flag_outputs.txt").read_text().splitlines()
+    )
+]
+
+
+def _structure(out):
+    if torch.is_tensor(out):
+        return tuple(out.shape)
+    if isinstance(out, dict):
+        return {k: _structure(v) for k, v in out.items()}
+    if isinstance(out, tuple):
+        return [_structure(v) for v in out]
+    return out
+
+
+def test_every_deprecated_flag_has_its_v2_output_recorded():
+    decorated = {
+        (name, flag)
+        for name, cls in models_dict.items()
+        for flag in vars(cls).get("_deprecated_init_flags", (None, {}))[1]
+    }
+    assert decorated == {(name, flag) for name, flag, _ in _V2_FLAG_OUTPUTS}
+
+
+@pytest.mark.parametrize("name,flag,v2_output", _V2_FLAG_OUTPUTS)
+def test_deprecated_constructor_flag_keeps_its_v2_output(name, flag, v2_output):
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == name
+    )
+    signal = _get_signal_params(signal_params)
+    kwargs = {**_get_signal_params(signal_params, required), flag: True}
+    with pytest.warns(FutureWarning, match=rf"{flag}=\.\.\.\) is deprecated"):
+        model = models_dict[name](**kwargs).eval()
+    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+    with torch.no_grad():
+        assert _structure(model(x)) == v2_output
+
+
+def test_deprecated_constructor_flag_config_and_torchscript():
+    kwargs = dict(sfreq=100, n_outputs=2, input_window_seconds=30)
+    with pytest.warns(FutureWarning):  # False is passed, so it warns too
+        plain = AttnSleep(**kwargs, return_feats=False).eval()
+    with pytest.warns(FutureWarning):
+        legacy = AttnSleep(**kwargs, return_feats=True).eval()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        AttnSleep.from_config(plain.get_config())  # a false flag loads silently
+    with pytest.warns(FutureWarning):
+        reloaded = AttnSleep.from_config(legacy.get_config()).eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        assert plain(x).shape == (2, 2)
+        assert reloaded(x).shape == legacy(x).shape == (2, 2400)
+    with pytest.raises(RuntimeError, match="deprecated constructor feature flag"):
+        torch.jit.script(legacy)
+    # As in 2.0: no head weights with the flag, and asking for a head clears it.
+    assert not any(k.startswith("final_layer.") for k in legacy.state_dict())
+    legacy.reset_head(3)
+    with torch.no_grad():
+        assert legacy(x).shape == (2, 3)
+    assert legacy.get_config()["return_feats"] is False
+

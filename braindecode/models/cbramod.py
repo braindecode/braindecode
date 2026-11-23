@@ -20,13 +20,17 @@ from braindecode.functional import (
     patch_count,
     spectral_input,
 )
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
 
 logger = logging.getLogger(__name__)
 
 
+@deprecated_init_flags(
+    identity_head=("return_encoder_output",),
+    return_encoder_output="features",
+)
 class CBraMod(EEGModuleMixin, nn.Module):
     r"""
     **C**\ riss-\ **C**\ ross **Bra**\ in **Mod**\ el for EEG Decoding from Wang et al. (2025) [cbramod]_.
@@ -148,6 +152,11 @@ class CBraMod(EEGModuleMixin, nn.Module):
         and head use the encoder output, of size ``d_model``.
     drop_prob : float, default=0.1
         Dropout probability.
+    return_encoder_output : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If false (default), the features are flattened and passed through a final linear layer
+        to produce class logits of size ``n_outputs``.
+        If True, the model returns the encoder output features.
 
     References
     ----------
@@ -182,7 +191,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             (25, 3, 1, 1, (5, 25)),
         ),
         drop_prob: float = 0.1,
-        *,
+        return_encoder_output: bool = False,
         on_non_divisible: str = "pad",
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
