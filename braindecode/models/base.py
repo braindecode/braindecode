@@ -381,9 +381,9 @@ def _new_head_follows_model(reset_head):
             self.final_layer = head[0]
         out = reset_head(self, *args, **kwargs)
         flag = self.__dict__.pop("_legacy_head_flag", None)
-        if flag is not None:  # as in 2.0, a new head clears the flag (not a refusal)
-            self._legacy_output = None
+        if flag is not None:  # as in 2.0, a new head clears that flag (not a refusal)
             self._update_init_kwargs(**{flag: False})
+            self._legacy_flag = self._true_legacy_flag()
         if ref is not None:
             for module in self.modules():
                 tensors = [*module.parameters(), *module.buffers()]
@@ -889,12 +889,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
-    #: 2.0 output of a true deprecated constructor flag (deprecated_init_flags).
-    _legacy_output = None
+    #: The true deprecated constructor flag that decides the output (deprecated_init_flags).
+    _legacy_flag = None
 
     def __prepare_scriptable__(self):
         # Called by torch.jit.script before compiling the model.
-        if self._legacy_output is not None:
+        if self._legacy_flag is not None:
             raise RuntimeError(
                 f"{type(self).__name__} was built with a deprecated constructor "
                 "feature flag, whose 2.0 output TorchScript does not reproduce; "
@@ -908,7 +908,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if spec is None:
             return
         removed_in, flags, identity_head = spec
-        for flag, output in flags.items():
+        for flag in flags:
             if flag in self._braindecode_explicit_init_keys:
                 warnings.warn(
                     f"{type(self).__name__}({flag}=...) is deprecated and will be "
@@ -917,27 +917,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     FutureWarning,
                     stacklevel=3,
                 )
-            if not self._braindecode_init_kwargs.get(flag):
-                continue
-            self._legacy_output = output
-            if flag in identity_head:  # 2.0 built no head: same as n_outputs=None
-                if self._head_spec is None:
+            if flag in identity_head and self._braindecode_init_kwargs.get(flag):
+                if self._head_spec is None:  # 2.0 built no head: like n_outputs=None
                     self._head_spec = (self.final_layer,)
                     self.final_layer = torch.nn.Identity()
                 self._legacy_head_flag = flag
+        self._legacy_flag = self._true_legacy_flag()
 
-    def _legacy_call(self, output, args, kwargs):
-        """The 2.0 output of a true constructor feature flag."""
+    def _true_legacy_flag(self):
+        """The last true deprecated flag, which decides the output (as in 2.0)."""
+        flags = type(self)._deprecated_init_flags[1]
+        kwargs = self._braindecode_init_kwargs
+        return next((f for f in reversed(list(flags)) if kwargs.get(f)), None)
+
+    def _legacy_call(self, args, kwargs):
+        """The 2.0 output of the true constructor feature flag."""
+        output = type(self)._deprecated_init_flags[1][self._legacy_flag]
+        kwargs = {k: v for k, v in kwargs.items() if k != "return_features"}
         out = self(*args, return_features=True, **kwargs)
         if callable(output):
             return output(out)
-        keys = (
-            (output,)
-            if isinstance(output, str)
-            else tuple(output.values() if isinstance(output, dict) else output)
-        )
-        if "logits" in keys and "logits" not in out:
-            out = {**out, "logits": self(*args, return_features=False, **kwargs)}
         if isinstance(output, str):
             return out[output]
         if isinstance(output, tuple):
@@ -1227,8 +1226,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             args, kwargs = _map_deprecated_args(
                 type(self).__name__, args, kwargs, *spec
             )
-        if self._legacy_output is not None and "return_features" not in kwargs:
-            return self._legacy_call(self._legacy_output, args, kwargs)
+        # 2.0: an explicit return_features=False or None kept the flag's output.
+        if self._legacy_flag is not None and not kwargs.get("return_features"):
+            return self._legacy_call(args, kwargs)
         if self._head_spec is not None and not kwargs.get("return_features"):
             raise ValueError(
                 f"{type(self).__name__} was built with n_outputs=None (headless); "

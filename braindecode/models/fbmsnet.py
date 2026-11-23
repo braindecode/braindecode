@@ -17,7 +17,10 @@ from braindecode.modules import (
 
 
 @deprecated_init_flags(
-    return_features=("logits", "features"),
+    # 2.0 returned only the logits while tracing.
+    return_features=lambda out: (
+        out["logits"] if torch.jit.is_tracing() else (out["logits"], out["features"])
+    ),
 )
 class FBMSNet(EEGModuleMixin, nn.Module):
     r"""FBMSNet from Liu et al (2022) [fbmsnet]_.

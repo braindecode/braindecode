@@ -6,6 +6,7 @@
 import ast
 import inspect
 import json
+import pickle  # nosec B403 - the test reloads models it just pickled
 import subprocess
 import sys
 import warnings
@@ -1305,6 +1306,8 @@ def test_deprecated_constructor_flag_keeps_its_v2_output(name, flag, v2_output):
     x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
     with torch.no_grad():
         assert _structure(model(x)) == v2_output
+        # 2.0: an explicit return_features=False kept the flag's output.
+        assert _structure(model(x, return_features=False)) == v2_output
 
 
 def test_deprecated_constructor_flag_config_and_torchscript():
@@ -1330,4 +1333,31 @@ def test_deprecated_constructor_flag_config_and_torchscript():
     with torch.no_grad():
         assert legacy(x).shape == (2, 3)
     assert legacy.get_config()["return_feats"] is False
+
+
+def _flag_model(name, **flags):
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == name
+    )
+    signal = _get_signal_params(signal_params)
+    model = models_dict[name](**_get_signal_params(signal_params, required), **flags)
+    return model.eval(), torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+
+
+@pytest.mark.filterwarnings("ignore::FutureWarning")
+def test_deprecated_flags_follow_their_2_0_rules():
+    # Both EEG-DINO flags: return_features decides; a new head clears only the other.
+    model, x = _flag_model("EEGDINO", return_features=True, return_encoder_output=True)
+    model = pickle.loads(pickle.dumps(model))  # nosec B301 - pickled just above
+    model.reset_head(3)
+    with torch.no_grad():
+        assert set(model(x)) == {"features", "cls_token"}
+    # EEGPT refused a custom head with the encoder output in 2.0.
+    with pytest.raises(ValueError, match="not compatible with providing a final_layer"):
+        _flag_model("EEGPT", return_encoder_output=True, final_layer=nn.Identity())
+    # A traced model keeps the flag's output, as in 2.0 (FBMSNet's own exception
+    # is in its decorator).
+    model, x = _flag_model("AttnSleep", return_feats=True)
+    with torch.no_grad():
+        assert torch.jit.trace(model, x)(x).shape == model(x).shape == (2, 2400)
 

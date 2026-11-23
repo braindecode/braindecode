@@ -368,6 +368,11 @@ class EEGPT(EEGModuleMixin, nn.Module):
         )
 
         # Build final layer (classification head)
+        if final_layer is not None and return_encoder_output:
+            raise ValueError(
+                "return_encoder_output is not compatible with providing a "
+                "final_layer which will be nn.Identity"
+            )
         if final_layer is not None:
             # Use provided final_layer
             self.final_layer = nn.Sequential(

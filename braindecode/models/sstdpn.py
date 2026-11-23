@@ -326,8 +326,8 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             Input tensor. Supported shapes:
               - (batch, n_chans, n_times)
         return_features : bool, default=False
-            If True, return a dictionary with ``"features"``, ``"embedding"``,
-            and ``"cls_token"`` before the prototype readout.
+            If True, return a dictionary with ``"features"`` (before the
+            prototype readout), ``"logits"`` and ``"cls_token"``.
 
         Returns
         -------
@@ -337,12 +337,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         """
 
         features = self.encoder(x)  # (b, feat_dim)
-        if not torch.jit.is_scripting() and return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {
-                "features": features,
-                "cls_token": None,
-            }
-            return out
         # Project each class prototype before computing its dot-product gradient.
         # ``proto_sep`` is (n_outputs, feat_dim): renorm along dim=0 bounds each
         # class row (``||s_i|| <= S``). The in-place copy into a detached alias
@@ -353,7 +347,13 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
-
+        if not torch.jit.is_scripting() and return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": features,
+                "logits": logits,
+                "cls_token": None,
+            }
+            return out
         return logits
 
     def reset_head(self, n_outputs: int) -> None:
