@@ -61,12 +61,8 @@ def _net(module, collate_fn=pad_channels_collate, **kwargs):
 
 
 # Backbones that need metadata of each recording to run on fewer channels than
-# they were built with, and the error they raise without it.
-_MISSING_METADATA = {
-    "PopulationTransformer": "pass `coords`",
-    "Labram": "ch_names is None",
-    "MAPA": "ch_mask needs per-sample sensor_indices",
-}
+# they were built with; without it the input contract refuses the channel count.
+_MISSING_METADATA = {"PopulationTransformer", "Labram", "MAPA"}
 
 
 def _collate_native_metadata(batch):
@@ -135,7 +131,7 @@ def test_registered_model_ch_mask_training(model_name, required_params, signal_p
     net = _net(model)
     if model_name in _MISSING_METADATA:
         # Without its metadata the shorter recording is refused, even unpadded.
-        with pytest.raises(ValueError, match=_MISSING_METADATA[model_name]):
+        with pytest.raises(ValueError, match=f"{model_name} was built for n_chans="):
             net.initialize().predict_proba(parts[0])
         # Each window carries the metadata of its recording.
         parts = [
