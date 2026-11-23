@@ -209,7 +209,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
             )
         )
 
-    @deprecated_forward_kwargs("2.3", X="x")
+    @deprecated_forward_kwargs(X="x")
     def forward(self, x: torch.Tensor):
         """
         Forward pass of the model.

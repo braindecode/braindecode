@@ -360,7 +360,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.on_non_divisible = on_non_divisible
         self._n_times_step = fine_time_pts
 
-    @deprecated_forward_kwargs("2.3", input_tensor="x")
+    @deprecated_forward_kwargs(input_tensor="x")
     def forward(
         self,
         x: torch.Tensor,

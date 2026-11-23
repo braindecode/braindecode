@@ -187,7 +187,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.final_layer = module
         self._min_n_times = 1
 
-    @deprecated_forward_kwargs("2.3", X="x")
+    @deprecated_forward_kwargs(X="x")
     def forward(
         self,
         x: torch.Tensor,

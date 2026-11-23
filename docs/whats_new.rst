@@ -220,9 +220,8 @@ API and behavior changes
 ========================
 
 - Every model's ``forward`` takes its signal as ``x`` and :class:`braindecode.models.LUNA` its
-  positions as ``pos``. The old keywords ``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor`` and
-  ``channel_locations`` still work with a ``FutureWarning`` and will be removed in 2.3; TorchScript and
-  ``torch.export`` only see the new names (by `Bruno Aristimunha`_).
+  positions as ``pos``. Calling a model with the old keywords (``X``, ``input``, ``inputs``, ``eeg``,
+  ``input_tensor``, ``channel_locations``) warns and keeps working until 2.3 (by `Bruno Aristimunha`_).
 - The constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
   ``return_features`` of 17 models are removed, and saved configs drop them; call
   ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
@@ -259,9 +258,9 @@ API and behavior changes
   ``colin27_*`` names MNE 1.13 gives them (:gh:`1615` by `Bruno Aristimunha`_).
 
 - :class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager` take
-  ``ch_mask``, ``True`` for real channels; ``channel_mask`` is deprecated (``FutureWarning``,
-  removed in 2.3) and converted to ``ch_mask``.
-  SleepFM no longer attends over a lone real channel (:gh:`1603` by `Julien Gadonneix`_).
+  ``ch_mask``, ``True`` for real channels; the 2.0 ``channel_mask`` (also positional and in
+  ``SleepFM.encode``) warns and is inverted until 2.3. SleepFM no longer attends over a lone real
+  channel (:gh:`1603` by `Julien Gadonneix`_).
 - Looking up the removed ``braindecode.datautil.scale`` now raises
   :class:`AttributeError`, so ``hasattr`` and ``getattr`` with a default work
   for this name (:gh:`1674` by `Bruno Aristimunha`_).

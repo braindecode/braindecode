@@ -234,7 +234,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             self.eeg_encoder, Deep4Net
         )
 
-    @deprecated_forward_kwargs("2.3", X="x")
+    @deprecated_forward_kwargs(X="x")
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x, return_features: bool = False):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""

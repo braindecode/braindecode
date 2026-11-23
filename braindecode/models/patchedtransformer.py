@@ -307,7 +307,7 @@ class PBT(EEGModuleMixin, nn.Module):
         """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
-    @deprecated_forward_kwargs("2.3", X="x")
+    @deprecated_forward_kwargs(X="x")
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Classify a window from the transformer output of its class token.
 

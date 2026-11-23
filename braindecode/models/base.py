@@ -226,44 +226,65 @@ def deprecated_args(obj, *old_new_args):
     return out_args
 
 
-def deprecated_forward_kwargs(removed_in: str, **aliases):
-    """Keep old ``forward`` keyword names working until ``removed_in``.
+def deprecated_forward_kwargs(*, removed_in="2.3", old_positional=None, **aliases):
+    """Keep the old ``forward`` arguments of braindecode 2.0 working until ``removed_in``.
 
     Each alias maps an old keyword to its new name, or to ``(new_name, convert)``
-    when the value changes meaning too. The decorated ``forward`` is returned
-    unchanged, so TorchScript, ``torch.export`` and ``torch.compile`` see only
-    the new names: :meth:`EEGModuleMixin.__call__` renames an old keyword, with
-    a ``FutureWarning``, before the call reaches ``forward``.
+    when the value changes meaning too (``convert`` is skipped for ``None``).
+    ``old_positional`` names the arguments after ``x`` in their 2.0 order; it is
+    used when the argument after ``x`` is a tensor or ``None``, i.e. a 2.0
+    positional call. The decorated ``forward`` is returned unchanged, so
+    TorchScript, ``torch.export`` and ``torch.compile`` see only the new names:
+    :meth:`EEGModuleMixin.__call__` maps the old arguments, with a
+    ``FutureWarning``, before the call reaches ``forward``. Calling
+    ``model.forward`` directly takes the new names only.
     """
 
     def mark(forward):
-        forward._deprecated_kwargs = (removed_in, aliases)
+        forward._deprecated_kwargs = (removed_in, aliases, old_positional)
         return forward
 
     return mark
 
 
-def _rename_deprecated_kwargs(name: str, kwargs: dict, removed_in: str, aliases: dict):
-    """Rename the old keywords of ``kwargs``, warning once per call."""
+@functools.cache
+def _forward_deprecations(cls):
+    """The deprecated arguments of the nearest decorated ``forward`` in the MRO."""
+    for klass in cls.__mro__:
+        spec = getattr(vars(klass).get("forward"), "_deprecated_kwargs", None)
+        if spec is not None:
+            return spec
+    return None
+
+
+def _map_deprecated_args(name, args, kwargs, removed_in, aliases, old_positional):
+    """Map 2.0 positional order and old keywords to the new ones, with a warning."""
+    if (
+        old_positional
+        and len(args) > 1
+        and (args[1] is None or torch.is_tensor(args[1]))
+    ):
+        kwargs = {**dict(zip(old_positional, args[1:])), **kwargs}
+        args = args[:1]
+    if kwargs.keys().isdisjoint(aliases):
+        return args, kwargs
     kwargs = dict(kwargs)
     for old in sorted(kwargs.keys() & aliases.keys()):
         new, convert = (
             aliases[old] if isinstance(aliases[old], tuple) else (aliases[old], None)
         )
         if new in kwargs:
-            raise TypeError(
-                f"{name}.forward() got both {old!r} (deprecated) and {new!r}."
-            )
+            raise TypeError(f"{name} got both {old!r} (deprecated) and {new!r}.")
         value = kwargs.pop(old)
-        kwargs[new] = value if convert is None else convert(value)
+        kwargs[new] = value if convert is None or value is None else convert(value)
         if not torch.compiler.is_compiling():
             warnings.warn(
-                f"{name}.forward({old}=...) is deprecated and will be removed in "
-                f"braindecode {removed_in}; pass {new}=... instead.",
+                f"Calling {name} with {old}=... is deprecated and will be removed "
+                f"in braindecode {removed_in}; pass {new}=... instead.",
                 FutureWarning,
                 stacklevel=3,
             )
-    return kwargs
+    return args, kwargs
 
 
 class _BraindecodeDocstringMeta(_DocstringMetaBase):
@@ -1088,9 +1109,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     self._materialized_n_times = x.shape[-1]
 
     def __call__(self, *args, **kwargs):
-        legacy = getattr(type(self).forward, "_deprecated_kwargs", None)
-        if legacy is not None and not kwargs.keys().isdisjoint(legacy[1]):
-            kwargs = _rename_deprecated_kwargs(type(self).__name__, kwargs, *legacy)
+        spec = _forward_deprecations(type(self))
+        if spec is not None:
+            args, kwargs = _map_deprecated_args(
+                type(self).__name__, args, kwargs, *spec
+            )
         if self._head_spec is not None and not kwargs.get("return_features"):
             raise ValueError(
                 f"{type(self).__name__} was built with n_outputs=None (headless); "

@@ -380,7 +380,7 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
 
         self._init_parameters()
 
-    @deprecated_forward_kwargs("2.3", input="x")
+    @deprecated_forward_kwargs(input="x")
     def forward(self, x):
         """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
         for module in self:

@@ -277,7 +277,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             remapped[new_key] = value
         return super().load_state_dict(remapped, *args, **kwargs)
 
-    @deprecated_forward_kwargs("2.3", inputs="x")
+    @deprecated_forward_kwargs(inputs="x")
     def forward(
         self,
         x: torch.Tensor,

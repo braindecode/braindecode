@@ -423,7 +423,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         return x_tokenized, channel_locations_emb
 
-    @deprecated_forward_kwargs("2.3", X="x", channel_locations="pos")
+    @deprecated_forward_kwargs(X="x", channel_locations="pos")
     def forward(
         self,
         x: torch.Tensor,

@@ -479,7 +479,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         return self._position_bank.forward(channel_names)
 
-    @deprecated_forward_kwargs("2.3", eeg="x")
+    @deprecated_forward_kwargs(eeg="x")
     def forward(
         self,
         x: torch.Tensor,

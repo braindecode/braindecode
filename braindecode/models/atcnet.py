@@ -433,7 +433,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.n_windows * self.conv_block_pool_size_1 * self.conv_block_pool_size_2
         )
 
-    @deprecated_forward_kwargs("2.3", X="x")
+    @deprecated_forward_kwargs(X="x")
     def forward(self, x: torch.Tensor, return_features: bool = False):
         # Dimension: (batch_size, C, T)
         x = self.ensuredims(x)

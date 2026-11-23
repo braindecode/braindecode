@@ -234,7 +234,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             LinearWithConstraint(num_features, self.n_outputs, max_norm=0.25),
         )
 
-    @deprecated_forward_kwargs("2.3", input="x")
+    @deprecated_forward_kwargs(input="x")
     def forward(self, x):
         """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
         for module in self:
