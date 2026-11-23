@@ -22,7 +22,7 @@
 .. _current:
 
 
-Current 2.1.0 (GitHub)
+Current 2.1.0 (2026-11-23)
 ===============================
 
 Enhancements
