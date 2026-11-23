@@ -256,7 +256,8 @@ without adding keys to its ``state_dict``:
     X, y_true, ind, pos, ch_mask = pad_channels_collate(batch)
     y = model(X, pos=pos, ch_mask=ch_mask)
 
-- **Montage.** ``chs_info`` (``channel_strategy`` defaults to ``"nearest"``) adds a
+- **Montage.** ``chs_info`` (``channel_strategy`` defaults to the one of an earlier
+  ``adapt_input`` call, else ``"nearest"``) adds a
   :class:`~braindecode.modules.ChannelLayer` from that montage onto the montage the
   model was built with. ``channel_strategy`` alone maps each sample from the ``pos`` and
   ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate` with
@@ -274,6 +275,9 @@ without adding keys to its ``state_dict``:
 - **Saved with the model.** ``get_config()["input_adaptation"]`` holds the adaptation,
   and ``from_config`` and ``from_pretrained`` apply it again. A model without adaptation
   has no such entry.
+- **Eager only.** ``model(x)`` and ``model.forward(x)`` both apply the adaptation.
+  ``torch.jit.script`` of an adapted model raises ``NotImplementedError``;
+  ``torch.export`` and ``torch.jit.trace`` keep the adaptation.
 
 ***************************
  Reconstruct a bad channel

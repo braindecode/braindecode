@@ -34,11 +34,11 @@ from torch.nn.parameter import UninitializedParameter
 from torchinfo import ModelStatistics, summary
 
 from braindecode.functional.patches import pad_or_crop_to_patches, patch_count
+from braindecode.models import util as model_util
 from braindecode.models.util import (
     _EEG_PARAMS,
     _in_model_resample,
     build_model_config,
-    get_summary_table,
     resolve_config_type,
     resolve_type_kwargs,
     track_model_init_kwargs,
@@ -616,9 +616,21 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             # Instance attribute: model(x) and model.forward(x) both map x.
             setattr(self, "forward", self._channel_forward)
 
-    def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
-        """``forward`` under a channel strategy: map ``x`` (recorded with
-        ``chs_info``, default the model's) onto the target, then run the backbone."""
+    def _channel_forward(self, *args, **kwargs):
+        """``forward`` with a channel layer or an input resampling: resample the
+        time inputs to ``model.sfreq``, map ``x`` (recorded with ``chs_info``,
+        default the layer's) onto the backbone's channels, then run the model's
+        own ``forward``."""
+        if self._input_sfreq is not None:  # check and snap lengths at model.sfreq
+            args, kwargs = self._replace_time_inputs(
+                args, kwargs, lambda _key, t: self._on_3d(t, self.input_resample)
+            )
+            args, kwargs = self._prepare_inputs(args, kwargs)
+        if getattr(self, "channel_layer", None) is not None:
+            args, kwargs = self._map_channels(*args, **kwargs)
+        return type(self).forward(self, *args, **kwargs)
+
+    def _map_channels(self, *args, chs_info=None, ch_names=None, **kwargs):
         # pad_channels_collate / set_return_ch_pos: pos and ch_mask describe the
         # input montage of each sample; the backbone gets the full target one.
         ch_mask, pos = kwargs.pop("ch_mask", None), kwargs.pop("pos", None)
@@ -639,26 +651,37 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             )
         if chs_info is None and ch_names is not None:  # LaBraM: names of x's channels
             chs_info = [{"ch_name": n} for n in ch_names]
-        if args:
-            args = (self.channel_layer(args[0], chs_info, ch_mask)[0], *args[1:])
-        else:  # x by keyword: the backbone's first input (x, X, eeg...)
-            x = list(inspect.signature(type(self).forward).parameters)[1]
-            kwargs[x] = self.channel_layer(kwargs[x], chs_info, ch_mask)[0]
-        return self._backbone_forward(*args, **kwargs)
 
-    def _backbone_forward(self, *args, **kwargs):
-        if type(self).forward is torch.nn.Sequential.forward:
-            # Its loop would also run the layers adapt_input adds.
-            adapted = (
-                self._modules.get("channel_layer"),
-                self._modules.get("input_resample"),
-            )
-            (x,) = args
-            for module in self.children():
-                if module not in adapted:
-                    x = module(x)
-            return x
-        return type(self).forward(self, *args, **kwargs)
+        def map_x(x):
+            return self._on_3d(x, lambda t: self.channel_layer(t, chs_info, ch_mask)[0])
+
+        if args:
+            args = (map_x(args[0]), *args[1:])
+        else:  # x by keyword: the backbone's first input (x, X, eeg...)
+            x = _forward_param_names(type(self))[0]
+            kwargs[x] = map_x(kwargs[x])
+        return args, kwargs
+
+    def _on_3d(self, x: torch.Tensor, fn: Callable) -> torch.Tensor:
+        """``fn`` on ``x`` as (batch, channels, time), also for the
+        (batch, channels, time, 1) input of an Ensure4d model."""
+        if x.ndim == 4 and x.shape[-1] == 1 and self._uses_ensure4d():
+            return fn(x[..., 0])[..., None]
+        return fn(x)
+
+    def _apply(self, fn, recurse=True):
+        # adapt_input keeps its layers out of the children (out of nn.Sequential
+        # loops and of the last-child head); they still follow .to() and .half().
+        for name in ("channel_layer", "input_resample"):
+            if name in self.__dict__:
+                self.__dict__[name]._apply(fn, recurse)
+        return super()._apply(fn, recurse)
+
+    def _to_model_device(self, module: torch.nn.Module) -> torch.nn.Module:
+        """``module`` on the device and dtype of the model's floating tensors."""
+        tensors = (*self.parameters(), *self.buffers())
+        ref = next((t for t in tensors if t.is_floating_point()), None)
+        return module if ref is None else module.to(ref.device, ref.dtype)
 
     def adapt_input(
         self,
@@ -682,8 +705,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             Integer sampling rate of the recordings, resampled inside the model to
             ``model.sfreq``. ``sfreq=model.sfreq`` removes the resampling.
         channel_strategy : str | None
-            One of ``_ADAPT_STRATEGIES``, ``"nearest"`` when only ``chs_info`` is
-            given.
+            One of ``_ADAPT_STRATEGIES``. When only ``chs_info`` is given, the
+            strategy of an earlier call, else ``"nearest"``.
         channel_strategy_kwargs : dict | None
             Options of ``channel_strategy``.
 
@@ -692,11 +715,24 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         EEGModuleMixin
             The model. :meth:`get_config` saves the adaptation, and
             :meth:`from_config` and ``from_pretrained`` apply it again.
+            ``model(x)`` and ``model.forward(x)`` apply it; TorchScript does not.
         """
         name = type(self).__name__
         config = dict(self._adapt_config or {})
+        if chs_info is not None and not (
+            chs_info and all(isinstance(c, dict) for c in chs_info)
+        ):
+            raise ValueError(
+                f"{name}.adapt_input takes chs_info as a non-empty list of channel "
+                f"dicts (raw.info['chs']), got {chs_info!r:.80}."
+            )
         if chs_info is not None or channel_strategy is not None:
-            strategy = channel_strategy or "nearest"
+            if channel_strategy is None:  # keep the stored strategy and its options
+                channel_strategy = config.get("channel_strategy", "nearest")
+                channel_strategy_kwargs = channel_strategy_kwargs or config.get(
+                    "channel_strategy_kwargs"
+                )
+            strategy = channel_strategy
             kwargs = channel_strategy_kwargs or {}
             if (strategy in STRATEGIES and strategy not in _ADAPT_STRATEGIES) or (
                 strategy == "source" and kwargs.get("trainable")
@@ -717,7 +753,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     "with (chs_info)."
                 )
             target = _channel_dicts(target)
-            table = get_summary_table()
+            table = model_util._summary_table
             modality = table.at[name, "Modality"] if name in table.index else "EEG"
             kinds = sorted(set(_resolve(target)[3]) - set(_ELECTRODES))
             if "EEG" not in modality or kinds or len(self._time_inputs) > 1:
@@ -728,7 +764,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 )
             if chs_info is not None and isinstance(chs_info[0].get("loc"), list):
                 chs_info = self._deserialize_chs_info(chs_info)  # from a config
-            self.channel_layer = ChannelLayer(target, strategy, chs_info, **kwargs)
+            # Not a child: see _apply.
+            self.__dict__["channel_layer"] = self._to_model_device(
+                ChannelLayer(target, strategy, chs_info, **kwargs)
+            )
             self.forward = self._channel_forward
             config.update(
                 chs_info=chs_info,
@@ -745,18 +784,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     f"the model was built with, got sfreq={model_sfreq}."
                 )
             if sfreq == model_sfreq:
-                self._modules.pop("input_resample", None)
+                self.__dict__.pop("input_resample", None)
                 self._input_sfreq = None
             else:
-                self.input_resample = _in_model_resample(
+                resample = _in_model_resample(
                     name, sfreq, int(model_sfreq), self._signal_param("n_times") or 0
                 )[0]
-                if (
-                    type(self).forward is torch.nn.Sequential.forward
-                    and "forward" not in self.__dict__
-                ):
-                    # The Sequential loop would run input_resample on the output.
-                    self.forward = self._backbone_forward
+                self.__dict__["input_resample"] = self._to_model_device(resample)
+                self.forward = self._channel_forward
                 self._input_sfreq = float(sfreq)
             config["sfreq"] = self._input_sfreq
         self._adapt_config = {k: v for k, v in config.items() if v is not None} or None
@@ -854,6 +889,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def __prepare_scriptable__(self):
         # Called by torch.jit.script before compiling the model.
+        if self._adapt_config is not None:
+            raise NotImplementedError(
+                f"TorchScript does not compile {type(self).__name__}.adapt_input: "
+                "use torch.export or torch.jit.trace on the adapted model."
+            )
         return make_parametrizations_scriptable(self)
 
     def _signal_param(self, name: str) -> Any | None:
@@ -1100,11 +1140,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         return args, kwargs
 
     def __call__(self, *args, **kwargs):
-        if self._input_sfreq is not None:  # check and snap lengths at model.sfreq
-            args, kwargs = self._replace_time_inputs(
-                args, kwargs, lambda _key, t: self.input_resample(t)
-            )
-        args, kwargs = self._prepare_inputs(args, kwargs)
+        if self._input_sfreq is None:  # else forward checks after resampling
+            args, kwargs = self._prepare_inputs(args, kwargs)
         need_chans = (
             getattr(self, "_channel_axis", None) == "fixed"
             and self._signal_param("n_chans") is None
@@ -1148,8 +1185,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     self.input_shape, dtype=ref.dtype, device=ref.device
                 )
                 (probe,), _ = self._prepare_inputs((probe,), {})
-                # the backbone, on its own channels
-                return tuple(self._backbone_forward(probe).shape)
+                return tuple(
+                    type(self)
+                    .forward(  # the backbone, on its own channels
+                        self,
+                        probe,
+                    )
+                    .shape
+                )
             finally:
                 for module, training in modes.items():
                     module.training = training

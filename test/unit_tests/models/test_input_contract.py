@@ -756,6 +756,111 @@ def test_adapt_input_needs_the_build_montage():
         EEGNet(n_chans=3, n_outputs=2, n_times=1000).adapt_input(chs_info=chs)
 
 
+def _adapted_eegnet():
+    model, chs = _eegnet()
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        adapted = copy.deepcopy(model).adapt_input(chs_info=chs[::-1], sfreq=500)
+    return model, adapted, torch.randn(2, 5, 2000)
+
+
+def test_adapt_input_layers_stay_out_of_the_sequential_children():
+    model, adapted, x = _adapted_eegnet()
+    assert list(dict(adapted.named_children())) == list(dict(model.named_children()))
+    with torch.no_grad():
+        want = adapted(x)
+        torch.testing.assert_close(adapted(input=x), want)  # keyword call
+        torch.testing.assert_close(adapted.forward(x), want)  # direct forward call
+
+
+def test_adapt_input_layers_are_not_the_classifier_of_a_maxnorm_callback():
+    from types import SimpleNamespace
+
+    from braindecode.training.callbacks import MaxNormConstraintCallback
+
+    model, adapted, _ = _adapted_eegnet()
+    with torch.no_grad():
+        for p in model.parameters():
+            p.mul_(10)  # row norms above both max norms
+    adapted.load_state_dict(model.state_dict())
+    with pytest.warns(FutureWarning):
+        callback = MaxNormConstraintCallback()
+    for net in (model, adapted):
+        callback.on_batch_end(SimpleNamespace(module_=net), training=True)
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(adapted.state_dict()[key], value)
+
+
+def test_adapt_input_resamples_the_time_axis_of_4d_inputs():
+    _, adapted, x = _adapted_eegnet()
+    with torch.no_grad():
+        torch.testing.assert_close(adapted(x[..., None]), adapted(x))
+
+
+def test_adapt_input_builds_on_the_model_device_and_dtype():
+    model, chs = _eegnet()
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        adapted = (
+            copy.deepcopy(model)
+            .to(torch.bfloat16)
+            .adapt_input(chs_info=chs[::-1], sfreq=500)
+        )
+    out = adapted(torch.randn(2, 5, 2000, dtype=torch.bfloat16))
+    assert out.dtype == torch.bfloat16 and torch.isfinite(out).all()
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        meta = copy.deepcopy(model).to("meta").adapt_input(chs_info=chs, sfreq=500)
+    assert meta.input_resample.kernel.is_meta and meta.channel_layer.weight.is_meta
+
+
+def test_adapted_model_refuses_torchscript():
+    _, adapted, _ = _adapted_eegnet()
+    with pytest.raises(NotImplementedError, match="TorchScript does not compile"):
+        torch.jit.script(adapted)
+
+
+def test_adapt_input_keeps_the_stored_channel_strategy():
+    model, chs = _eegnet()
+    adapted = copy.deepcopy(model).adapt_input(
+        chs_info=chs, channel_strategy="spline", channel_strategy_kwargs={"reg": 0.1}
+    )
+    adapted.adapt_input(chs_info=chs[::-1])
+    assert adapted.channel_layer.strategy == "spline"
+    assert adapted.get_config()["input_adaptation"]["channel_strategy_kwargs"] == {
+        "reg": 0.1
+    }
+
+
+def test_adapt_input_saves_numpy_strategy_options():
+    model, chs = _eegnet()
+    adapted = copy.deepcopy(model).adapt_input(
+        chs_info=chs,
+        channel_strategy="spline",
+        channel_strategy_kwargs={"reg": np.float32(0.5)},
+    )
+    options = json.loads(json.dumps(adapted.get_config()))["input_adaptation"]
+    assert options["channel_strategy_kwargs"] == {"reg": 0.5}
+
+
+@pytest.mark.parametrize("chs_info", [[], ["Fz", "Cz"]])
+def test_adapt_input_refuses_a_montage_without_channel_dicts(chs_info):
+    model, _ = _eegnet()
+    with pytest.raises(ValueError, match="non-empty list of channel dicts"):
+        model.adapt_input(chs_info=chs_info)
+
+
+def test_adapt_input_reads_summary_csv_once(monkeypatch):
+    from braindecode.models import util as model_util
+
+    model, chs = _eegnet()
+    model_util._summary_table  # noqa: B018  # read once, before the patch
+
+    def reread(*args, **kwargs):
+        raise AssertionError("summary.csv read again")
+
+    monkeypatch.setattr(model_util, "get_summary_table", reread)
+    monkeypatch.setattr(base_mod, "get_summary_table", reread, raising=False)
+    model.adapt_input(chs_info=chs[::-1])
+
+
 @pytest.mark.parametrize("model_name", STRATEGY_MODELS)
 def test_identity_mapping_matches_native(model_name):
     cls = models_dict[model_name]
