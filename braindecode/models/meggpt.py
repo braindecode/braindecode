@@ -289,7 +289,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        ret = args[1] if len(args) > 1 else kwargs.get("return_features")
+        ret = self._call_arg(args, kwargs, "return_features")
         return bool(self.return_features if ret is None else ret)
 
     def _init_parameters(self) -> None:

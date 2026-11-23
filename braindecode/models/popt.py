@@ -262,7 +262,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        coords = args[1] if len(args) > 1 else kwargs.get("coords")
+        coords = self._call_arg(args, kwargs, "coords")
         return coords is not None
 
     def forward(

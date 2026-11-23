@@ -5,7 +5,6 @@ import csv
 import functools
 from collections.abc import Iterator, Mapping, Sequence
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -14,6 +13,7 @@ import torch
 from torch import Tensor, nn
 
 from braindecode.models import util as _models_util
+from braindecode.models._summary import _TOKENIZERS, SUMMARY_CSV_PATH  # noqa: F401
 from braindecode.models.util import (
     SigArgName,
     _draw_chs_info,
@@ -25,8 +25,6 @@ PARAMS = pytest.mark.parametrize(
     models_mandatory_parameters,
     ids=[m[0] for m in models_mandatory_parameters],
 )
-
-_TOKENIZERS = ("BrainTokenizer", "NeuroRVQTokenizer", "TFMTokenizer")
 
 non_classification_models = [
     # Returns reconstructed patches and discrete codes, not class logits.
@@ -343,19 +341,12 @@ def _materialize(model: nn.Module, x: Tensor, return_features: bool = False) -> 
             model(x, return_features=True) if return_features else model(x)
 
 
-@functools.lru_cache(maxsize=4)
-def _summary_rows(
-    csv_path: Path, mtime_ns: int, size: int
-) -> dict[str, dict[str, str]]:
-    with csv_path.open(encoding="utf-8-sig", newline="") as handle:
-        return {
-            row["Model"]: dict(row)
-            for row in csv.DictReader(handle, skipinitialspace=True)
-        }
+@functools.cache
+def _summary_rows() -> dict[str, dict[str, str]]:
+    with SUMMARY_CSV_PATH.open(encoding="utf-8-sig", newline="") as handle:
+        return {row["Model"]: row for row in csv.DictReader(handle)}
 
 
 def _summary_row(model_name: str) -> dict[str, str]:
     """Return a model's row from ``braindecode/models/summary.csv``."""
-    csv_path = Path(_models_util.__file__).resolve().with_name("summary.csv")
-    stat = csv_path.stat()
-    return dict(_summary_rows(csv_path, stat.st_mtime_ns, stat.st_size)[model_name])
+    return _summary_rows()[model_name]

@@ -10,7 +10,6 @@ Run from the repository root::
 from __future__ import annotations
 
 import argparse
-import math
 import sys
 from pathlib import Path
 
@@ -61,40 +60,21 @@ def _compare_leaves(
     atol: float,
     rtol: float,
 ) -> str:
-    if len(got_leaves) != len(want_leaves):
+    if [g.shape for g in got_leaves] != [w.shape for w in want_leaves]:
         return "shape"
-    for got, want in zip(got_leaves, want_leaves):
-        if got.shape != want.shape:
-            return "shape"
-
-    max_diff = 0.0
-    ok = True
-    for got, want in zip(got_leaves, want_leaves):
-        if got.dtype == torch.bool:
-            diff = (got != want).float()
-        elif not got.is_floating_point() and not got.is_complex():
-            diff = (got.to(torch.int64) - want.to(torch.int64)).abs()
-        else:
-            diff = (got - want).abs()
-        leaf_max = float(diff.max().item()) if diff.numel() else 0.0
-        if math.isnan(leaf_max):
-            max_diff = float("nan")
-        elif not math.isnan(max_diff) and leaf_max > max_diff:
-            max_diff = leaf_max
-        if atol == 0.0 and rtol == 0.0:
-            if not torch.equal(got, want):
-                ok = False
-        else:
-            if want.dtype == torch.bool:
-                want_mag = want.float().abs()
-            elif not want.is_floating_point() and not want.is_complex():
-                want_mag = want.to(torch.int64).abs()
-            else:
-                want_mag = want.abs()
-            bound = atol + rtol * want_mag
-            if not bool((diff <= bound).all().item()):
-                ok = False
-    return "same" if ok else f"diff={max_diff:g}"
+    if not got_leaves:
+        return "same"
+    pairs = [(g.double(), w.double()) for g, w in zip(got_leaves, want_leaves)]
+    diffs = [(g - w).abs() for g, w in pairs]
+    if atol == 0.0 and rtol == 0.0:
+        ok = all(torch.equal(g, w) for g, w in zip(got_leaves, want_leaves))
+    else:
+        ok = all(
+            bool((d <= atol + rtol * w.abs()).all()) for d, (_, w) in zip(diffs, pairs)
+        )
+    # torch.max propagates NaN, so a NaN output reports diff=nan.
+    max_diff = torch.stack([d.max() if d.numel() else d.new_zeros(()) for d in diffs])
+    return "same" if ok else f"diff={float(max_diff.max()):g}"
 
 
 def check(
@@ -131,12 +111,6 @@ def check(
     return results
 
 
-def _parse_models(raw: str | None) -> list[str] | None:
-    if raw is None:
-        return None
-    return [item.strip() for item in raw.split(",") if item.strip()]
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("record", "check"))
@@ -150,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rtol", type=float, default=0.0, help="Relative tolerance")
     args = parser.parse_args(argv)
 
-    names = _parse_models(args.models)
+    names = args.models.split(",") if args.models else None
     if args.command == "record":
         recorded = record(args.out, names=names)
         print(f"Recorded {len(recorded)} models to {args.out}")
