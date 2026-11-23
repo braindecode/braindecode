@@ -265,6 +265,7 @@ def test_conf_html_redirects_resolve_to_existing_docs():
     assert set(redirects) == {
         "user_guide/channel_strategies.html",
         "user_guide/cropped_inference.html",
+        "auto_examples/advanced_training/bcic_iv_4_ecog_cropped.html",
     }
 
     for src, target in redirects.items():
