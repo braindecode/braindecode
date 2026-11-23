@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 import torch
 
@@ -71,6 +72,17 @@ def test_channels_shuffle():
     # Check if the output is the same as the input
     assert torch.equal(transformed_X, X)
     assert torch.equal(transformed_y, y)
+
+
+def test_channels_shuffle_int_seed_matches_random_state():
+    # An int seed must give one generator for the mask and the permutation,
+    # as a RandomState does (the path of the ChannelsShuffle class).
+    X = torch.arange(8.0).repeat(2, 1).unsqueeze(-1)
+    y = torch.zeros(2)
+    out_int, _ = channels_shuffle(X, y, 0.5, random_state=0)
+    out_rng, _ = channels_shuffle(X, y, 0.5, random_state=np.random.RandomState(0))
+    assert not torch.equal(out_rng, X)
+    assert torch.equal(out_int, out_rng)
 
 
 def test_analytic_transform():
