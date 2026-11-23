@@ -337,8 +337,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
-        known_n_times = self._signal_param("n_times")
-        tokenizer_n_times = patch_size if known_n_times is None else known_n_times
+        tokenizer_n_times = self._signal_param("n_times") or patch_size
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
             n_times=tokenizer_n_times,
@@ -361,13 +360,13 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # channel, taking precedence over name derivation) when given, else
         # derived from channel names; without either there is no reordering,
         # no region embedding and the inter-region attention is unmasked.
-        if brain_regions is not None and self._n_chans_or_none() not in (
+        if brain_regions is not None and self._signal_param("n_chans") not in (
             None,
             len(brain_regions),
         ):
             raise ValueError(
                 f"brain_regions has {len(brain_regions)} entries for "
-                f"{self._n_chans_or_none()} channels."
+                f"{self._signal_param('n_chans')} channels."
             )
         if brain_regions is not None:
             ordered_regions, sorted_indices = order_regions(
@@ -427,25 +426,18 @@ class CSBrain(EEGModuleMixin, nn.Module):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
-        return self.sorted_indices is None and bool(self._encoder_output or ret_feat)
+        return self.sorted_indices is None and self._accepts_any_n_times(args, kwargs)
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
+        ret_feat = self._call_arg(args, kwargs, "return_features", False)
         return bool(self._encoder_output or ret_feat)
-
-    def _n_chans_or_none(self) -> int | None:
-        return self._signal_param("n_chans")
-
-    def _n_times_or_none(self) -> int | None:
-        return self._signal_param("n_times")
 
     @property
     def _build_time_len(self):  # also once a lazy head is materialized
         return self._n_patch()
 
     def _n_patch(self) -> int | None:
-        n_times = self._n_times_or_none()
+        n_times = self._signal_param("n_times")
         if n_times is None:
             return None
         # ceil for "pad", floor for "crop" (raises below one patch): the count
@@ -458,7 +450,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # n_chans / n_times may come from chs_info / input_window_seconds.
         # Without them the layers are lazy and the hidden width falls back to
         # 4 * emb_dim, the reference value for 4 s windows.
-        n_chans = self._n_chans_or_none()
+        n_chans = self._signal_param("n_chans")
         n_patch = self._n_patch()
         if n_patch is None or n_chans is None:
             return nn.Sequential(

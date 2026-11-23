@@ -487,7 +487,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        geom = args[2] if len(args) > 2 else kwargs.get("geometry")
+        geom = self._call_arg(args, kwargs, "geometry")
         return geom is not None or self.geometry_encoder is None
 
     def forward(

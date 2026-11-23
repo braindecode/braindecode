@@ -17,6 +17,7 @@ from braindecode.models import (
     DIVER1,
     LUNA,
     BrainBERT,
+    CBraMod,
     EEGConformer,
     EEGNet,
     FBCNet,
@@ -143,6 +144,14 @@ def test_min_n_times_runs_and_one_less_refuses(
         with pytest.raises(ValueError, match=rf"needs at least {m} time samples"):
             model(torch.randn(2, x.shape[1], m - 1))
         assert calls == []
+
+
+def test_lazy_model_keeps_channel_count_of_first_call():
+    model = CBraMod(n_outputs=2, n_times=400).eval()  # no n_chans: lazy head
+    with torch.no_grad():
+        model(torch.randn(2, 3, 400))
+        with pytest.raises(ValueError, match="built for n_chans=3 and got 4"):
+            model(torch.randn(2, 4, 400))
 
 
 def test_length_grid_snaps_within_cap_and_warns_once():
@@ -445,7 +454,11 @@ def test_filterbank_models_pad_after_convs_and_script_dynamic_lengths(
         torch.testing.assert_close(scripted(x_1001), eager_out, atol=0, rtol=0)
     model_div.on_non_divisible = "crop"
     with torch.no_grad():
-        assert model_div(x_1001).shape == (2, 2)
+        # IFNet's 0.01-std init hides the trailing samples at unit scale
+        crop_out = model_div(100.0 * x_1001)
+        crop_scripted = torch.jit.script(model_div)(100.0 * x_1001)
+    assert crop_out.shape == (2, 2)
+    torch.testing.assert_close(crop_scripted, crop_out, atol=0, rtol=0)
 
 
 _VALID_OUTPUT_TAGS = {
@@ -504,7 +517,7 @@ def test_summary_generator_subset_and_cli(tmp_path):
     temp_csv.write_text(corrupted, encoding="utf-8")
 
     diffs = check_summary_csv(temp_csv)
-    assert any("EEGNet" in d and "#Parameters" in d for d in diffs)
+    assert any(d.startswith("-EEGNet,") and "999999" in d for d in diffs)
     assert main(["--check", "--csv", str(temp_csv)]) == 1
     assert (
         main(["--files", "braindecode/models/eegnet.py", "--csv", str(temp_csv)]) == 0
@@ -525,6 +538,19 @@ def test_summary_generator_subset_and_cli(tmp_path):
         ValueError, match="EEGNet is missing editorial column 'Application'"
     ):
         generate_summary_rows(names=["EEGNet"], csv_path=missing_editorial_csv)
+
+    # TFMTokenizer's hand-written 200 Hz is blank; the constructor default fills it.
+    blank_sfreq_csv = tmp_path / "blank_sfreq.csv"
+    blank_sfreq_csv.write_text(
+        text.replace(
+            'TFMTokenizer,General,"Pretraining, Tokenization",200,',
+            'TFMTokenizer,General,"Pretraining, Tokenization",,',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    (row,) = generate_summary_rows(names=["TFMTokenizer"], csv_path=blank_sfreq_csv)
+    assert row["Sampling Frequency (Hz)"] == "200"
 
 
 # adapt_input(chs_info=...) refuses MEG, fNIRS and sEMG models, and CORTEG,
@@ -739,7 +765,6 @@ _EXPORT_STATIC_TIME: dict[str, str] = {
     "EEGSimpleConv": "Constraints violated (time)",
     "EMG2QwertyNet": "Constraints violated (time)",
     "FBCNet": "Cannot create Dim with inconsistent min and max",
-    "FBLightConvNet": "Cannot create Dim with inconsistent min and max",
     "FBMSNet": "Cannot create Dim with inconsistent min and max",
     "FNIRSCNN1D": "Constraints violated (time)",
     "GCNsNet": "Attempted to use an uninitialized parameter",

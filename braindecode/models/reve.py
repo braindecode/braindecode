@@ -419,16 +419,12 @@ class REVE(EEGModuleMixin, nn.Module):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        pos = args[1] if len(args) > 1 else kwargs.get("pos")
-        ret_out = args[2] if len(args) > 2 else kwargs.get("return_output", False)
-        ret_feat = args[3] if len(args) > 3 else kwargs.get("return_features", False)
-        return pos is not None and bool(
-            self.use_attention_pooling or ret_out or ret_feat
-        )
+        pos = self._call_arg(args, kwargs, "pos")
+        return pos is not None and self._accepts_any_n_times(args, kwargs)
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        ret_out = args[2] if len(args) > 2 else kwargs.get("return_output", False)
-        ret_feat = args[3] if len(args) > 3 else kwargs.get("return_features", False)
+        ret_out = self._call_arg(args, kwargs, "return_output", False)
+        ret_feat = self._call_arg(args, kwargs, "return_features", False)
         return bool(self.use_attention_pooling or ret_out or ret_feat)
 
     def _get_flattened_output_dim(self) -> int:

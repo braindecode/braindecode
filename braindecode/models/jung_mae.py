@@ -303,12 +303,12 @@ class JungMAE(EEGModuleMixin, nn.Module):
         self._build_time_len = n_patches
 
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
-        if super()._accepts_any_n_chans(args, kwargs):
-            return True
-        return bool(args[1] if len(args) > 1 else kwargs.get("return_features", False))
+        return super()._accepts_any_n_chans(args, kwargs) or self._accepts_any_n_times(
+            args, kwargs
+        )
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        return bool(args[1] if len(args) > 1 else kwargs.get("return_features", False))
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def _init_parameters(self) -> None:
         """Xavier-uniform weights and zero biases of the Linear layers and the

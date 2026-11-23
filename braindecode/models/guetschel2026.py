@@ -740,7 +740,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         return x.to(dtype)
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        return bool(args[1] if len(args) > 1 else kwargs.get("return_features", False))
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False

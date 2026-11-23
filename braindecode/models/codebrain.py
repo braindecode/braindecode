@@ -243,13 +243,12 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         self._build_time_len = self.n_times // self.patch_size
 
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
-        if super()._accepts_any_n_chans(args, kwargs):
-            return True
-        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
-        return bool(self.pretrain_mode or ret_feat)
+        return super()._accepts_any_n_chans(args, kwargs) or self._accepts_any_n_times(
+            args, kwargs
+        )
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
+        ret_feat = self._call_arg(args, kwargs, "return_features", False)
         return bool(self.pretrain_mode or ret_feat)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
