@@ -299,7 +299,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             raise RuntimeError("activation_checkpointing requires eager execution")
         return super().compile(*args, **kwargs)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, return_features: bool = False):
         if self.activation_checkpointing:
             if torch.jit.is_scripting():
                 raise RuntimeError("activation_checkpointing requires eager execution")
@@ -310,6 +310,14 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             feature = self._checkpoint_transformer(x)
         else:
             feature = self.transformer(x)
+
+        if not torch.jit.is_scripting() and return_features:
+            pooled = self.fc(feature)
+            return {
+                "features": pooled,
+                "cls_token": None,
+                "tokens": feature,
+            }
 
         if self.return_features:
             return feature

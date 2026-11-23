@@ -318,21 +318,27 @@ def _shapes(out: Any) -> list[tuple[int, ...]]:
 
 
 def _build_case(
-    model_name: str, required_params: list[SigArgName], signal_params: Any
+    model_name: str,
+    required_params: list[SigArgName],
+    signal_params: Any,
+    headless: bool = False,
 ) -> tuple[nn.Module, Tensor]:
-    """Build an eval-mode model and synthetic batch ``(2, n_chans, n_times)``."""
+    """Build an eval-mode model and synthetic batch ``(2, n_chans, n_times)``,
+    with ``n_outputs=None`` when ``headless``."""
     signal = _get_signal_params(signal_params)
     model_kwargs = _get_signal_params(signal_params, required_params)
+    if headless:
+        model_kwargs["n_outputs"] = None
     model = _models_util.models_dict[model_name](**model_kwargs).eval()
     x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
     return model, x
 
 
-def _materialize(model: nn.Module, x: Tensor) -> None:
+def _materialize(model: nn.Module, x: Tensor, return_features: bool = False) -> None:
     """Run one no-grad forward if lazy parameters still need their shapes."""
     if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
         with torch.no_grad():
-            model(x)
+            model(x, return_features=True) if return_features else model(x)
 
 
 @functools.cache

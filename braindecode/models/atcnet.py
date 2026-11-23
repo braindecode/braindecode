@@ -432,7 +432,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.n_windows * self.conv_block_pool_size_1 * self.conv_block_pool_size_2
         )
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor, return_features: bool = False):
         # Dimension: (batch_size, C, T)
         X = self.ensuredims(X)
         # Dimension: (batch_size, C, T, 1)
@@ -468,6 +468,9 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
             sw_concat.append(tcn_feat)
 
+        if not torch.jit.is_scripting() and return_features:
+            return {"features": torch.stack(sw_concat, dim=1), "cls_token": None}
+
         # Outputs of sliding window can be either averaged after being
         # mapped by dense layer or concatenated then mapped by a dense
         # layer
@@ -487,6 +490,15 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 sw_concat_agg = sw_concat[0]
 
         return self.out_fun(sw_concat_agg)
+
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        self.final_layer = nn.ModuleList(
+            MaxNormLinear(
+                layer.in_features, n_outputs, max_norm_val=self.max_norm_const
+            )
+            for layer in self.final_layer
+        )
 
     def source_optimizer_param_groups(
         self,

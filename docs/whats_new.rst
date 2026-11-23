@@ -28,6 +28,18 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Every non-tokenizer model accepts ``model(x, return_features=True)`` and returns
+  a dictionary with ``"features"``, a mean-pooled 2-D ``"embedding"`` of shape
+  ``(batch, dim)``, and ``"cls_token"``; :class:`~braindecode.models.CBraMod`,
+  :class:`~braindecode.models.CSBrain`, and :class:`~braindecode.models.GCNsNet`
+  also build their classification heads at construction when input shapes are known
+  (by `Bruno Aristimunha`_).
+- Models built with ``n_outputs=None`` have ``nn.Identity`` as ``final_layer`` (head layers elsewhere, as in BDTCN, DuIN
+  or SSTDPN, get no gradient). The default ``reset_head`` swaps the last Linear or Conv of a head that has no weight constraint
+  and no other layer sized by ``n_outputs``; EEGITNet, EEGNeX, EEGTCNet, FBCNet, FBMSNet, IFNet, MSVTNet and USleep raise as before (by `Bruno Aristimunha`_).
+- Add :func:`braindecode.training.info_nce`, the InfoNCE (NT-Xent) contrastive
+  loss, and the example :ref:`contrastive-pretraining-eeg`, which pretrains a
+  headless model and then probes and fine-tunes it (by `Bruno Aristimunha`_).
 - LUNA and MetaNeuromotorHand skip the unused attention weights (outputs move by at most 2e-6), TinyMyo builds its
   rotary table once, BaRISTA no longer syncs with the host in eval, and SCCNet, TSception, CSBrain (channels_last),
   EEGInceptionMI, EEGNeX and NeuroRVQTokenizer (bfloat16 autocast) no longer raise (:gh:`1786` by `Bruno Aristimunha`_).

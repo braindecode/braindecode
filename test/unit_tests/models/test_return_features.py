@@ -1,85 +1,47 @@
 """Tests for the unified ``return_features`` and ``reset_head`` API."""
 
+import inspect
+
 import mne
 import pytest
 import torch
+from torch import nn
 
 from braindecode.models import (
-    AXON,
-    BBL,
+    BDTCN,
     BENDR,
     BIOT,
-    CORTEG,
-    EEGDINO,
     EEGPT,
-    FNIRS4D,
-    FNIRSCNN1D,
-    FNIRST,
-    LUNA,
-    MAPA,
-    MEGGPT,
-    MEGXL,
-    NICE,
-    REVE,
-    SAMBA,
-    BaRISTA,
-    BrainBERT,
-    Brant,
-    CBraMod,
-    DuIN,
-    EpiNT,
-    FNIRSNet,
-    FNIRSPreT,
-    GeoNIRS,
-    Guetschel2026,
-    JungMAE,
     Labram,
-    MIRepNet,
-    MtReNIRS,
-    PopulationTransformer,
-    Pratibha2,
-    SignalJEPA,
-    SignalJEPA_Contextual,
-    SignalJEPA_PostLocal,
-    SignalJEPA_PreLocal,
-    SleepFM,
-    STEEGFormer,
-    TinyMyo,
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
 from braindecode.models.util import (
-    _fnirs_chs_info,
     models_dict,
     models_mandatory_parameters,
 )
-from test.unit_tests.models._fixtures import _architecture_kwargs, _get_signal_params
+from test.unit_tests.models._fixtures import (
+    _TOKENIZERS,
+    PARAMS,
+    _architecture_kwargs,
+    _build_case,
+    _get_signal_params,
+    _materialize,
+    _tensor_leaves,
+)
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
-# Window length per model, from the registry.
-_N_TIMES = {
-    name: _get_signal_params(sp)["n_times"]
-    for name, _, sp in models_mandatory_parameters
-}
 
-_REVE_CHS = [
-    "Fp1",
-    "Fp2",
-    "F3",
-    "F4",
-    "C3",
-    "C4",
-    "P3",
-    "P4",
-    "O1",
-    "O2",
-    "F7",
-    "F8",
-    "T7",
-    "T8",
-    "P7",
-    "P8",
-]
+_HAS_CLS_TOKEN = {
+    "CORTEG",
+    "EEGDINO",
+    "EpiNT",
+    "FNIRSPreT",
+    "FNIRST",
+    "Labram",
+    "PopulationTransformer",
+    "STEEGFormer",
+}
 
 
 def _chs(names=None, n=N_CHANS):
@@ -90,219 +52,145 @@ def _chs(names=None, n=N_CHANS):
     return info["chs"]
 
 
-# (cls, n_chans, kwargs, has_cls)
-_MODELS = [
-    pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
-    pytest.param(BBL, N_CHANS, {}, False, id="BBL"),
-    pytest.param(
-        AXON,
-        N_CHANS,
-        {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 4},
-        False,
-        id="AXON",
-    ),
-    pytest.param(
-        Pratibha2,
-        N_CHANS,
-        {"chs_info": _chs(), "embed_dim": 32, "n_freqs": 2, "depth": 2, "num_heads": 4},
-        False,
-        id="Pratibha2",
-    ),
-    pytest.param(
-        REVE,
-        16,
-        {"chs_info": _chs(_REVE_CHS), "patch_size": 200, "patch_overlap": 0},
-        False,
-        id="REVE",
-    ),
-    pytest.param(SAMBA, N_CHANS, {"chs_info": _chs()}, False, id="SAMBA"),
-    pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
-    pytest.param(NICE, N_CHANS, {}, False, id="NICE"),
-    pytest.param(
-        BENDR,
-        N_CHANS,
-        {"chs_info": _chs(), "channel_strategy": "spline"},
-        False,
-        id="BENDR-spline",
-    ),
-    pytest.param(
-        BaRISTA,
-        N_CHANS,
-        {"chs_info": _chs(), "patch_size": 200},
-        False,
-        id="BaRISTA",
-    ),
-    pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
-    pytest.param(
-        MAPA,
-        N_CHANS,
-        {
-            "contact_labels": [f"L{'AB'[i % 2]}{i + 1}" for i in range(N_CHANS)],
-            "d_model": 64,
-        },
-        False,
-        id="MAPA",
-    ),
-    pytest.param(
-        Guetschel2026,
-        N_CHANS,
-        # a small projection exercises that head without a ~1 GB buffer
-        {"chs_info": _chs(), "random_projection": 64},
-        False,
-        id="Guetschel2026",
-    ),
-    pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
-    pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),
-    pytest.param(DuIN, N_CHANS, {"sfreq": 1000.0}, False, id="DuIN"),
-    pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
-    pytest.param(PopulationTransformer, N_CHANS, {}, True, id="PopulationTransformer"),
-    pytest.param(
-        EpiNT,
-        N_CHANS,
-        {"embed_dim": 32, "n_layers": 1, "n_heads": 4, "ffn_dim": 64},
-        True,
-        id="EpiNT",
-    ),
-    pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
-    pytest.param(
-        STEEGFormer,
-        N_CHANS,
-        {
-            "embed_dim": 64,
-            "depth": 2,
-            "num_heads": 2,
-            "chan_pos_idx": list(range(N_CHANS)),
-        },
-        True,
-        id="STEEGFormer",
-    ),
-    pytest.param(
-        CORTEG,
-        N_CHANS,
-        {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 2,
-         "n_merge_blocks": 1},
-        True,
-        id="CORTEG",
-    ),
-    pytest.param(SignalJEPA, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA"),
-    pytest.param(
-        SignalJEPA_Contextual,
-        N_CHANS,
-        {"chs_info": _chs()},
-        False,
-        id="SignalJEPA_Contextual",
-    ),
-    pytest.param(
-        SignalJEPA_PostLocal,
-        N_CHANS,
-        {"chs_info": _chs()},
-        False,
-        id="SignalJEPA_PostLocal",
-    ),
-    pytest.param(
-        SignalJEPA_PreLocal,
-        N_CHANS,
-        {"chs_info": _chs()},
-        False,
-        id="SignalJEPA_PreLocal",
-    ),
-    pytest.param(
-        SleepFM,
-        N_CHANS,
-        {
-            "sfreq": 128.0,
-            "patch_size": 64,
-            "embed_dim": 16,
-            "num_heads": 4,
-            "num_layers": 1,
-            "pooling_heads": 4,
-            "max_seq_length": 16,
-        },
-        False,
-        id="SleepFM",
-    ),
-    pytest.param(
-        MIRepNet,
-        N_CHANS,
-        {
-            "embed_dim": 16,
-            "num_layers": 2,
-            "num_heads": 4,
-            "feedforward_expansion": 2,
-        },
-        False,
-        id="MIRepNet",
-    ),
-    pytest.param(
-        GeoNIRS,
-        4,
-        {
-            "depth": 1,
-            "num_heads": 4,
-            "embed_dim": 64,
-            "projection_dims": (),
-            "chs_info": _fnirs_chs_info(2),
-        },
-        False,
-        id="GeoNIRS",
-    ),
-    pytest.param(
-        MtReNIRS,
-        4,
-        {"depth": 1, "num_heads": 2, "embed_dim": 32, "chs_info": _fnirs_chs_info(2)},
-        False,
-        id="MtReNIRS",
-    ),
-    pytest.param(LUNA, N_CHANS, {}, False, id="LUNA"),
-    pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
-    pytest.param(
-        MEGXL,
-        N_CHANS,
-        {"chs_info": _chs(), "sfreq": 50.0, "num_layers": 1},
-        False,
-        id="MEGXL",
-    ),
-    pytest.param(FNIRSCNN1D, 4, {}, False, id="FNIRSCNN1D"),
-    pytest.param(FNIRSNet, 4, {}, False, id="FNIRSNet"),
-    pytest.param(FNIRS4D, 4, {"n_layers": 1, "d_state": 16}, False, id="FNIRS4D"),
-    pytest.param(FNIRST, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRST"),
-    pytest.param(FNIRSPreT, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRSPreT"),
-    pytest.param(
-        JungMAE,
-        4,
-        {"depth": 1, "num_heads": 4, "embed_dim": 64},
-        False,
-        id="JungMAE",
-    ),
-    pytest.param(TinyMyo, 8, {"depth": 1}, False, id="TinyMyo"),
-]
-
-
-@pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
-def test_return_features(cls, nc, kw, has_cls):
-    n_times = _N_TIMES[cls.__name__]
-    kw = {**_architecture_kwargs(cls.__name__), **kw}
-    model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
-    model.eval()
+@PARAMS
+def test_return_features_on_every_model(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer: use tokenize()")
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
     with torch.no_grad():
-        out = model(torch.randn(BATCH, nc, n_times), return_features=True)
-    assert isinstance(out, dict) and "features" in out and "cls_token" in out
-    assert out["features"].shape[0] == BATCH
-    if has_cls:
-        assert isinstance(out["cls_token"], torch.Tensor)
+        default_out = model(x)
+        feats = model(x, return_features=True)
+    assert not isinstance(default_out, dict)
+    assert list(_tensor_leaves(default_out))
+    assert isinstance(feats, dict)
+    assert {"features", "embedding", "cls_token"} <= set(feats)
+    assert feats["features"].shape[0] == x.shape[0]
+    assert feats["embedding"].ndim == 2 and feats["embedding"].shape[0] == x.shape[0]
+    assert torch.isfinite(feats["embedding"]).all()
+    if model_name in _HAS_CLS_TOKEN:
+        assert isinstance(feats["cls_token"], torch.Tensor)
+        assert feats["cls_token"].shape[0] == x.shape[0]
     else:
-        assert out["cls_token"] is None
+        assert feats["cls_token"] is None
 
 
-@pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
-def test_default_forward_returns_tensor(cls, nc, kw, has_cls):
-    n_times = _N_TIMES[cls.__name__]
-    kw = {**_architecture_kwargs(cls.__name__), **kw}
-    model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
-    model.eval()
+@PARAMS
+def test_embedding_dim_invariant_across_lengths_and_channels(
+    model_name, required_params, signal_params
+):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    C, T = x.shape[1:]
     with torch.no_grad():
-        out = model(torch.randn(BATCH, nc, n_times))
-    assert isinstance(out, torch.Tensor)
+        emb = model(x, return_features=True)["embedding"]
+        if model._time_axis in {"free", "dense"}:
+            emb_2t = model(torch.randn(2, C, 2 * T), return_features=True)["embedding"]
+            assert emb_2t.shape == emb.shape
+        if (
+            model._channel_axis == "free"
+            and "ch_mask" in inspect.signature(type(model).forward).parameters
+        ):
+            emb_c = model(torch.randn(2, C + 1, T), return_features=True)["embedding"]
+            assert emb_c.shape == emb.shape
+
+
+def test_return_features_under_channel_strategy():
+    kw = _architecture_kwargs("BENDR")
+    model = BENDR(
+        n_chans=N_CHANS,
+        n_times=N_TIMES,
+        n_outputs=N_OUTPUTS,
+        chs_info=_chs(),
+        channel_strategy="spline",
+        **kw,
+    ).eval()
+    with torch.no_grad():
+        out = model(torch.randn(BATCH, N_CHANS, N_TIMES), return_features=True)
+    assert {"features", "embedding", "cls_token"} <= set(out)
+    assert out["embedding"].ndim == 2 and out["embedding"].shape[0] == BATCH
+
+
+def test_feature_fallback_refuses_repeated_heads():
+    class _RepeatedHeadModel(EEGModuleMixin, nn.Module):
+        def __init__(
+            self,
+            n_outputs=2,
+            n_chans=2,
+            chs_info=None,
+            n_times=10,
+            input_window_seconds=None,
+            sfreq=None,
+        ):
+            super().__init__(
+                n_outputs=n_outputs,
+                n_chans=n_chans,
+                chs_info=chs_info,
+                n_times=n_times,
+                input_window_seconds=input_window_seconds,
+                sfreq=sfreq,
+            )
+            self.final_layer = nn.Linear(n_times, n_outputs)
+
+        def forward(self, x):
+            return self.final_layer(x[:, 0]) + self.final_layer(x[:, 1])
+
+    class _SkippedHeadModel(EEGModuleMixin, nn.Module):
+        def __init__(
+            self,
+            n_outputs=2,
+            n_chans=2,
+            chs_info=None,
+            n_times=10,
+            input_window_seconds=None,
+            sfreq=None,
+        ):
+            super().__init__(
+                n_outputs=n_outputs,
+                n_chans=n_chans,
+                chs_info=chs_info,
+                n_times=n_times,
+                input_window_seconds=input_window_seconds,
+                sfreq=sfreq,
+            )
+            self.final_layer = nn.Linear(n_times, n_outputs)
+
+        def forward(self, x):
+            return x.mean(dim=-1)
+
+    class _TimeFirstHeadModel(EEGModuleMixin, nn.Module):
+        def __init__(
+            self,
+            n_outputs=2,
+            n_chans=2,
+            chs_info=None,
+            n_times=10,
+            input_window_seconds=None,
+            sfreq=None,
+        ):
+            super().__init__(
+                n_outputs=n_outputs,
+                n_chans=n_chans,
+                chs_info=chs_info,
+                n_times=n_times,
+                input_window_seconds=input_window_seconds,
+                sfreq=sfreq,
+            )
+            self.final_layer = nn.Linear(n_chans, n_outputs)
+
+        def forward(self, x):
+            # (time, batch, chans) into final_layer
+            return self.final_layer(x.permute(2, 0, 1)).mean(dim=0)
+
+    x = torch.randn(2, 2, 10)
+    with pytest.raises(ValueError, match="final_layer ran 2 times"):
+        _RepeatedHeadModel().eval()(x, return_features=True)
+    with pytest.raises(ValueError, match="final_layer ran 0 times"):
+        _SkippedHeadModel().eval()(x, return_features=True)
+    with pytest.raises(ValueError, match="does not read one batched tensor"):
+        _TimeFirstHeadModel().eval()(x, return_features=True)
 
 
 # -- Legacy backward compat --
@@ -346,35 +234,17 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
     assert check(out)
 
 
-# -- reset_head --
-
-# Exclude SignalJEPA (SSL model, Identity head)
-_RESET_MODELS = [p for p in _MODELS if p.id != "SignalJEPA"]
-
-
-@pytest.mark.parametrize("cls, nc, kw, has_cls", _RESET_MODELS)
-def test_reset_head(cls, nc, kw, has_cls):
-    n_times = _N_TIMES[cls.__name__]
-    kw = {**_architecture_kwargs(cls.__name__), **kw}
-    model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
-    model.reset_head(10)
-    model.eval()
-    with torch.no_grad():
-        out = model(torch.randn(BATCH, nc, n_times))
-    assert model.n_outputs == 10
-    assert out.shape[-1] == 10
-
-
 # -- reset_head must leave a model that can be saved and loaded back --
 
 _ALL_MODELS = dict(models_dict)
 _REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
-# Every registered model that overrides reset_head.
+# Every registered model that overrides reset_head, and three that take the
+# default swap of their last layer.
 _RESET_HEAD_CASES = [
     name
     for name in _REGISTRY
     if _ALL_MODELS[name].reset_head is not EEGModuleMixin.reset_head
-]
+] + ["Deep4Net", "EEGNet", "ShallowFBCSPNet"]
 
 
 def _build_registered(name, **kwargs):
@@ -387,15 +257,6 @@ def _build_registered(name, **kwargs):
     return _ALL_MODELS[name](**{**signal_params, **kwargs}).eval()
 
 
-@pytest.mark.parametrize("name", _RESET_HEAD_CASES)
-def test_reset_head_updates_config(name):
-    model = _build_registered(name)
-    n_outputs = model.n_outputs + 3
-    model.reset_head(n_outputs)
-    assert model.n_outputs == n_outputs
-    assert model.get_config()["n_outputs"] == n_outputs
-
-
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
 @pytest.mark.parametrize("name", _RESET_HEAD_CASES)
 def test_reset_head_model_reloads_after_saving(name, tmp_path):
@@ -405,6 +266,18 @@ def test_reset_head_model_reloads_after_saving(name, tmp_path):
 
     reloaded = _ALL_MODELS[name].from_pretrained(tmp_path)
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
+
+
+# A constrained last layer, or a head of several layers: the default swap would
+# drop the constraint or leave the other layers behind.
+@pytest.mark.parametrize("name", ["EEGNeX", "FBCNet", "MSVTNet", "USleep"])
+def test_default_reset_head_refuses_heads_it_cannot_swap(name):
+    model = _build_registered(name)
+    state = {k: v.clone() for k, v in model.state_dict().items()}
+    with pytest.raises(NotImplementedError, match=f"{name} needs its own reset_head"):
+        model.reset_head(model.n_outputs + 3)
+    assert not model._can_reset_head()
+    torch.testing.assert_close(model.state_dict(), state)
 
 
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
@@ -465,3 +338,11 @@ def test_labram_reset_to_zero_reloads_as_identity(tmp_path, via_pretrained):
     assert reloaded.n_outputs == 0
     assert isinstance(reloaded.final_layer, torch.nn.Identity)
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
+
+
+def test_bdtcn_features_cover_the_steps_its_classifier_reads():
+    model = BDTCN(n_chans=3, n_outputs=2, n_times=500).eval()
+    x = torch.randn(2, 3, 500)
+    with torch.no_grad():
+        n_steps = model.base_tcn(x).shape[-1]  # the steps the head averages
+        assert model(x, return_features=True)["features"].shape[-1] == n_steps

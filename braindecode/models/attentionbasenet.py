@@ -251,6 +251,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: input_block.spatial_conv.weight
+    _feature_axis = 1
 
     def __init__(
         self,

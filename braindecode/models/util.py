@@ -208,7 +208,8 @@ def track_model_init_kwargs(cls) -> None:
                 captured_kwargs[name] = value
         self._braindecode_explicit_init_keys = explicit_keys
         self._braindecode_init_kwargs = captured_kwargs
-        return init(self, *args, **kwargs)
+        init(self, *args, **kwargs)
+        self._drop_headless_head()
 
     setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
     cls.__init__ = wrapped
@@ -848,8 +849,12 @@ models_mandatory_parameters: list[
             "chs_info": [{"ch_name": f"E{i + 1}", "kind": "eeg"} for i in range(19)],
         },
     ),
-    ("CBraMod", ["n_outputs"], None),
-    ("CSBrain", ["n_outputs"], None),
+    ("CBraMod", ["n_outputs"], {"n_chans": 3, "n_times": 1000}),
+    (
+        "CSBrain",
+        ["n_outputs"],
+        {"n_chans": 3, "n_times": 1000, "head_hidden_dim": 800},
+    ),
     (
         "CodeBrain",
         ["n_chans", "n_outputs", "n_times"],

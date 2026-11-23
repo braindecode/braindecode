@@ -4,7 +4,7 @@
 #
 # License: BSD (3-clause)
 
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -311,8 +311,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         nn.init.normal_(self.proto_cpt, mean=0.0, std=self.proto_cpt_std)
 
     def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[
+        torch.Tensor,
+        Tuple[torch.Tensor, torch.Tensor],
+        Dict[str, Optional[torch.Tensor]],
+    ]:
         """
         Classification is based on the dot product similarity with
         Inter-class Separation Prototypes (:attr:`SSTDPN.proto_sep`).
@@ -323,16 +327,26 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             Input tensor. Supported shapes:
               - (batch, n_chans, n_times)
+        return_features : bool, default=False
+            If True, return a dictionary with ``"features"``, ``"embedding"``,
+            and ``"cls_token"`` before the prototype readout.
 
         Returns
         -------
-        logits : torch.Tensor
+        logits : torch.Tensor or dict or tuple
             If input was 3D: (batch, n_outputs)
-        Or if self.return_features is True:
+            Or if ``return_features=True``: dict with encoder features and embedding.
+            Or if ``self.return_features`` is True:
             (features, logits) where features shape is (batch, feat_dim)
         """
 
         features = self.encoder(x)  # (b, feat_dim)
+        if not torch.jit.is_scripting() and return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": features,
+                "cls_token": None,
+            }
+            return out
         # Project each class prototype before computing its dot-product gradient.
         # ``proto_sep`` is (n_outputs, feat_dim): renorm along dim=0 bounds each
         # class row (``||s_i|| <= S``). The in-place copy into a detached alias
@@ -348,6 +362,13 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             return features, logits
 
         return logits
+
+    def reset_head(self, n_outputs: int) -> None:
+        self._set_n_outputs(n_outputs)
+        shape = (n_outputs, self.proto_sep.shape[1])
+        self.proto_sep = nn.Parameter(self.proto_sep.new_empty(shape))
+        self.proto_cpt = nn.Parameter(self.proto_cpt.new_empty(shape))
+        self._reset_parameters()
 
     def _compute_feature_dim(self) -> int:
         """Compute encoder feature dimensionality without a forward pass."""
