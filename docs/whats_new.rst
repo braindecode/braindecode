@@ -2995,6 +2995,8 @@ Bugs
   to test mocks (:gh:`868` by `Bruno Aristimunha`_)
 - Increase the mne-bids version and fixing API changes (:gh:`907` by `Bruno
   Aristimunha`_)
+- ``torch.jit.trace`` works on models built without ``chs_info`` or ``n_times``: it failed with
+  "chs_info not specified" while probing the model's attributes (:gh:`1805` by `Bruno Aristimunha`_).
 
 Current 1.2
 ====================
