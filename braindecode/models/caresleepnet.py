@@ -24,6 +24,16 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
+    .. figure:: ../_static/model/caresleepnet_arch.png
+       :align: center
+       :alt: CareSleepNet architecture
+       :width: 550px
+
+       (a) CareSleepNet: a convolutional-transformer epoch encoder (CTEE) for each
+       modality and epoch, a cross-modality context encoder, a transformer sequence
+       encoder and the classifier; (b) the CTEE. Reproduced from Fig. 3 of
+       [caresleepnet2024]_ (© 2024 IEEE).
+
     .. versionadded:: 2.1
 
     .. rubric:: Architecture Overview
