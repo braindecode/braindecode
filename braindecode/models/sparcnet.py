@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.functional import init_weights_
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 
 
 class SPARCNet(EEGModuleMixin, nn.Module):
@@ -58,6 +58,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
        GitHub https://github.com/ycq091044/BIOT (accessed 2024-02-13)
 
     """
+
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: encoder.conv0.bias
 
     def __init__(
         self,
@@ -172,6 +175,17 @@ class SPARCNet(EEGModuleMixin, nn.Module):
 
         # add final convolutional layer
         self.final_layer = nn.Linear(n_channels, self.n_outputs)
+        n_transitions = floor(log2(self.n_times // 4))
+        min_time = 1
+        for _ in range(n_transitions):
+            min_time = (min_time - 1) * stride_trans + kernel_size_trans
+        min_time = max(
+            1, (min_time - 1) * stride_pool + kernel_size_pool - 2 * padding_pool
+        )
+        min_time = max(
+            1, (min_time - 1) * stride_conv0 + kernel_size_conv0 - 2 * padding_conv0
+        )
+        self._min_n_times = min_time
 
         self._init_parameters()
 
@@ -194,13 +208,14 @@ class SPARCNet(EEGModuleMixin, nn.Module):
             )
         )
 
-    def forward(self, X: torch.Tensor):
+    @deprecated_forward_kwargs(X="x")
+    def forward(self, x: torch.Tensor):
         """
         Forward pass of the model.
 
         Parameters
         ----------
-        X: torch.Tensor
+        x: torch.Tensor
             The input tensor of the model with shape (batch_size, n_channels, n_times)
 
         Returns
@@ -208,7 +223,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             The output tensor of the model with shape (batch_size, n_outputs)
         """
-        emb = self.encoder(X)
+        emb = self.encoder(x)
         emb = self.adaptative_pool(emb)
         emb = self.activation_layer(emb)
         emb = self.flatten_layer(emb)

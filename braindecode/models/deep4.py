@@ -7,7 +7,7 @@ from mne.utils import warn
 from torch import nn
 from torch.nn import init
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import (
     AvgPool2dWithConv,
     CombinedConv,
@@ -91,6 +91,11 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
        Human Brain Mapping , Aug. 2017.
        Online: http://dx.doi.org/10.1002/hbm.23730
     """
+
+    _time_axis = "dense"
+    _dense_conversion = True
+    _channel_axis = "fixed"  # fixed: conv_time_spat.conv_spat.weight
+    _feature_axis = 1
 
     def __init__(
         self,
@@ -343,11 +348,28 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
+        min_time = self.final_conv_length
+        for filter_length in (
+            self.filter_length_4,
+            self.filter_length_3,
+            self.filter_length_2,
+            self.filter_time_length,
+        ):
+            min_time = (min_time - 1) * pool_stride + self.pool_time_length
+            min_time = (min_time - 1) * conv_stride + filter_length
+        self._min_n_times = min_time
 
         # Initialization, xavier is same as in our paper...
         self._init_parameters()
 
         self.train()
+
+    @deprecated_forward_kwargs(input="x")
+    def forward(self, x):
+        """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

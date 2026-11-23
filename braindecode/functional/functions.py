@@ -63,6 +63,20 @@ def spectral_input(x: torch.Tensor, dtype: torch.dtype = torch.float32) -> torch
     return x.to(torch.promote_types(x.dtype, dtype))
 
 
+@torch.jit.unused
+def _matmul_no_autocast(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    with torch.autocast(device_type=a.device.type, enabled=False):
+        return torch.matmul(a, b)
+
+
+def _spectral_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """``a @ b`` in the input dtype: autocast would cast the real views of a
+    complex spectrum to bfloat16, which ``view_as_complex`` rejects."""
+    if torch.jit.is_scripting():
+        return torch.matmul(a, b)
+    return _matmul_no_autocast(a, b)
+
+
 def fft_conv1d(
     x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
 ) -> torch.Tensor:
@@ -109,13 +123,17 @@ def fft_conv1d(
         # output columns are the (Re, Im) pairs of the result, read as complex
         # without a copy (and without a costly backward).
         w_mat = torch.view_as_real(torch.stack([w_f, w_f * 1j], 1)).flatten(1, 2)
-        y_f = torch.view_as_real(x_f).permute(2, 0, 3, 1).flatten(2) @ w_mat.flatten(2)
+        y_f = _spectral_matmul(
+            torch.view_as_real(x_f).permute(2, 0, 3, 1).flatten(2), w_mat.flatten(2)
+        )
         y_f = torch.view_as_complex(y_f.unflatten(-1, [-1, 2]))
     else:
         # Forward only with fewer rows than twice the input channels: the
         # doubled weight costs more than combining [Re x; Im x] @ [Re w, Im w].
         x_f = x_f.permute(2, 0, 1)
-        p = torch.cat([x_f.real, x_f.imag], 1) @ torch.view_as_real(w_f).flatten(2)
+        p = _spectral_matmul(
+            torch.cat([x_f.real, x_f.imag], 1), torch.view_as_real(w_f).flatten(2)
+        )
         p = p.unflatten(1, [2, x.shape[0]]).unflatten(3, [-1, 2])
         y_f = torch.complex(
             p[:, 0, :, :, 0] - p[:, 1, :, :, 1], p[:, 0, :, :, 1] + p[:, 1, :, :, 0]
@@ -616,7 +634,7 @@ def wavelet_decomposition(
 def sinusoidal_positional_encoding(
     n_positions: int,
     dim: int,
-    device: torch.device | None = None,
+    device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float32,
     base: float = 10000.0,
 ) -> torch.Tensor:

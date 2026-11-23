@@ -87,6 +87,9 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
        https://github.com/marcellosicbaldi/SincNet-Tensorflow
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: depthwiseconv.1.weight
+
     def __init__(
         self,
         num_time_filters: int = 32,

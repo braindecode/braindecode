@@ -5,14 +5,22 @@ import torch.nn as nn
 from mne.utils import warn
 
 from braindecode.functional import _real_dft, spectral_input
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
-    r"""Contrast with the World Representation ContraWR from Yang et al (2021) [Yang2021]_.
+    r"""Contrast with the World Representation ContraWR from Yang et al (2023) [Yang2021]_.
 
     :bdg-success:`Convolution`
+
+    .. figure:: ../_static/model/contrawr_arch.png
+       :align: center
+       :alt: ContraWR architecture
+       :width: 1000px
+
+       STFT convolutional encoder network of ContraWR (Figure 2 of the paper),
+       reproduced from [Yang2021]_ (CC BY 4.0).
 
     This model is a convolutional neural network that uses a spectral
     representation with a series of convolutional layers and residual blocks.
@@ -51,6 +59,9 @@ class ContraWR(EEGModuleMixin, nn.Module):
        Biosignal Transformer for Cross-data Learning in the Wild.
        GitHub https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
+
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: convs.0.conv1.weight
 
     def __init__(
         self,
@@ -123,27 +134,29 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
         self.activation_layer = activation()
         self.final_layer = nn.Linear(emb_size, self.n_outputs)
+        self._min_n_times = self.n_fft // 2 + 1
 
+    @deprecated_forward_kwargs(X="x")
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
         Parameters
         ----------
-        X: Tensor
+        x: Tensor
             Input tensor of shape (batch_size, n_channels, n_times).
         Returns
         -------
         Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
-        X = self.torch_stft(X)
+        x = self.torch_stft(x)
 
         for conv in self.convs:
-            X = conv.forward(X)
+            x = conv.forward(x)
 
-        emb = self.adaptative_pool(X)
+        emb = self.adaptative_pool(x)
         emb = self.flatten_layer(emb)
         emb = self.activation_layer(emb)
 

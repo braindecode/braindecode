@@ -16,8 +16,9 @@ import pickle  # nosec B403 - the test reloads a model it just pickled
 import re
 import sys
 from collections import namedtuple
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
+import numpy as np
 import pytest
 import torch
 from torch import nn
@@ -28,43 +29,31 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
-from braindecode.models import LUNA, MAPA
+from braindecode.models import (
+    LUNA,
+    MAPA,
+    AttnSleep,
+    EEGConformer,
+    EEGNet,
+    EEGNeX,
+    GCNsNet,
+)
+from braindecode.models.base import HAS_HF_HUB
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
     _summary_table,
     models_dict,
     models_mandatory_parameters,
 )
-from test.unit_tests.models._fixtures import _get_signal_params
+from test.unit_tests.models._fixtures import (
+    _TOKENIZERS,
+    PARAMS,
+    _build_case,
+    _materialize,
+    _tensor_leaves,
+)
 
 all_models_dict = dict(models_dict)
-
-
-def _tensor_leaves(value):
-    """Yield tensor leaves from nested model outputs."""
-    if torch.is_tensor(value):
-        yield value
-    elif isinstance(value, Mapping):
-        for child in value.values():
-            yield from _tensor_leaves(child)
-    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        for child in value:
-            yield from _tensor_leaves(child)
-
-
-def _build_case(model_name, required_params, signal_params):
-    signal = _get_signal_params(signal_params)
-    model_kwargs = _get_signal_params(signal_params, required_params)
-    model = all_models_dict[model_name](**model_kwargs).eval()
-    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
-    return model, x
-
-
-def _materialize(model, x):
-    """Run one no-grad forward if lazy parameters still need their shapes."""
-    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
-        with torch.no_grad():
-            model(x)
 
 
 def _clone_state(model):
@@ -85,9 +74,7 @@ def _batched_tensor_leaves(value, batch_size):
     "model_name,required_params,signal_params",
     models_mandatory_parameters,
 )
-def test_registered_model_runtime_contract(
-    model_name, required_params, signal_params
-):
+def test_registered_model_runtime_contract(model_name, required_params, signal_params):
     """Registered models preserve inputs and emit finite batched tensors."""
     model, x = _build_case(model_name, required_params, signal_params)
     x_before = x.clone()
@@ -104,8 +91,7 @@ def test_registered_model_runtime_contract(
 
     batched = _batched_tensor_leaves(output, x.shape[0])
     assert batched, (
-        f"{model_name} returned no tensor leaf preserving batch dimension "
-        f"{x.shape[0]}"
+        f"{model_name} returned no tensor leaf preserving batch dimension {x.shape[0]}"
     )
 
     for leaf in leaves:
@@ -146,8 +132,7 @@ def test_registered_model_runtime_contract(
             actual_leaf,
             expected_leaf.index_select(0, permutation),
             msg=lambda msg: (
-                f"{model_name} is not batch-permutation equivariant in eval "
-                f"mode: {msg}"
+                f"{model_name} is not batch-permutation equivariant in eval mode: {msg}"
             ),
         )
     # Permutation equivariance alone cannot detect all cross-sample mixing: a
@@ -234,9 +219,7 @@ _UNUSED_IN_FORWARD = {
     "model_name,required_params,signal_params",
     models_mandatory_parameters,
 )
-def test_registered_model_training_contract(
-    model_name, required_params, signal_params
-):
+def test_registered_model_training_contract(model_name, required_params, signal_params):
     """A model used under ``torch.inference_mode`` still trains, then evaluates."""
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
@@ -278,6 +261,7 @@ def test_registered_model_training_contract(
 
 # ``.item()`` in forward, which meta tensors cannot answer (see _HOST_SYNC).
 _DATA_DEPENDENT_FORWARD = {
+    "BaRISTA",
     "BrainOmni",
     "BrainTokenizer",
     "CodeBrain",
@@ -485,8 +469,8 @@ _SYNC_OPS = {
 # Allowed per model: (findings, reason).
 _QUANTIZER = (
     ("_local_scalar_dense", "index_put_ with a boolean mask", "unique_dim"),
-    "codebook first-batch k-means init check on CPU and k-means "
-    "(on its distinct rows) (the released EuclideanCodebook)",
+    "codebook k-means init flag, first-batch k-means (on its distinct rows) and "
+    "dead-code expiry (the released EuclideanCodebook)",
 )
 _HOST_SYNC = {
     "BENDR": (("_local_scalar_dense",), "LayerDrop coin flip on a CPU torch.rand(1)"),
@@ -629,7 +613,8 @@ _CH_MASK_EXTRAS = {
     "Labram": ("ch_names", lambda i, n: LABRAM_CHANNEL_ORDER[:n]),
     "CORTEG": (
         "pos",
-        lambda i, n: 0.1 * torch.rand((n, 3), generator=torch.Generator().manual_seed(i)),
+        lambda i, n: 0.1
+        * torch.rand((n, 3), generator=torch.Generator().manual_seed(i)),
     ),
     "MAPA": (
         "sensor_indices",
@@ -643,7 +628,10 @@ _CH_MASK_EXTRAS = {
 # Channels tied to slots of the configuration: a recording keeps all of them and
 # masks the missing ones, so it has no shorter input to run alone
 # (test_sleepfm_masked_input_is_ignored covers its ch_mask).
-_CH_MASK_SLOTS = {"SleepFMStager": "channels are grouped by channel_modalities slot"}
+_CH_MASK_SLOTS = {
+    "SleepFMStager": "channels are grouped by channel_modalities slot",
+    "JungMAE": "a padded channel is a missing (NaN) slot of a fixed HbO/HbR montage",
+}
 
 
 def _ch_mask_case(model_name, required_params, signal_params):
@@ -656,7 +644,10 @@ def _ch_mask_case(model_name, required_params, signal_params):
     zero-padded to ``C`` in the batch, which shares any other value built for
     ``C`` channels.
     """
-    if "ch_mask" not in inspect.signature(all_models_dict[model_name].forward).parameters:
+    if (
+        "ch_mask"
+        not in inspect.signature(all_models_dict[model_name].forward).parameters
+    ):
         pytest.skip("forward takes no ch_mask")
     if model_name in _CH_MASK_SLOTS:
         pytest.skip(_CH_MASK_SLOTS[model_name])
@@ -722,6 +713,7 @@ def test_registered_model_ch_mask_contract(model_name, required_params, signal_p
                 padded = features["tokens"][~mask]
                 assert torch.equal(padded, torch.zeros_like(padded))
 
+
 # One checkpoint of a foundation model serves many recordings, so a recording
 # whose channels do not match the model must be told so.
 _FOUNDATION_MODELS = set(
@@ -729,12 +721,7 @@ _FOUNDATION_MODELS = set(
         _summary_table["Categorization"].str.contains("Foundation", na=False)
     ]
 )
-# Clear errors that predate check_n_chans and word the mismatch otherwise.
-_N_CHANS_ERRORS = {
-    "GeoNIRS": r"channel counts",
-    "NeuroRVQ": r"Expected input shape",
-    "NeuroRVQTokenizer": r"Expected input shape",
-}
+_N_CHANS_ERRORS: dict[str, str] = {}
 
 
 @pytest.mark.parametrize(
@@ -782,3 +769,163 @@ def _check_mapping_targets(name, model):
         f"{name}.mapping points at keys that are not in state_dict: {missing}"
     )
     assert len(targets) == len(set(targets)), f"{name}.mapping repeats a target"
+
+
+@PARAMS
+def test_no_lazy_weights_once_the_shape_is_known(
+    model_name, required_params, signal_params
+):
+    if model_name == "GCNsNet":
+        pytest.skip("node counts are only known once the graph is fitted")
+    model, _ = _build_case(model_name, required_params, signal_params)
+    lazy = [
+        n
+        for n, p in model.named_parameters()
+        if isinstance(p, nn.UninitializedParameter)
+    ]
+    assert lazy == []
+
+
+def test_gcnsnet_graph_fit_keeps_the_optimizer_parameters():
+    """An optimizer built before the graph is fitted still trains every weight."""
+    torch.manual_seed(0)
+    x = torch.randn(4, 9, 16)
+    x[:, 4] = 0  # a constant channel has no edges, so Graclus pads more nodes
+    model = GCNsNet(n_chans=9, n_outputs=2, n_times=16)
+    params = list(model.parameters())
+    model.fit_graph(x)
+    model(x).sum().backward()
+    assert [id(p) for p in model.parameters()] == [id(p) for p in params]
+    assert all(p.grad is not None for p in params)
+
+
+# A backbone without a head: its classifiers are separate classes.
+_NO_HEAD = {"SignalJEPA"}
+
+
+@PARAMS
+def test_reset_head_on_every_model(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    if not model._can_reset_head():
+        keys = {k: v.shape for k, v in model.state_dict().items()}
+        with pytest.raises(NotImplementedError, match="needs its own reset_head"):
+            model.reset_head(3)
+        assert {k: v.shape for k, v in model.state_dict().items()} == keys
+        return
+    n = (model._signal_param("n_outputs") or 2) + 3
+    model.reset_head(n)
+    with torch.no_grad():
+        out = next(_tensor_leaves(model(x)))
+    assert n in out.shape[1:]
+    assert model.n_outputs == n == model.get_config()["n_outputs"]
+    rebuilt = type(model).from_config(model.get_config()).eval()
+    _materialize(rebuilt, x)
+    with torch.no_grad():
+        assert next(_tensor_leaves(rebuilt(x))).shape == out.shape
+
+
+@PARAMS
+def test_headless_build_and_reset_head(model_name, required_params, signal_params):
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params, headless=True)
+    _materialize(model, x, return_features=True)
+    assert list(model.final_layer.parameters()) == []
+    with torch.no_grad():
+        feats = model(x, return_features=True)
+    assert feats["embedding"].ndim == 2 and feats["embedding"].shape[0] == x.shape[0]
+    with pytest.raises(ValueError, match="n_outputs not specified"):
+        model.n_outputs
+    if model_name in _NO_HEAD:
+        return
+    with pytest.raises(ValueError, match="headless"):
+        model(x)
+    if not model._can_reset_head():
+        with pytest.raises(NotImplementedError, match="needs its own reset_head"):
+            model.reset_head(4)
+        with pytest.raises(ValueError, match="headless"):
+            model(x)  # still headless, not a 1-output head
+        assert list(model.final_layer.parameters()) == []
+        return
+    model.reset_head(4)
+    with torch.no_grad():
+        assert 4 in next(_tensor_leaves(model(x))).shape[1:]
+    assert model.get_config()["n_outputs"] == 4
+
+
+def test_headless_model_takes_return_features_positionally():
+    model = EEGConformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    with torch.no_grad():
+        assert "features" in model(torch.randn(2, 3, 1000), True)
+
+
+def test_reset_head_checks_n_outputs_before_touching_the_head():
+    model = EEGConformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    with pytest.raises(ValueError, match="non-negative integer"):
+        model.reset_head(-1)
+    with pytest.raises(ValueError, match="headless"):
+        model(torch.randn(2, 3, 1000))
+
+
+@PARAMS
+def test_autocast_bfloat16_forward(model_name, required_params, signal_params):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    # Under bfloat16 autocast PyTorch sends an LSTM to oneDNN, which cannot build
+    # it on some CI runners ("could not create a primitive descriptor", as with
+    # ONEDNN_MAX_CPU_ISA=AVX2); PyTorch's own kernel runs the same recurrence.
+    lstm = any(isinstance(m, torch.nn.LSTM) for m in model.modules())
+    with (
+        torch.no_grad(),
+        torch.autocast("cpu", dtype=torch.bfloat16),
+        torch.backends.mkldnn.flags(enabled=not lstm),
+    ):
+        out = model(x)
+    assert all(torch.isfinite(t).all() for t in _tensor_leaves(out))
+
+
+@PARAMS
+def test_channels_last_matches_contiguous(model_name, required_params, signal_params):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    if any(t.ndim == 5 for t in (*model.parameters(), *model.buffers())):
+        pytest.skip("5-D tensors: channels_last does not apply")
+    with torch.no_grad():
+        ref = model(x)
+        last = copy.deepcopy(model).to(memory_format=torch.channels_last)
+        torch.testing.assert_close(last(x), ref, atol=1e-5, rtol=1e-4)
+
+
+def test_default_reset_head_judges_only_the_head():
+    # EEGNet's F1=8 equals n_outputs and a headless AttnSleep has a 1-wide SE
+    # layer: neither is part of the head.
+    eegnet = EEGNet(n_chans=3, n_times=128, n_outputs=8)
+    eegnet.reset_head(np.int64(3))  # numpy integers are accepted
+    assert eegnet.n_outputs == 3
+    attn = AttnSleep(sfreq=100, n_times=3000, n_outputs=None)
+    attn.reset_head(5)
+    with torch.no_grad():
+        assert attn(torch.randn(2, 1, 3000)).shape == (2, 5)
+    with pytest.raises(ValueError, match="positive"):
+        eegnet.reset_head(0)
+
+
+def test_headless_override_that_calls_super_attaches_a_head():
+    class _Conformer(EEGConformer):
+        def reset_head(self, n_outputs):
+            super().reset_head(n_outputs)
+
+    model = _Conformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    model.reset_head(4)
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, 1000)).shape == (2, 4)
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
+def test_from_pretrained_refused_head_change_is_a_value_error(tmp_path):
+    EEGNeX(n_chans=3, n_times=256, n_outputs=2).save_pretrained(tmp_path)
+    with pytest.raises(ValueError, match="does not support changing n_outputs"):
+        EEGNeX.from_pretrained(tmp_path, n_outputs=4)

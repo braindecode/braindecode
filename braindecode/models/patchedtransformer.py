@@ -13,11 +13,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.functional import (
-    check_n_chans,
     init_weights_,
     scaled_dot_product_attention,
 )
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 
 # Weight initialization of the reference implementation.
 _init_weights = partial(
@@ -207,6 +206,9 @@ class PBT(EEGModuleMixin, nn.Module):
         impacting performance. arXiv preprint arXiv:2107.02027.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: pos_embedding.weight
+
     def __init__(
         self,
         # Signal related parameters
@@ -295,6 +297,7 @@ class PBT(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=embed_dim, out_features=self.n_outputs, bias=True
         )
+        self._min_n_times = self.d_input
 
         # initialize weights
         self._init_parameters()
@@ -303,12 +306,13 @@ class PBT(EEGModuleMixin, nn.Module):
         """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    @deprecated_forward_kwargs(X="x")
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Classify a window from the transformer output of its class token.
 
         Parameters
         ----------
-        X : torch.Tensor
+        x : torch.Tensor
             Input tensor with shape (batch_size, n_chans, n_times). Each
             channel contributes its complete patches within the configured window.
 
@@ -317,12 +321,11 @@ class PBT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
-        check_n_chans(X, self.n_chans, "PBT")
-        X, int_pos = self.patch_signal(X)
+        x, int_pos = self.patch_signal(x)
 
-        tokens = self.patching_projection(X)
+        tokens = self.patching_projection(x)
 
-        cls_token = self.cls_token.expand(X.size(0), 1, -1)
+        cls_token = self.cls_token.expand(x.size(0), 1, -1)
 
         tokens = torch.cat([cls_token, tokens], dim=1)
         pos_emb = self.pos_embedding(int_pos)
@@ -663,7 +666,7 @@ class _Patcher(nn.Module):
         # Old pickles store floor(C*T/D) in num_tokens. Integer division by C
         # gives floor(T/D) for both that count and the current C*floor(T/D).
         n_chans = X.size(1)
-        n_patches = self.num_tokens // n_chans
+        n_patches = min(X.size(-1) // self.d_input, self.num_tokens // n_chans)
         if n_patches == 0:
             raise ValueError("PBT requires at least one complete patch per channel.")
         x_patched = X[..., : n_patches * self.d_input].reshape(

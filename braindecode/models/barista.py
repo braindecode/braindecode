@@ -206,6 +206,9 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
        Systems 38. https://arxiv.org/abs/2512.12135
     """
 
+    _time_axis = "fixed"  # fixed: token_pooling.weight
+    _channel_axis = "fixed"  # fixed: token_pooling.weight
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -345,7 +348,20 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             nn.Linear(self.n_tokens, 1, bias=False) if pooling == "learned" else None
         )
         self.final_layer = nn.Linear(d_model, self.n_outputs)
+        self._n_times_step = patch_size
+        if pooling == "mean":
+            self._time_axis = "free"
+            self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
         self._init_parameters()
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        if self.token_pooling is not None:
+            return False
+        spatial = self._call_arg(args, kwargs, "spatial_indices")
+        ch_mask = self._call_arg(args, kwargs, "ch_mask")
+        return spatial is not None or (ch_mask is not None and self.spatial_emb is None)
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
@@ -547,7 +563,8 @@ class _SpatialEmbedding(nn.Module):
 
         Per-sample indices give ``(batch, n_chans, d_model)``, one montage per sample.
         """
-        caller_indices = indices is not None
+        # The default indices were range-checked at construction.
+        given = indices is not None
         if indices is None:
             default = self.default_indices
             if default is None:
@@ -569,10 +586,9 @@ class _SpatialEmbedding(nn.Module):
             )
         # Value check only in eager mode: it branches on tensor data, which
         # TorchScript, torch.export and torch.compile graphs cannot express.
-        # Only of caller indices (default_indices are checked at construction),
-        # before the move, so indices passed on the CPU need no host sync.
+        # Before the move, so indices passed on the CPU are read on the CPU.
         if not torch.jit.is_scripting():
-            if caller_indices and not torch.compiler.is_compiling():
+            if given and not torch.compiler.is_compiling():
                 n_slots = self.tables[0].num_embeddings
                 if bool((grid < 0).any()) or bool((grid >= n_slots).any()):
                     raise ValueError(

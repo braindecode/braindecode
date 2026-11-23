@@ -42,8 +42,7 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
-from braindecode.functional import check_n_chans
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
@@ -141,6 +140,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     .. versionadded:: 2.0
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: eeg_encoder.conv_time_spat.conv_spat.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -206,18 +208,40 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         self.logit_scale = nn.Parameter(
             torch.tensor(math.log(1.0 / initial_temperature))
         )
+        if isinstance(self.eeg_encoder, Deep4Net):
+            rf = 1
+            for m in self.eeg_encoder.modules():
+                if isinstance(m, (nn.Conv2d, nn.MaxPool2d, nn.AvgPool2d)):
+                    k = (
+                        m.kernel_size[0]
+                        if isinstance(m.kernel_size, tuple)
+                        else m.kernel_size
+                    )
+                    d = (
+                        m.dilation[0]
+                        if isinstance(getattr(m, "dilation", 1), tuple)
+                        else getattr(m, "dilation", 1)
+                    )
+                    rf += int(k - 1) * int(d)
+            self._min_n_times = rf
+        else:
+            enc_min = getattr(self.eeg_encoder, "_min_n_times", 1)
+            self._min_n_times = enc_min if isinstance(enc_min, int) else 1
 
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        return super()._accepts_any_n_chans(args, kwargs) or not isinstance(
+            self.eeg_encoder, Deep4Net
+        )
+
+    @deprecated_forward_kwargs(X="x")
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(self, X):
+    def forward(self, x, return_features: bool = False):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
-        # Only a Deep4Net is known to be built for a number of channels. Eager mode
-        # only: TorchScript resolves Deep4Net just when a Deep4Net is a submodule.
-        if not torch.jit.is_scripting():
-            if isinstance(self.eeg_encoder, Deep4Net):
-                check_n_chans(X, self.eeg_encoder.n_chans, "EEGCLIP")
-        features = self.eeg_encoder(X)
+        features = self.eeg_encoder(x)
         if features.ndim == 2:
             features = features.unsqueeze(-1)
+        if not torch.jit.is_scripting() and return_features:
+            return {"features": features.transpose(1, 2), "cls_token": None}
         batch_size = features.shape[0]
         # Project every dense prediction, then average over time.
         per_step = features.transpose(1, 2).reshape(-1, features.shape[1])

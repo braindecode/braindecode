@@ -142,6 +142,9 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: spatial_conv.weight
+
     def __init__(
         self,
         # Signal related parameters
@@ -261,7 +264,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
         # Shape: (batch_size, n_filters_filt, 1, n_times_reduced_avg_pool)
         x = self.activation(x)
         # Shape: (batch_size, n_filters_filt, 1, n_times_reduced_avg_pool)
-        x = x.view(x.size(0), -1)
+        x = x.reshape(x.size(0), -1)
         # Shape: (batch_size, n_filters_filt*n_times_reduced_avg_pool)
         x = self.final_layer(x)
         # Shape: (batch_size, n_outputs)

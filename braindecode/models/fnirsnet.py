@@ -131,6 +131,9 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
     .. footbibliography::
     """
 
+    _time_axis = "fixed"  # fixed: conv1.weight
+    _channel_axis = "fixed"  # fixed: conv2.depth_conv.weight
+
     def __init__(
         self,
         # Braindecode parameters

@@ -6,7 +6,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn.utils.parametrize import register_parametrization
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import (
     DepthwiseConv2d,
     Ensure4d,
@@ -72,6 +72,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         imagery classification," in IEEE Access,
         doi: 10.1109/ACCESS.2022.3161489.
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.parametrizations.weight.original
+    _channel_axis = (
+        "fixed"  # fixed: inception_block.branches.0.2.parametrizations.weight.original
+    )
 
     def __init__(
         self,
@@ -228,6 +233,13 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             "final_layer",
             LinearWithConstraint(num_features, self.n_outputs, max_norm=0.25),
         )
+
+    @deprecated_forward_kwargs(input="x")
+    def forward(self, x):
+        """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
+        for module in self:
+            x = module(x)
+        return x
 
     @staticmethod
     def _get_inception_branch(

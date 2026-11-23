@@ -18,8 +18,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import check_n_chans, init_weights_, patch_count
-from braindecode.models.base import EEGModuleMixin
+from braindecode.functional import init_weights_, patch_count
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
 from braindecode.modules.blocks import PatchTokenizer
@@ -177,6 +177,10 @@ def build_region_attention_mask(
     return mask
 
 
+@deprecated_init_flags(
+    identity_head=("return_encoder_output",),
+    return_encoder_output="features",
+)
 class CSBrain(EEGModuleMixin, nn.Module):
     r"""Cross-scale Spatiotemporal Brain Foundation Model from Zhou et al. (2025)
     [zhou2025csbrain]_.
@@ -263,6 +267,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         quadratically with the window length by default (about 2.3e9 for 64
         channels and 30 s), so set a smaller width for long windows.
     return_encoder_output : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If False (default), the projected encoder output is flattened and
         passed through the task head to produce class logits of size
         ``n_outputs``. If True, return the encoder output features.
@@ -296,6 +301,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
     .. [csbraincode] Released implementation:
        https://github.com/yuchen2199/CSBrain
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
 
     def __init__(
         self,
@@ -333,10 +341,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
-        try:
-            tokenizer_n_times = self.n_times
-        except ValueError:  # unknown length: nothing to check at construction
-            tokenizer_n_times = patch_size
+        tokenizer_n_times = self._signal_param("n_times") or patch_size
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
             n_times=tokenizer_n_times,
@@ -359,13 +364,13 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # channel, taking precedence over name derivation) when given, else
         # derived from channel names; without either there is no reordering,
         # no region embedding and the inter-region attention is unmasked.
-        if brain_regions is not None and self._n_chans_or_none() not in (
+        if brain_regions is not None and self._signal_param("n_chans") not in (
             None,
             len(brain_regions),
         ):
             raise ValueError(
                 f"brain_regions has {len(brain_regions)} entries for "
-                f"{self._n_chans_or_none()} channels."
+                f"{self._signal_param('n_chans')} channels."
             )
         if brain_regions is not None:
             ordered_regions, sorted_indices = order_regions(
@@ -411,28 +416,22 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._d_model = d_model
         self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
-        self._encoder_output = return_encoder_output
         self._init_parameters()
+        self.final_layer = self._make_task_head()
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
-        if return_encoder_output:
-            self.final_layer = nn.Identity()
-        else:
-            self.final_layer = self._make_task_head()
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        return self.sorted_indices is None and self._accepts_any_n_times(args, kwargs)
 
-    def _n_chans_or_none(self) -> int | None:
-        try:
-            return self.n_chans
-        except ValueError:
-            return None
-
-    def _n_times_or_none(self) -> int | None:
-        try:
-            return self.n_times
-        except ValueError:
-            return None
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def _n_patch(self) -> int | None:
-        n_times = self._n_times_or_none()
+        n_times = self._signal_param("n_times")
         if n_times is None:
             return None
         # ceil for "pad", floor for "crop" (raises below one patch): the count
@@ -443,25 +442,24 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # Three-layer MLP head of the reference fine-tuning models: flatten
         # (chans, patches, d_model) -> n_patch * emb_dim -> emb_dim -> n_outputs.
         # n_chans / n_times may come from chs_info / input_window_seconds.
-        # Without them the layers are lazy and the hidden width falls back to
-        # 4 * emb_dim, the reference value for 4 s windows.
-        n_chans = self._n_chans_or_none()
+        # Without them the first layer is lazy and the hidden width falls back
+        # to 4 * emb_dim, the reference value for 4 s windows.
+        n_chans = self._signal_param("n_chans")
         n_patch = self._n_patch()
-        if n_patch is None or n_chans is None:
-            return nn.Sequential(
-                nn.Flatten(),
-                nn.LazyLinear(self._head_hidden_dim or 4 * self._emb_dim),
-                nn.ELU(),
-                nn.Dropout(self._head_drop_prob),
-                nn.LazyLinear(self._emb_dim),
-                nn.ELU(),
-                nn.Dropout(self._head_drop_prob),
-                nn.LazyLinear(self.n_outputs),
-            )
-        hidden = self._head_hidden_dim or n_patch * self._emb_dim
+        if n_patch is not None and n_chans is not None:
+            in_features: int | None = n_chans * n_patch * self._d_model
+            hidden = self._head_hidden_dim or n_patch * self._emb_dim
+        else:
+            in_features = None
+            hidden = self._head_hidden_dim or 4 * self._emb_dim
+        first_linear: nn.Module = (
+            nn.LazyLinear(hidden)
+            if in_features is None
+            else nn.Linear(in_features, hidden)
+        )
         return nn.Sequential(
             nn.Flatten(),
-            nn.Linear(n_chans * n_patch * self._d_model, hidden),
+            first_linear,
             nn.ELU(),
             nn.Dropout(self._head_drop_prob),
             nn.Linear(hidden, self._emb_dim),
@@ -470,27 +468,21 @@ class CSBrain(EEGModuleMixin, nn.Module):
             nn.Linear(self._emb_dim, self.n_outputs),
         )
 
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        if "_encoder_output" not in state:
-            # Earlier pickles select encoder output with this identity head.
-            self._encoder_output = isinstance(self.final_layer, nn.Identity)
-
     def reset_head(self, n_outputs):
         self._set_n_outputs(n_outputs)
-        self._update_init_kwargs(return_encoder_output=False)
-        self._encoder_output = False
         self.final_layer = self._make_task_head()
 
     def _init_parameters(self):
         # Same rule as the reference ``_weights_init`` (and CBraMod): only the
-        # Linear layers are re-initialised. The Conv2d layers keep PyTorch's
-        # default init; a fan-out Kaiming init on them makes the residual
-        # stream grow ~3x per layer (logits ~1e5 at 12 layers).
+        # backbone Linear layers are re-initialised. The Conv2d layers and the
+        # task head keep PyTorch's default init; a fan-out Kaiming init on
+        # Conv2d makes the residual stream grow ~3x per layer (logits ~1e5 at
+        # 12 layers).
         kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
-        self.apply(
-            partial(init_weights_, weights={nn.Linear: (kaiming, None)}, norms=())
-        )
+        fn = partial(init_weights_, weights={nn.Linear: (kaiming, None)}, norms=())
+        for name, child in self.named_children():
+            if name != "final_layer":
+                child.apply(fn)
 
     def forward(
         self,
@@ -498,13 +490,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         mask: Optional[Tensor] = None,
         return_features: bool = False,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
-        # The region order and the flattened head are tied to the channels, the
-        # encoder alone is not.
-        if self._n_chans_for_jit is not None and (
-            self.sorted_indices is not None
-            or not (return_features or self._encoder_output)
-        ):
-            check_n_chans(x, self._n_chans_for_jit, "CSBrain")
         x = self.rearrange(x)
         if self.sorted_indices is not None:
             x = x[:, self.sorted_indices, :, :]
@@ -553,10 +538,10 @@ class _CrossScaleTemporalEmbedding(nn.Module):
 
     def forward(self, x):
         batch, chans, time, d_model = x.shape
-        x = x.view(batch * chans, d_model, time, 1)
+        x = x.reshape(batch * chans, d_model, time, 1)
         fmaps = [conv(x) for conv in self.convs]
         x = torch.cat(fmaps, dim=1)
-        return x.view(batch, chans, time, -1)
+        return x.reshape(batch, chans, time, -1)
 
 
 class _RegionEmbedding(nn.Module):

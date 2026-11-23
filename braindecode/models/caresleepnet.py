@@ -161,6 +161,9 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/wjq-learning/CareSleepNet/tree/386e149f7eac8d93207972268f8bc82ea37361c1
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: eeg_encoder.0.branches.0.0.weight
+
     def __init__(
         self,
         # Signal-related parameters.
@@ -270,6 +273,9 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
             )
         self.n_epochs = n_epochs
         self.n_eog_chans = n_eog_chans
+        self._n_times_step = n_epochs
+        self.on_non_divisible = "crop"
+        self._min_n_times = n_epochs * min_epoch_samples
         # Read by _init_parameters, which reset_parameters calls again.
         self.init_std = init_std
         self.bias_init_std = bias_init_std
@@ -280,7 +286,6 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         self.epochs_to_batch = Rearrange(
             "batch chans (epoch time) -> (batch epoch) chans time",
             epoch=n_epochs,
-            time=self.n_times // n_epochs,
         )
         self.batch_to_epochs = Rearrange(
             "(batch epoch) dim -> batch epoch dim", epoch=n_epochs

@@ -16,12 +16,15 @@ from torch import nn
 
 from braindecode.functional import (
     check_ch_mask,
-    check_n_chans,
     patch_count,
     sinusoidal_positional_encoding,
 )
 from braindecode.functional.patches import _check_on_non_divisible
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import (
+    EEGModuleMixin,
+    _warn_deprecated_argument,
+    deprecated_forward_kwargs,
+)
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
 
@@ -118,6 +121,9 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://doi.org/10.1038/s41591-025-04133-4
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -185,6 +191,8 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             embed_dim, pooling_heads, drop_prob
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self._n_times_step = self.patch_size
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
@@ -217,10 +225,10 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
         channel_mask : torch.Tensor | None
-            Deprecated, removed in 2.2: the inverse of ``ch_mask``, ``True`` for
-            missing channels. Pass ``ch_mask=~channel_mask``.
+            Deprecated, removed in 2.3: the braindecode 2.0 mask, ``True`` for
+            missing channels. Pass ``ch_mask=~channel_mask`` instead.
         ch_mask : torch.Tensor | None
-            Pass by keyword. ``(batch, n_chans)`` mask with ``True`` for real
+            ``(batch, n_chans)`` mask with ``True`` for real
             channels, see :func:`~braindecode.functional.check_ch_mask`.
 
         Returns
@@ -230,7 +238,21 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         contextual_tokens : torch.Tensor
             :math:`h`, shape ``(batch, n_patches, embed_dim)``.
         """
-        real = check_ch_mask(_deprecated_channel_mask(ch_mask, channel_mask), x)
+        if channel_mask is not None:  # the 2.0 positional mask, True for missing
+            if not torch.jit.is_scripting():
+                _warn_deprecated_argument(
+                    "SleepFM.encode",
+                    "channel_mask",
+                    "ch_mask",
+                    torch.logical_not,
+                    note=" From 2.3 its second positional argument is ch_mask.",
+                )
+            if ch_mask is not None:
+                raise TypeError(
+                    "SleepFM.encode got both 'channel_mask' (deprecated) and 'ch_mask'."
+                )
+            ch_mask = torch.logical_not(channel_mask)
+        real = check_ch_mask(ch_mask, x)
         patch_mask: Optional[torch.Tensor] = None
         if real is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
@@ -253,17 +275,19 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         # Pool the patches into one trial vector: (batch, embed_dim)
         return self.temporal_pooling(contextual_tokens), contextual_tokens
 
+    @deprecated_forward_kwargs(
+        channel_mask=("ch_mask", torch.logical_not),
+        old_positional=("channel_mask", "return_features"),
+    )
     def forward(
         self,
         x: torch.Tensor,
         return_features: bool = False,
         ch_mask: torch.Tensor | None = None,
-        channel_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Return trial logits, or the pooled features; ``ch_mask`` (``True``
-        for real channels) and the deprecated ``channel_mask`` are as in
-        :meth:`encode`."""
-        pooled, _ = self.encode(x, channel_mask=channel_mask, ch_mask=ch_mask)
+        for real channels) is as in :meth:`encode`."""
+        pooled, _ = self.encode(x, ch_mask=ch_mask)
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": pooled,
@@ -397,6 +421,9 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://doi.org/10.1038/s41591-025-04133-4
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: _channel_order is sized by n_chans
+
     # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
     _legacy_on_non_divisible = "crop"
 
@@ -491,6 +518,8 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             max_seq_length,
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self._n_times_step = self.patch_size
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
 
     @classmethod
     def from_pretrained(
@@ -547,32 +576,29 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         model.eval()
         return model
 
+    @deprecated_forward_kwargs(
+        channel_mask=("ch_mask", torch.logical_not),
+        old_positional=("channel_mask", "return_features", "temporal_mask"),
+    )
     def forward(
         self,
         x: torch.Tensor,
         return_features: bool = False,
         temporal_mask: torch.Tensor | None = None,
         ch_mask: torch.Tensor | None = None,
-        channel_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Return patch-wise logits, or the per-patch LSTM features.
 
-        ``ch_mask`` (``True`` for real channels) and the deprecated
-        ``channel_mask`` are as in :meth:`SleepFM.encode`; ``temporal_mask`` is
+        ``ch_mask`` (``True`` for real channels) is as in
+        :meth:`SleepFM.encode`; ``temporal_mask`` is
         ``True`` for padded patches.
         """
-        check_n_chans(
-            x,
-            self.n_chans,
-            "SleepFMStager",
-            "build the model with the chs_info of this montage.",
-        )
         # The count the tokenizer produces (padded patch included with "pad").
         n_patches = self.patch_embedding.patchify.n_patches(x.shape[-1])
         patch_mask = _check_mask(
             temporal_mask, [x.shape[0], n_patches], x, "temporal_mask"
         )
-        real = check_ch_mask(_deprecated_channel_mask(ch_mask, channel_mask), x)
+        real = check_ch_mask(ch_mask, x)
         mask_tokens = real is not None or patch_mask is not None
         if real is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
@@ -837,26 +863,6 @@ class _SleepFMStagingHead(nn.Module):
         # Bidirectional LSTM over the same patches: (batch, patches, emb)
         features, _ = self.lstm(features)
         return features
-
-
-def _deprecated_channel_mask(
-    ch_mask: Optional[torch.Tensor], channel_mask: Optional[torch.Tensor]
-) -> Optional[torch.Tensor]:
-    """``ch_mask`` from the deprecated ``channel_mask``, ``True`` for missing
-    channels (braindecode 2.0)."""
-    if channel_mask is None:
-        return ch_mask
-    if ch_mask is not None:
-        raise ValueError("Pass ch_mask only: channel_mask is its deprecated inverse.")
-    if not torch.jit.is_scripting():
-        warnings.warn(
-            "channel_mask (True for missing channels) is deprecated and will be "
-            "removed in braindecode 2.2; pass ch_mask=~channel_mask (True for "
-            "real channels).",
-            FutureWarning,
-            stacklevel=3,
-        )
-    return ~channel_mask.to(torch.bool)
 
 
 def _check_mask(

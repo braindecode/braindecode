@@ -1,15 +1,29 @@
 """Model-building fixtures for the model tests: default signal parameters and
 the keyword combinations each model is built with."""
 
+import csv
+import functools
+from collections.abc import Iterator, Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
 import numpy as np
+import pytest
+import torch
+from torch import Tensor, nn
 
+from braindecode.models import util as _models_util
+from braindecode.models._summary import _TOKENIZERS, SUMMARY_CSV_PATH  # noqa: F401
 from braindecode.models.util import (
     SigArgName,
     _draw_chs_info,
     models_mandatory_parameters,
+)
+
+PARAMS = pytest.mark.parametrize(
+    "model_name,required_params,signal_params",
+    models_mandatory_parameters,
+    ids=[m[0] for m in models_mandatory_parameters],
 )
 
 non_classification_models = [
@@ -284,3 +298,55 @@ def _architecture_kwargs(model_name: str) -> dict[str, Any]:
     )
     sp = _get_signal_params(signal_params)
     return {k: v for k, v in sp.items() if k not in default_signal_params}
+
+
+def _tensor_leaves(value: Any) -> Iterator[Tensor]:
+    """Yield tensor leaves from nested model outputs."""
+    if torch.is_tensor(value):
+        yield value
+    elif isinstance(value, Mapping):
+        for child in value.values():
+            yield from _tensor_leaves(child)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for child in value:
+            yield from _tensor_leaves(child)
+
+
+def _shapes(out: Any) -> list[tuple[int, ...]]:
+    """Return shapes of tensor leaves in a model output."""
+    return [tuple(leaf.shape) for leaf in _tensor_leaves(out)]
+
+
+def _build_case(
+    model_name: str,
+    required_params: list[SigArgName],
+    signal_params: Any,
+    headless: bool = False,
+) -> tuple[nn.Module, Tensor]:
+    """Build an eval-mode model and synthetic batch ``(2, n_chans, n_times)``,
+    with ``n_outputs=None`` when ``headless``."""
+    signal = _get_signal_params(signal_params)
+    model_kwargs = _get_signal_params(signal_params, required_params)
+    if headless:
+        model_kwargs["n_outputs"] = None
+    model = _models_util.models_dict[model_name](**model_kwargs).eval()
+    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+    return model, x
+
+
+def _materialize(model: nn.Module, x: Tensor, return_features: bool = False) -> None:
+    """Run one no-grad forward if lazy parameters still need their shapes."""
+    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
+        with torch.no_grad():
+            model(x, return_features=True) if return_features else model(x)
+
+
+@functools.cache
+def _summary_rows() -> dict[str, dict[str, str]]:
+    with SUMMARY_CSV_PATH.open(encoding="utf-8-sig", newline="") as handle:
+        return {row["Model"]: row for row in csv.DictReader(handle)}
+
+
+def _summary_row(model_name: str) -> dict[str, str]:
+    """Return a model's row from ``braindecode/models/summary.csv``."""
+    return _summary_rows()[model_name]

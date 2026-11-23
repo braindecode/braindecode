@@ -339,6 +339,9 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         https://doi.org/10.5281/zenodo.593816
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: rotation_invariant_mlp.fully_connected_layers.0.weight is sized by n_chans
+
     mapping = {
         "featurizer.window": "featurizer.stft.window",
         "featurizer.window_normalization_factor": "featurizer.stft.window_norm",
@@ -464,6 +467,17 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         # ``reset_head`` and braindecode's "last child is final_layer" convention
         # work uniformly).
         self.final_layer = nn.Linear(conformer_input_dim, self.n_outputs)
+        lo = max(1, mpf_window_length, mpf_n_fft)
+        hi = max(lo, self._signal_param("n_times") or 64000)
+        while int(self.compute_output_lengths(torch.tensor([hi]))[0]) < 1:
+            hi *= 2
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if int(self.compute_output_lengths(torch.tensor([mid]))[0]) >= 1:
+                hi = mid
+            else:
+                lo = mid + 1
+        self._min_n_times = lo
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run the full pipeline.
@@ -1548,6 +1562,7 @@ class _MultiHeadAttention(nn.Module):
             key=key,
             value=value,
             attn_mask=self.add_mask_axis(attn_mask),
+            need_weights=False,
         )
         # Un-merge (batch * time) back to (batch, time) while keeping the
         # singleton query axis the downstream conformer block expects.

@@ -2,14 +2,19 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
+
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
+@deprecated_init_flags(
+    identity_head=("return_feats",),
+    return_feats="features",
+)
 class DeepSleepNet(EEGModuleMixin, nn.Module):
     r"""DeepSleepNet from Supratak et al (2017) [Supratak2017]_.
 
@@ -93,12 +98,13 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    return_feats : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, return features before the final linear layer.
     activation_large : type[nn.Module], default=nn.ELU
         Activation class for the large-filter CNN path.
     activation_small : type[nn.Module], default=nn.ReLU
         Activation class for the small-filter CNN path.
-    return_feats : bool, default=False
-        If True, return features before the final linear layer.
     drop_prob : float, default=0.5
         Dropout probability applied throughout the network.
     bilstm_hidden_size : int, default=512
@@ -163,6 +169,9 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
        and Rehabilitation Engineering, 25(11), 1998-2008.
     """
 
+    _time_axis = "fixed"  # fixed: bilstm.weight_ih_l0
+    _channel_axis = "fixed"  # fixed: bilstm.weight_ih_l0
+
     def __init__(
         self,
         n_outputs=5,
@@ -213,7 +222,6 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.return_feats = return_feats
         self.cnn1 = _CNNPath(
             n_filters_1=small_n_filters_1,
             n_filters_2=small_n_filters_2,
@@ -284,11 +292,12 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
         self.features_extractor = nn.Identity()
         self.len_last_layer = fc_out_features
-        self.final_layer = (
-            nn.Identity()
-            if return_feats
-            else nn.Linear(fc_out_features, self.n_outputs)
-        )
+        self.final_layer = nn.Linear(fc_out_features, self.n_outputs)
+
+    def _input_chans_and_times(self, x: torch.Tensor) -> tuple[int, int | None, bool]:
+        if x.ndim == 4 and x.shape[1] == 1:
+            return x.shape[2], x.shape[3], True
+        return super()._input_chans_and_times(x)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):

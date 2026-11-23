@@ -119,17 +119,11 @@ class EMACodebook(nn.Module):
             nn.init.kaiming_uniform_(embed)
         # The float flag and all buffer names match the official checkpoints.
         self.register_buffer("inited", torch.tensor([float(not kmeans_init)]))
-        # Mirror ``inited`` as a Python bool so warm forwards never read a
-        # device scalar (host sync / torch.compile graph break).
-        self._is_inited: bool = not kmeans_init
         self.register_buffer("cluster_size", torch.zeros(codebook_size))
         self.register_buffer("embed", embed)
         self.register_buffer("embed_avg", embed.clone())
 
     def _apply(self, fn, recurse=True):
-        if not self._is_inited and self.inited.device.type == "cpu":
-            self._is_inited = bool(self.inited.item())
-
         def move_buffer(buffer):
             moved = fn(buffer)
             if moved.dtype in (torch.float16, torch.bfloat16):
@@ -138,20 +132,6 @@ class EMACodebook(nn.Module):
             return moved
 
         return super()._apply(move_buffer, recurse)
-
-    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
-        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
-        if not self.inited.is_meta:
-            self._is_inited = bool(self.inited.item())
-
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        if "_is_inited" not in self.__dict__:
-            self._is_inited = (
-                bool(self.inited.item())
-                if not self.inited.is_meta
-                else not self.kmeans_init
-            )
 
     def _sample_vectors(self, samples: torch.Tensor, num: int) -> torch.Tensor:
         num_samples, device = samples.shape[0], samples.device
@@ -210,17 +190,8 @@ class EMACodebook(nn.Module):
             torch.compiler.is_compiling() and not self.training
         ):
             return
-        if self._is_inited:
+        if bool(self.inited.item()):
             return
-        # Eager CPU fallback for callers that mutate ``inited`` directly.
-        if not torch.jit.is_scripting():
-            if (
-                not torch.compiler.is_compiling()
-                and self.inited.device.type == "cpu"
-                and bool(self.inited.item())
-            ):
-                self._is_inited = True
-                return
         with torch.no_grad():
             data = data.reshape(-1, data.shape[-1])
             sampled = self._sample_vectors(data, 4096)
@@ -231,7 +202,6 @@ class EMACodebook(nn.Module):
             self.inited.fill_(1)
             if not torch.jit.is_scripting():
                 _broadcast_tensors(self.buffers())
-            self._is_inited = True
 
     def replace_(self, samples: torch.Tensor, mask: torch.Tensor) -> None:
         modified = torch.where(
@@ -245,7 +215,8 @@ class EMACodebook(nn.Module):
         if self.threshold_ema_dead_code == 0:
             return
         expired = self.cluster_size < self.threshold_ema_dead_code
-        # replace_ masks on-device with torch.where, avoiding an eager host sync.
+        if not torch.any(expired):
+            return
         batch_samples = batch_samples.reshape(-1, batch_samples.shape[-1])
         self.replace_(batch_samples, expired)
         if not torch.jit.is_scripting():

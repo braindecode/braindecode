@@ -32,7 +32,7 @@ from braindecode.functional import (
     rotary_frequencies,
     spectral_input,
 )
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.util import chs_info_positions
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
@@ -137,6 +137,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         The Thirty-Ninth Annual Conference on Neural Information Processing Systems - NeurIPS.
         Retrieved from https://openreview.net/forum?id=uazfjnFL0G
     """
+
+    _time_axis = "free"
+    _channel_axis = "free"
 
     def __init__(
         self,
@@ -292,6 +295,10 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
 
         self._init_parameters()
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = self.patch_size
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if on_non_divisible == "pad" else self.patch_size
 
     def _init_parameters(self) -> None:
         self.cross_attn.initialize_weights()
@@ -415,11 +422,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         return x_tokenized, channel_locations_emb
 
+    @deprecated_forward_kwargs(X="x", channel_locations="pos")
     def forward(
         self,
-        X: torch.Tensor,
+        x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-        channel_locations: Optional[torch.Tensor] = None,
+        pos: Optional[torch.Tensor] = None,
         channel_names: Optional[torch.Tensor] = None,
         ch_mask: Optional[torch.Tensor] = None,
         return_features: bool = False,
@@ -436,9 +444,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         "cls_token": None}``: the normed encoder output before the head,
         ``(batch, n_patches, num_queries * embed_dim)``.
         """
-        x_signal = X
+        x_signal = x
         B, C, _ = x_signal.shape
-        ch_mask = check_ch_mask(ch_mask, X)
+        ch_mask = check_ch_mask(ch_mask, x)
         if ch_mask is not None and self.num_classes == 0:
             raise ValueError(
                 "ch_mask needs n_outputs > 0: the reconstruction decoder attends "
@@ -449,8 +457,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             # Padding may hold NaN, which the patch embedding would spread.
             x_signal = x_signal.masked_fill(~ch_mask[:, :, None], 0.0)
 
-        if channel_locations is None:
-            channel_locations = self.get_default_channel_locations(
+        if pos is None:
+            pos = self.get_default_channel_locations(
                 batch_size=B,
                 num_channels=C,
                 device=x_signal.device,
@@ -458,7 +466,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
 
         x, channel_locations_emb = self.prepare_tokens(
-            x_signal, channel_locations, mask=mask, ch_mask=ch_mask
+            x_signal, pos, mask=mask, ch_mask=ch_mask
         )
         if ch_mask is not None:
             # Cross-attention rows are (batch, patch), batch outermost.
@@ -893,7 +901,9 @@ class _ClassificationHeadWithQueries(nn.Module):
         B, num_patches, embed_dim = x.shape
         decoder_queries = self.learned_agg.repeat(x.shape[0], 1, 1)
 
-        x = self.decoder_attn(query=decoder_queries, key=x, value=x)[0]
+        x = self.decoder_attn(
+            query=decoder_queries, key=x, value=x, need_weights=False
+        )[0]
         x = x[:, 0, :]
         x = self.decoder_ffn(x)
         return x
@@ -962,7 +972,11 @@ class _CrossAttentionBlock(nn.Module):
         values = self.values_norm(x)
 
         attention_out, attention_scores = self.cross_attention(
-            query=queries, key=keys, value=values, key_padding_mask=key_padding_mask
+            query=queries,
+            key=keys,
+            value=values,
+            key_padding_mask=key_padding_mask,
+            need_weights=False,
         )  # Shape: (batch_size*num_patches, num_queries, embed_dim)
         attention_out = self.ffn(attention_out) + attention_out
 

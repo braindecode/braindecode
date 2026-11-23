@@ -1,11 +1,11 @@
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Union
 from warnings import warn
 
 import torch
 import torch.nn as nn
 
 from braindecode.functional import check_ch_mask, masked_mean, spectral_input
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import SinusoidalPositionalEncoding
 from braindecode.modules.linear_attention import LinearAttentionTransformer
@@ -40,6 +40,9 @@ BIOT_CHANNEL_ORDER = [
 ]
 
 
+@deprecated_init_flags(
+    return_feature=("logits", "features"),
+)
 class BIOT(EEGModuleMixin, nn.Module):
     r"""BIOT from Yang et al (2023) [Yang2023]_
 
@@ -115,13 +118,14 @@ class BIOT(EEGModuleMixin, nn.Module):
     activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
-    return_feature : bool, optional
-        Changing the output for the neural network. Default is single tensor
-        when return_feature is True, return embedding space too.
-        Default is False.
     hop_length : int, optional
         The hop length for the torch.stft transformation in the
         encoder. The default is 100.
+    return_feature : bool, optional
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        Changing the output for the neural network. Default is single tensor
+        when return_feature is True, return embedding space too.
+        Default is False.
     sfreq : int, optional
         The sfreq parameter for the encoder. The default is 200, unless
         ``n_times`` and ``input_window_seconds`` are both given, in which
@@ -136,6 +140,9 @@ class BIOT(EEGModuleMixin, nn.Module):
        Biosignal Transformer for Cross-data Learning in the Wild.
        GitHub https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
+
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: encoder.channel_tokens.weight is sized by n_chans
 
     _channel_target = BIOT_CHANNEL_ORDER
 
@@ -178,7 +185,6 @@ class BIOT(EEGModuleMixin, nn.Module):
         self.hop_length = hop_length
         self.num_heads = num_heads
         self.num_layers = num_layers
-        self.return_feature = return_feature
         warn_if_sfreq_differs("BIOT", self.sfreq, 200)
         if self.n_chans > embed_dim:
             warn(
@@ -228,6 +234,13 @@ class BIOT(EEGModuleMixin, nn.Module):
             n_outputs=self.n_outputs,
             activation=activation,
         )
+        self._min_n_times = max(1, self.n_fft)
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        x = self._first_input(args, kwargs)
+        return x is not None and x.ndim >= 2 and 1 <= x.shape[1] <= self.n_chans
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
@@ -243,11 +256,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         x: torch.Tensor,
         return_features: bool = False,
         ch_mask: Optional[torch.Tensor] = None,
-    ) -> Union[
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-        Dict[str, Optional[torch.Tensor]],
-    ]:
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Pass the input through the BIOT encoder, and then through the
         classification head.
@@ -266,14 +275,12 @@ class BIOT(EEGModuleMixin, nn.Module):
 
         Returns
         -------
-        torch.Tensor or tuple or dict
+        torch.Tensor or dict
             Default: ``torch.Tensor`` of shape ``(batch_size, n_outputs)``.
             If ``return_features=True``: ``dict`` with ``"features"``
             ``(batch_size, emb_size)``, the mean of the tokens, ``"cls_token"``
             (``None``) and ``"tokens"`` ``(batch_size, n_channels, n_patches,
             emb_size)``, the transformer output, zero for padded channels.
-            If legacy ``return_feature=True`` (init param):
-            ``(out, emb)`` tuple (ignored when ``return_features=True``).
         """
         ch_mask = check_ch_mask(ch_mask, x)
         tokens, token_mask = self.encoder(x, ch_mask=ch_mask)
@@ -287,15 +294,11 @@ class BIOT(EEGModuleMixin, nn.Module):
                 "features": emb,
                 "cls_token": None,
                 "tokens": tokens,
+                "logits": self.final_layer(emb),
             }
             return out
 
-        x = self.final_layer(emb)
-
-        if self.return_feature:
-            return x, emb
-        else:
-            return x
+        return self.final_layer(emb)
 
 
 class _PatchFrequencyEmbedding(nn.Module):

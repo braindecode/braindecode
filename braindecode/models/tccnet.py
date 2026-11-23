@@ -160,6 +160,9 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/DSIP-UPatras/ICASSP2019_TCN/tree/cd28909ccf3696b835446cbec2f15eb60610a2af
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: feature_extractor.0.convolutions.0.conv.weight
+
     def __init__(
         self,
         # Signal-related parameters.
@@ -225,6 +228,7 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
             else None
         )
         self.final_layer = nn.Linear(in_channels, self.n_outputs)
+        self._min_n_times = 1
         self._init_parameters()
 
     def _init_parameters(self) -> None:

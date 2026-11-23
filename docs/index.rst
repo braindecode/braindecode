@@ -33,7 +33,7 @@
 
           <div class="hero-cta-row">
             <a class="btn btn-primary" href="install/install.html">Get started <span aria-hidden="true">→</span></a>
-            <a class="btn" href="auto_examples/index.html">
+            <a class="btn" href="tutorials.html">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
               <span>Tutorials</span>
             </a>
@@ -142,7 +142,8 @@
             </g>
 
             <g class="hero-cortex" transform="translate(30, 55) scale(2.38)">
-              <path class="hero-cortex-fill" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" d="M 60.93 13.09 C 60.19 12.72, 59.87 11.80, 59.40 10.99 C 58.92 10.19, 58.30 9.51, 57.60 8.90 C 56.22 7.70, 54.57 6.81, 52.81 6.26 C 49.48 5.23, 45.78 5.45, 42.60 6.84 C 40.92 7.57, 39.39 8.63, 38.19 10.07 C 37.58 10.79, 37.06 11.60, 36.32 12.06 C 35.58 12.53, 34.62 12.64, 33.68 12.68 C 32.74 12.73, 31.82 12.71, 30.94 12.87 C 30.05 13.03, 29.19 13.38, 28.36 13.79 C 26.87 14.54, 25.45 15.52, 24.74 17.05 C 24.35 17.90, 24.18 18.92, 23.64 19.57 C 23.32 19.97, 22.86 20.23, 22.33 20.35 C 21.97 20.42, 21.57 20.43, 21.20 20.46 C 20.26 20.54, 19.45 20.76, 18.61 21.18 C 17.78 21.60, 16.92 22.23, 16.44 22.99 C 15.49 24.50, 16.06 26.53, 15.77 28.36 C 15.63 29.28, 15.28 30.15, 14.61 30.73 C 14.08 31.20, 13.34 31.48, 12.64 31.78 C 11.77 32.15, 10.95 32.56, 10.29 33.16 C 9.63 33.75, 9.13 34.54, 8.70 35.38 C 8.28 36.23, 7.93 37.14, 7.84 38.01 C 7.77 38.71, 7.87 39.38, 8.14 40.09 C 8.47 40.98, 9.07 41.92, 9.06 42.76 C 9.06 43.60, 8.45 44.33, 7.86 45.09 C 6.80 46.45, 5.81 47.86, 5.64 49.45 C 5.45 51.20, 6.26 53.17, 7.64 54.41 C 8.33 55.04, 9.16 55.48, 9.67 56.21 C 10.19 56.93, 10.39 57.94, 10.33 58.85 C 10.26 59.77, 9.91 60.59, 9.84 61.51 C 9.76 62.43, 9.96 63.43, 10.35 64.27 C 11.05 65.77, 12.41 66.70, 13.72 67.77 C 14.45 68.37, 15.17 69.00, 15.45 69.82 C 15.74 70.63, 15.58 71.63, 15.54 72.59 C 15.46 74.52, 15.81 76.33, 17.09 77.65 C 17.73 78.30, 18.60 78.84, 19.49 79.13 C 20.37 79.42, 21.27 79.46, 22.16 79.65 C 22.70 79.77, 23.22 79.93, 23.56 80.30 C 23.79 80.55, 23.93 80.89, 24.07 81.24 C 24.34 81.94, 24.59 82.65, 24.96 83.28 C 25.90 84.86, 27.59 85.86, 29.30 86.53 C 30.15 86.87, 31.01 87.12, 31.93 87.18 C 32.85 87.25, 33.82 87.13, 34.72 87.29 C 35.61 87.45, 36.42 87.90, 37.09 88.53 C 37.75 89.15, 38.27 89.95, 38.89 90.63 C 40.01 91.85, 41.47 92.67, 43.02 93.26 C 46.30 94.50, 49.99 94.68, 53.27 93.51 C 54.99 92.90, 56.61 91.91, 57.95 90.66 C 58.63 90.04, 59.23 89.35, 59.68 88.53 C 60.04 87.88, 60.30 87.15, 60.94 86.92 L 60.98 13.03 Z"/>
+              <defs><path id="bd-cortex-shape" d="M 60.93 13.09 C 60.19 12.72, 59.87 11.80, 59.40 10.99 C 58.92 10.19, 58.30 9.51, 57.60 8.90 C 56.22 7.70, 54.57 6.81, 52.81 6.26 C 49.48 5.23, 45.78 5.45, 42.60 6.84 C 40.92 7.57, 39.39 8.63, 38.19 10.07 C 37.58 10.79, 37.06 11.60, 36.32 12.06 C 35.58 12.53, 34.62 12.64, 33.68 12.68 C 32.74 12.73, 31.82 12.71, 30.94 12.87 C 30.05 13.03, 29.19 13.38, 28.36 13.79 C 26.87 14.54, 25.45 15.52, 24.74 17.05 C 24.35 17.90, 24.18 18.92, 23.64 19.57 C 23.32 19.97, 22.86 20.23, 22.33 20.35 C 21.97 20.42, 21.57 20.43, 21.20 20.46 C 20.26 20.54, 19.45 20.76, 18.61 21.18 C 17.78 21.60, 16.92 22.23, 16.44 22.99 C 15.49 24.50, 16.06 26.53, 15.77 28.36 C 15.63 29.28, 15.28 30.15, 14.61 30.73 C 14.08 31.20, 13.34 31.48, 12.64 31.78 C 11.77 32.15, 10.95 32.56, 10.29 33.16 C 9.63 33.75, 9.13 34.54, 8.70 35.38 C 8.28 36.23, 7.93 37.14, 7.84 38.01 C 7.77 38.71, 7.87 39.38, 8.14 40.09 C 8.47 40.98, 9.07 41.92, 9.06 42.76 C 9.06 43.60, 8.45 44.33, 7.86 45.09 C 6.80 46.45, 5.81 47.86, 5.64 49.45 C 5.45 51.20, 6.26 53.17, 7.64 54.41 C 8.33 55.04, 9.16 55.48, 9.67 56.21 C 10.19 56.93, 10.39 57.94, 10.33 58.85 C 10.26 59.77, 9.91 60.59, 9.84 61.51 C 9.76 62.43, 9.96 63.43, 10.35 64.27 C 11.05 65.77, 12.41 66.70, 13.72 67.77 C 14.45 68.37, 15.17 69.00, 15.45 69.82 C 15.74 70.63, 15.58 71.63, 15.54 72.59 C 15.46 74.52, 15.81 76.33, 17.09 77.65 C 17.73 78.30, 18.60 78.84, 19.49 79.13 C 20.37 79.42, 21.27 79.46, 22.16 79.65 C 22.70 79.77, 23.22 79.93, 23.56 80.30 C 23.79 80.55, 23.93 80.89, 24.07 81.24 C 24.34 81.94, 24.59 82.65, 24.96 83.28 C 25.90 84.86, 27.59 85.86, 29.30 86.53 C 30.15 86.87, 31.01 87.12, 31.93 87.18 C 32.85 87.25, 33.82 87.13, 34.72 87.29 C 35.61 87.45, 36.42 87.90, 37.09 88.53 C 37.75 89.15, 38.27 89.95, 38.89 90.63 C 40.01 91.85, 41.47 92.67, 43.02 93.26 C 46.30 94.50, 49.99 94.68, 53.27 93.51 C 54.99 92.90, 56.61 91.91, 57.95 90.66 C 58.63 90.04, 59.23 89.35, 59.68 88.53 C 60.04 87.88, 60.30 87.15, 60.94 86.92 L 60.98 13.03 Z"/></defs>
+              <use href="#bd-cortex-shape" class="hero-cortex-fill" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
               <g class="hero-cortex-sulci" fill="none" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M 24.17 19.70 C 24.96 23.20, 28.38 25.18, 31.70 25.44"/>
                 <path d="M 10.05 57.97 C 13.21 57.70, 17.00 57.97, 18.89 61.03"/>
@@ -157,6 +158,7 @@
                 <path d="M 25.55 36.92 C 24.03 39.93, 23.39 43.35, 23.13 46.70"/>
                 <path d="M 39.30 58.26 C 40.29 59.77, 42.00 60.93, 43.13 62.46 C 44.11 63.77, 44.67 65.36, 44.68 67.13"/>
               </g>
+              <use href="#bd-cortex-shape" class="hero-cortex-outline" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
             </g>
 
             <g class="hero-net">
@@ -250,7 +252,7 @@
           <div class="hf-pillars">
             <a class="hf-pillar" href="models/categorization/lbm.html">
               <span class="hf-pillar-kicker bd-mono">MODELS · 48 FOUNDATION WEIGHTS</span>
-              <strong>EEGPT, LaBraM, REVE, CBraMod, SleepFM, DuIN &amp; MEGXL</strong>
+              <strong>LaBraM, EEGPT, CBraMod, REVE, SleepFM, DuIN &amp; MEGXL</strong>
               <span class="hf-pillar-sub">Readable JSON configs and parameter-level weight provenance, benchmarked under OpenEEG-Bench.</span>
             </a>
             <a class="hf-pillar" href="https://eegdash.org/dataset_summary.html" target="_blank" rel="noopener">
@@ -284,7 +286,7 @@
           <div class="output-pane output-pane-models">
             <div class="output-toolbar bd-mono">
               <span class="copy-wrap">
-                <button type="button" class="output-copy-btn" data-copy="from braindecode.models import EEGPT&#10;&#10;model = EEGPT.from_pretrained(&#10;    &quot;braindecode/eegpt-pretrained&quot;,&#10;    n_outputs=4,&#10;)&#10;probs = model(X_test).softmax(dim=-1)" aria-label="Copy EEGPT from_pretrained code">
+                <button type="button" class="output-copy-btn" data-copy="from braindecode.models import REVE&#10;&#10;model = REVE.from_pretrained(&#10;    &quot;brain-bzh/reve-base&quot;,&#10;    n_outputs=4,&#10;    n_times=800,&#10;    chs_info=raw.info[&quot;chs&quot;],&#10;)&#10;probs = model(X_test).softmax(dim=-1)" aria-label="Copy REVE from_pretrained code">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   <span>Copy Code</span>
                 </button>
@@ -293,7 +295,7 @@
               <span>Python · safetensors</span>
             </div>
             <div class="output-terminal">
-              <pre class="repl-code bd-mono" tabindex="0"><code><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> <span class="tok-kw">from</span> braindecode.models <span class="tok-kw">import</span> <span class="tok-cls">EEGPT</span></span><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> model = <span class="tok-cls">EEGPT</span>.<span class="tok-fn">from_pretrained</span>(</span><span class="cl">...     <span class="tok-str">"braindecode/eegpt-pretrained"</span>,</span><span class="cl">...     <span class="tok-attr">n_outputs</span>=<span class="tok-num">4</span>,</span><span class="cl">... )</span><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> model(X_test).<span class="tok-fn">softmax</span>(<span class="tok-attr">dim</span>=-<span class="tok-num">1</span>)[:<span class="tok-num">3</span>]</span><span class="cl">tensor([[<span class="tok-num">0.92</span>, <span class="tok-num">0.03</span>, <span class="tok-num">0.03</span>, <span class="tok-num">0.02</span>],</span><span class="cl">        [<span class="tok-num">0.04</span>, <span class="tok-num">0.89</span>, <span class="tok-num">0.05</span>, <span class="tok-num">0.02</span>],</span><span class="cl">        [<span class="tok-num">0.02</span>, <span class="tok-num">0.04</span>, <span class="tok-num">0.91</span>, <span class="tok-num">0.03</span>]])</span></code></pre>
+              <pre class="repl-code bd-mono" tabindex="0"><code><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> <span class="tok-kw">from</span> braindecode.models <span class="tok-kw">import</span> <span class="tok-cls">REVE</span></span><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> model = <span class="tok-cls">REVE</span>.<span class="tok-fn">from_pretrained</span>(</span><span class="cl">...     <span class="tok-str">"brain-bzh/reve-base"</span>,</span><span class="cl">...     <span class="tok-attr">n_outputs</span>=<span class="tok-num">4</span>,</span><span class="cl">...     <span class="tok-attr">n_times</span>=<span class="tok-num">800</span>,</span><span class="cl">...     <span class="tok-attr">chs_info</span>=raw.info[<span class="tok-str">"chs"</span>],</span><span class="cl">... )</span><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> model(X_test).<span class="tok-fn">softmax</span>(<span class="tok-attr">dim</span>=-<span class="tok-num">1</span>)[:<span class="tok-num">3</span>]</span><span class="cl">tensor([[<span class="tok-num">0.92</span>, <span class="tok-num">0.03</span>, <span class="tok-num">0.03</span>, <span class="tok-num">0.02</span>],</span><span class="cl">        [<span class="tok-num">0.04</span>, <span class="tok-num">0.89</span>, <span class="tok-num">0.05</span>, <span class="tok-num">0.02</span>],</span><span class="cl">        [<span class="tok-num">0.02</span>, <span class="tok-num">0.04</span>, <span class="tok-num">0.91</span>, <span class="tok-num">0.03</span>]])</span></code></pre>
             </div>
           </div>
 
@@ -463,11 +465,11 @@
               </div>
               <p class="cap-stream bd-mono">19–128 ch @ 128–512 Hz · C3 Cz C4 Fpz-Cz Pz-Oz · MNE Raw / BIDS / EDF</p>
               <div class="cap-links bd-mono">
-                <a href="generated/braindecode.models.EEGPT.html">EEGPT</a>
                 <a href="generated/braindecode.models.Labram.html">LaBraM</a>
+                <a href="generated/braindecode.models.EEGPT.html">EEGPT</a>
                 <a href="generated/braindecode.models.REVE.html">REVE</a>
-                <a href="generated/braindecode.models.EEGNeX.html">EEGNeX</a>
                 <a href="generated/braindecode.models.SleepFM.html">SleepFM</a>
+                <a href="generated/braindecode.models.EEGNeX.html">EEGNeX</a>
               </div>
             </div>
 
@@ -478,11 +480,11 @@
               </div>
               <p class="cap-stream bd-mono">64–306 sensors @ 500–2048 Hz · 3D stereotactic shafts &amp; OPM/SQUID arrays</p>
               <div class="cap-links bd-mono">
-                <a href="generated/braindecode.models.DuIN.html">DuIN</a>
-                <a href="generated/braindecode.models.PopulationTransformer.html">PopT</a>
                 <a href="generated/braindecode.models.BrainBERT.html">BrainBERT</a>
-                <a href="generated/braindecode.models.MEGXL.html">MEGXL</a>
                 <a href="generated/braindecode.models.BrainOmni.html">BrainOmni</a>
+                <a href="generated/braindecode.models.PopulationTransformer.html">PopT</a>
+                <a href="generated/braindecode.models.DuIN.html">DuIN</a>
+                <a href="generated/braindecode.models.MEGXL.html">MEGXL</a>
               </div>
             </div>
 
@@ -493,11 +495,11 @@
               </div>
               <p class="cap-stream bd-mono">HbO/HbR optode pairs @ 10 Hz · 2 kHz motor-unit wrist arrays</p>
               <div class="cap-links bd-mono">
-                <a href="generated/braindecode.models.GeoNIRS.html">GeoNIRS</a>
-                <a href="generated/braindecode.models.MtReNIRS.html">MtReNIRS</a>
-                <a href="generated/braindecode.models.TinyMyo.html">TinyMyo</a>
                 <a href="generated/braindecode.models.MetaNeuromotorHand.html">MetaNeuromotor</a>
                 <a href="generated/braindecode.models.VEMG2Pose.html">VEMG2Pose</a>
+                <a href="generated/braindecode.models.TinyMyo.html">TinyMyo</a>
+                <a href="generated/braindecode.models.GeoNIRS.html">GeoNIRS</a>
+                <a href="generated/braindecode.models.MtReNIRS.html">MtReNIRS</a>
               </div>
             </div>
           </div>
@@ -627,41 +629,65 @@
             <span class="venue-subtag bd-mono">eBIOMEDICINE</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Machine learning of brain-specific wavelet biomarkers from clinical EEG across neurological cohorts.</p>
-            <p class="venue-cite">Bomatter, Paillard, Garces, Hipp &amp; Engemann · F. Hoffmann-La Roche (2024)</p>
+            <p class="venue-quote">Braindecode ConvNets detect pathology in clinical EEG and predict age and sex from over 2,600 recordings, separating brain from peripheral signals.</p>
+            <p class="venue-cite">Bomatter et al. · F. Hoffmann-La Roche (eBioMedicine, 2024) · Gemein et al. · Univ. Freiburg (NeuroImage, 2020)</p>
             <span class="venue-cta bd-mono">Read clinical study →</span>
           </div>
         </a>
 
-        <a class="venue-card tone-invite" href="https://github.com/braindecode/braindecode/discussions" target="_blank" rel="noopener">
+        <a class="venue-card tone-cerulean" href="https://doi.org/10.1088/1741-2552/abca18" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <circle cx="312" cy="96" r="96" stroke="rgba(243,178,120,0.28)" stroke-dasharray="5 5" stroke-width="1.4"/>
-            <path d="M24 188 Q86 154 148 188 T272 188 T396 188" stroke="rgba(243,178,120,0.34)" stroke-width="1.6"/>
+            <g stroke="rgba(255,255,255,0.15)" stroke-width="1">
+              <line x1="40" y1="84" x2="344" y2="204"/>
+              <line x1="40" y1="144" x2="344" y2="204"/>
+              <line x1="40" y1="204" x2="344" y2="124"/>
+              <line x1="40" y1="144" x2="344" y2="124"/>
+            </g>
+            <circle cx="344" cy="124" r="8" fill="rgba(242,176,119,0.55)"/>
+            <circle cx="344" cy="204" r="10" fill="rgba(137,200,247,0.6)"/>
           </svg>
           <div class="venue-brand-head">
-            <img class="venue-logo is-compact dark-light" src="_static/braindecode_long_dark.svg" alt="Braindecode" width="168" height="27" loading="lazy" decoding="async"/>
-            <span class="venue-subtag is-invite bd-mono">COMMUNITY</span>
+            <span class="venue-wordmark">J. Neural Eng.</span>
+            <span class="venue-subtag bd-mono">SELF-SUPERVISED</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote venue-invite-title">Your next paper here :)</p>
-            <p class="venue-cite">Working on an EEG, iEEG, MEG, fNIRS, or sEMG study with Braindecode? Tell us about your paper, push weights to Hugging Face, or add your architecture to the zoo.</p>
-            <span class="venue-cta bd-mono">Share your work with us →</span>
+            <p class="venue-quote">Self-supervised pretraining on unlabeled sleep and clinical EEG, the origin of Braindecode's relative-positioning sampler, and dynamic spatial filtering that learns to ignore corrupted channels.</p>
+            <p class="venue-cite">Banville, Chehab, Hyvärinen, Engemann &amp; Gramfort (J. Neural Eng., 2021) · Dynamic spatial filtering, Banville et al. (NeuroImage, 2022)</p>
+            <span class="venue-cta bd-mono">Read SSL paper →</span>
           </div>
         </a>
 
-        <a class="venue-card tone-cerulean" href="https://openreview.net/forum?id=5W7n3aXjGP" target="_blank" rel="noopener">
+        <a class="venue-card tone-slate" href="https://doi.org/10.3389/fnins.2019.01275" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <path d="M18 176 Q68 124 118 176 T218 176 T318 176 T396 176" stroke="rgba(242,176,119,0.36)" stroke-width="1.6"/>
-            <path d="M18 212 Q68 164 118 212 T218 212 T318 212 T396 212" stroke="rgba(137,200,247,0.28)" stroke-width="1.3"/>
+            <circle cx="110" cy="150" r="48" stroke="rgba(255,255,255,0.16)" stroke-width="1.2"/>
+            <circle cx="200" cy="150" r="48" stroke="rgba(137,200,247,0.34)" stroke-width="1.4"/>
+            <circle cx="290" cy="150" r="48" stroke="rgba(242,176,119,0.38)" stroke-width="1.4"/>
           </svg>
           <div class="venue-brand-head">
-            <img class="venue-logo is-tall dark-light" src="_static/venue_logos/neurips-lockup-white.svg" alt="NeurIPS" width="142" height="42" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">METHODS</span>
+            <span class="venue-wordmark">Front. Neurosci.</span>
+            <span class="venue-subtag bd-mono">MOTOR IMAGERY</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Convolutional Monge-mapping normalization for sleep EEG, differentiable invariance layers, and multi-scale wavelet pretraining run on Braindecode.</p>
-            <p class="venue-cite">CMMN (Gnassounou et al., 2023) · AugNet (Rommel et al., 2022) · PhysioWave (Chen et al., 2025)</p>
-            <span class="venue-cta bd-mono">Read NeurIPS paper →</span>
+            <p class="venue-quote">Teams in Xi'an, Gumi and Beijing decode motor imagery with Braindecode: a multiscale filter-bank CNN, a capsule network, and same-limb baselines.</p>
+            <p class="venue-cite">Wu et al. · Xidian Univ. (Front. Neurosci., 2019) · Ha &amp; Jeong · Kumoh National Institute of Technology (Sensors, 2019) · Ma, Qiu &amp; He · CAS (IEEE TNSRE, 2022)</p>
+            <span class="venue-cta bd-mono">Read Frontiers paper →</span>
+          </div>
+        </a>
+
+        <a class="venue-card tone-navy" href="https://arxiv.org/abs/2411.07249" target="_blank" rel="noopener">
+          <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
+            <ellipse cx="198" cy="152" rx="124" ry="54" stroke="rgba(137,200,247,0.28)" stroke-width="1.4"/>
+            <ellipse cx="198" cy="152" rx="124" ry="54" transform="rotate(26 198 152)" stroke="rgba(255,255,255,0.14)" stroke-width="1.2"/>
+            <ellipse cx="198" cy="152" rx="124" ry="54" transform="rotate(-26 198 152)" stroke="rgba(242,176,119,0.26)" stroke-width="1.2"/>
+          </svg>
+          <div class="venue-brand-head">
+            <img class="venue-logo dark-light" src="_static/venue_logos/iclr-white.svg" alt="ICLR" width="136" height="38" loading="lazy" decoding="async"/>
+            <span class="venue-subtag bd-mono">DOMAIN SHIFT</span>
+          </div>
+          <div class="venue-body">
+            <p class="venue-quote">Source-free EEG adaptation under label shift, tested on Braindecode sleep-staging models, and domain-adversarial training with Braindecode's Deep ConvNet.</p>
+            <p class="venue-cite">SPDIM · Li, Kawanabe &amp; Kobler · ATR, RIKEN &amp; NAIST (ICLR 2025) · ELS · Zhang et al. · CAS Inst. of Automation (ICLR 2023)</p>
+            <span class="venue-cta bd-mono">Read ICLR paper →</span>
           </div>
         </a>
 
@@ -681,25 +707,19 @@
           </div>
         </a>
 
-        <a class="venue-card tone-navy" href="https://openreview.net/forum?id=rWkk4373xa" target="_blank" rel="noopener">
+        <a class="venue-card tone-copper" href="https://pure.ulster.ac.uk/en/publications/9f9d76be-d102-42a9-aa17-300b5df0451a" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <g stroke="rgba(255,255,255,0.15)" stroke-width="1">
-              <line x1="40" y1="84" x2="344" y2="204"/>
-              <line x1="40" y1="144" x2="344" y2="204"/>
-              <line x1="40" y1="204" x2="344" y2="124"/>
-              <line x1="40" y1="144" x2="344" y2="124"/>
-            </g>
-            <circle cx="344" cy="124" r="8" fill="rgba(242,176,119,0.55)"/>
-            <circle cx="344" cy="204" r="10" fill="rgba(137,200,247,0.6)"/>
+            <path d="M18 176 Q68 124 118 176 T218 176 T318 176 T396 176" stroke="rgba(242,176,119,0.36)" stroke-width="1.6"/>
+            <path d="M18 212 Q68 164 118 212 T218 212 T318 212 T396 212" stroke="rgba(137,200,247,0.28)" stroke-width="1.3"/>
           </svg>
           <div class="venue-brand-head">
-            <img class="venue-logo dark-light" src="_static/venue_logos/iclr-white.svg" alt="ICLR" width="136" height="38" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">AUGMENTATION</span>
+            <span class="venue-wordmark">IEEE TBME</span>
+            <span class="venue-subtag bd-mono">SPEECH · fNIRS</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Class-wise automatic differentiable data augmentation for sleep staging and motor-imagery EEG, contributed directly to braindecode.augmentation.</p>
-            <p class="venue-cite">CADDA · Rommel, Moreau, Paillard &amp; Gramfort (ICLR 2022)</p>
-            <span class="venue-cta bd-mono">Read ICLR paper →</span>
+            <p class="venue-quote">Bimodal EEG-fNIRS decoding of overt and imagined speech, and image classification from low-density EEG with Braindecode's EEGNet.</p>
+            <p class="venue-cite">Cooney, Folli &amp; Coyle · Ulster Univ. (IEEE TBME, 2021) · Guenther, Kosmyna &amp; Maes · MIT Media Lab &amp; TUM (Sci. Reports, 2024)</p>
+            <span class="venue-cta bd-mono">Read TBME paper →</span>
           </div>
         </a>
 
@@ -721,37 +741,19 @@
           </div>
         </a>
 
-        <a class="venue-card tone-cerulean" href="https://github.com/facebookresearch/neuroai" target="_blank" rel="noopener">
+        <a class="venue-card tone-invite" href="https://github.com/braindecode/braindecode/discussions" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <ellipse cx="198" cy="152" rx="124" ry="54" stroke="rgba(137,200,247,0.28)" stroke-width="1.4"/>
-            <ellipse cx="198" cy="152" rx="124" ry="54" transform="rotate(26 198 152)" stroke="rgba(255,255,255,0.14)" stroke-width="1.2"/>
-            <ellipse cx="198" cy="152" rx="124" ry="54" transform="rotate(-26 198 152)" stroke="rgba(242,176,119,0.26)" stroke-width="1.2"/>
+            <circle cx="312" cy="96" r="96" stroke="rgba(243,178,120,0.28)" stroke-dasharray="5 5" stroke-width="1.4"/>
+            <path d="M24 188 Q86 154 148 188 T272 188 T396 188" stroke="rgba(243,178,120,0.34)" stroke-width="1.6"/>
           </svg>
           <div class="venue-brand-head">
-            <img class="venue-logo is-compact dark-light" src="_static/venue_logos/meta-brainai-white.png" alt="Meta Brain &amp; AI" width="156" height="33" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">BRAIN &amp; AI</span>
+            <img class="venue-logo is-compact dark-light" src="_static/braindecode_long_dark.svg" alt="Braindecode" width="168" height="27" loading="lazy" decoding="async"/>
+            <span class="venue-subtag is-invite bd-mono">COMMUNITY</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Meta Brain &amp; AI co-leads tracks in the NeurIPS 2026 EEG/EMG Challenge and builds NeuralTrain and NeuralBench directly on Braindecode.</p>
-            <p class="venue-cite">Meta Brain &amp; AI · facebookresearch/neuroai · NeurIPS 2026 Challenge</p>
-            <span class="venue-cta bd-mono">Explore NeuroAI suite →</span>
-          </div>
-        </a>
-
-        <a class="venue-card tone-copper" href="https://github.com/scikit-adaptation/skada-bench" target="_blank" rel="noopener">
-          <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
-            <circle cx="110" cy="150" r="48" stroke="rgba(255,255,255,0.16)" stroke-width="1.2"/>
-            <circle cx="200" cy="150" r="48" stroke="rgba(137,200,247,0.34)" stroke-width="1.4"/>
-            <circle cx="290" cy="150" r="48" stroke="rgba(242,176,119,0.38)" stroke-width="1.4"/>
-          </svg>
-          <div class="venue-brand-head">
-            <img class="venue-logo is-compact dark-light" src="_static/venue_logos/tmlr-white.svg" alt="TMLR" width="128" height="32" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">+ CVPR 2026</span>
-          </div>
-          <div class="venue-body">
-            <p class="venue-quote">Realistic unsupervised domain-adaptation validation across cross-subject BCI cohorts and test-time calibration for EEG-to-image retrieval.</p>
-            <p class="venue-cite">SKADA-Bench (Lalou, Gnassounou et al., TMLR) · SATTC (Huang &amp; Zhu, CVPR 2026)</p>
-            <span class="venue-cta bd-mono">Explore benchmark code →</span>
+            <p class="venue-quote venue-invite-title">Your next paper here :)</p>
+            <p class="venue-cite">Working on an EEG, iEEG, MEG, fNIRS, or sEMG study with Braindecode? Tell us about your paper, push weights to Hugging Face, or add your architecture to the zoo.</p>
+            <span class="venue-cta bd-mono">Share your work with us →</span>
           </div>
         </a>
       </div>
@@ -1403,7 +1405,7 @@
               <h3>Get started</h3>
               <ul>
                 <li><a href="install/install.html">Installation</a></li>
-                <li><a href="auto_examples/index.html">Tutorials</a></li>
+                <li><a href="tutorials.html">Tutorials</a></li>
                 <li><a href="models/channel_strategies.html">Channel strategies</a></li>
                 <li><a href="auto_examples/model_building/plot_bcic_iv_2a_moabb_cropped.html#cropped-inference">Cropped inference</a></li>
                 <li><a href="api.html">API reference</a></li>
@@ -1468,7 +1470,7 @@
     :caption: Get Started
 
     Install <install/install>
-    Tutorials <auto_examples/index>
+    Tutorials <tutorials>
     Models <models/models>
 
 .. toctree::

@@ -183,6 +183,9 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
     .. footbibliography::
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -252,6 +255,7 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
                         attn_drop=attn_drop,
                         proj_drop=drop_prob,
                         rotary_runs=self.n_chans,
+                        rotary_run_len=self.patch_embed.n_patches(self.n_times),
                     ),
                     TimmMlp(
                         embed_dim,
@@ -267,6 +271,9 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.norm = norm_layer(embed_dim)
         self.final_layer = nn.Linear(self.n_chans * embed_dim, self.n_outputs)
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
         self._init_parameters()
 
@@ -308,13 +315,14 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor or dict
             Logits of shape ``(batch, n_outputs)``, or the features.
         """
-        # The rotary runs and the head are built for n_chans channels
-        check_n_chans(
-            x,
-            self.n_chans,
-            "TinyMyo",
-            "build the model with the n_chans of this input.",
-        )
+        if torch.jit.is_scripting():
+            # The eager check lives in EEGModuleMixin.__call__ (scripting skips it).
+            check_n_chans(
+                x,
+                self.n_chans,
+                "TinyMyo",
+                "build the model with the n_chans of this input.",
+            )
         # A token per patch of each channel: (batch, C, n_times) -> (batch, C, P, D)
         x = self.patch_embed(x)
         n_patches = x.shape[2]

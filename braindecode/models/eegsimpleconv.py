@@ -15,9 +15,12 @@ import torch
 from torch import nn
 from torchaudio.transforms import Resample
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    return_feature="features",
+)
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     r"""EEGSimpleConv from Ouahidi, YE et al (2023) [Yassine2023]_.
 
@@ -80,6 +83,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     kernel_size : int
         Size of the convolutions kernels.
     return_feature : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If True, return the features before the final linear layer.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
@@ -96,6 +100,9 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         https://github.com/elouayas/EEGSimpleConv
 
     """
+
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: conv.weight
 
     def __init__(
         self,
@@ -125,7 +132,6 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
-        self.return_feature = return_feature
         self.resample = (
             Resample(orig_freq=int(self.sfreq), new_freq=int(resampling_freq))
             if self.sfreq != resampling_freq
@@ -177,6 +183,13 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
             old_feature_maps = new_feature_maps
         self.blocks = torch.nn.ModuleList(self.blocks)
         self.final_layer = torch.nn.Linear(old_feature_maps, self.n_outputs)
+        if kernel_size % 2 == 0:
+            self._min_n_times = 1
+        else:
+            min_rs = 2**n_convs
+            self._min_n_times = max(
+                1, int((min_rs - 1) * self.sfreq / resampling_freq) + 1
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -197,7 +210,4 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         for seq in self.blocks:
             feat = seq(feat)
         feat = feat.mean(dim=2)
-        if self.return_feature:
-            return feat
-        else:
-            return self.final_layer(feat)
+        return self.final_layer(feat)

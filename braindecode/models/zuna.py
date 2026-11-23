@@ -15,8 +15,8 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import check_n_chans, scaled_dot_product_attention
-from braindecode.models.base import EEGModuleMixin
+from braindecode.functional import scaled_dot_product_attention
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
     warn_if_sfreq_differs,
@@ -219,6 +219,9 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2607.27308
     """
 
+    _time_axis = "fixed"  # fixed: encoder.rotary_cosine is sized by n_times
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_chans
+
     def __init__(
         self,
         # braindecode parameters
@@ -354,14 +357,16 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, self.n_outputs),
         )
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = fine_time_pts
 
+    @deprecated_forward_kwargs(input_tensor="x")
     def forward(
         self,
-        input_tensor: torch.Tensor,
+        x: torch.Tensor,
         return_features: bool = False,
     ):
-        check_n_chans(input_tensor, self.num_channels, "ZUNA")
-        patch_tokens = self.patch_embedding(input_tensor)
+        patch_tokens = self.patch_embedding(x)
         token_latents = self.encoder(patch_tokens)
         structured_latents = token_latents.reshape(
             token_latents.shape[0], self.num_channels, -1, self.latent_dim

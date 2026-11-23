@@ -332,19 +332,55 @@ search_results = pd.DataFrame(search.cv_results_)
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+plt.rcdefaults()  # importing MOABB applies seaborn's "whitegrid" style globally
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+    }
+)
+
 # Create a pivot table for the heatmap
 pivot_table = search_results.pivot(
     index="param_optimizer__lr",
     columns="param_module__drop_prob",
     values="mean_test_score",
 )
-# Create the heatmap
-fig, ax = plt.subplots()
-sns.heatmap(pivot_table, annot=True, fmt=".3f", cmap="YlGnBu", cbar=True)
-plt.title("Grid Search Mean Test Scores")
-plt.ylabel("Learning Rate")
-plt.xlabel("Dropout Probability")
-plt.tight_layout()
+
+
+def scientific(value):
+    """Write a learning rate as mantissa x 10^exponent, e.g. 6.25 x 10^-3."""
+    mantissa, exponent = f"{value:.2e}".split("e")
+    return rf"${float(mantissa):g} \times 10^{{{int(exponent)}}}$"
+
+
+# Four balanced classes: chance accuracy is 0.25, the lower end of the scale
+chance = 1 / n_classes
+best = pivot_table.to_numpy().max()
+fig, ax = plt.subplots(figsize=(5.5, 3))
+sns.heatmap(
+    pivot_table,
+    annot=True,
+    fmt=".3f",
+    cmap="Blues",
+    vmin=chance,
+    vmax=best,
+    cbar_kws={"label": f"Mean CV accuracy (chance = {chance:.2f})"},
+    yticklabels=[scientific(lr) for lr in pivot_table.index],
+    ax=ax,
+)
+ax.collections[0].colorbar.set_ticks(
+    [chance, best], labels=[f"{chance:.2f}", f"{best:.2f}"]
+)
+ax.tick_params(axis="y", rotation=0)
+ax.set_ylabel("Learning rate")
+ax.set_xlabel("Dropout probability")
+fig.tight_layout()
 plt.show()
 
 ###########################################################################

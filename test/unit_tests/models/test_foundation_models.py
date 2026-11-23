@@ -657,7 +657,7 @@ def test_labram_forward_none_ch_names_wrong_count_raises(chs_info, n_outputs):
     model = _small_labram_for_ch_names(chs_info, n_outputs)
     x = torch.randn(1, 22, 400)  # not 128
 
-    with pytest.raises(ValueError, match="ch_names is None"):
+    with pytest.raises(ValueError, match="built for n_chans=128 and got 22 channels"):
         model(x)
 
 
@@ -1423,7 +1423,7 @@ def test_luna_impulse_patch_has_real_spectrum(device, n_times):
     model.freq_embed.frequency_to_embed.register_forward_pre_hook(
         lambda module, args: captured.append(args[0])
     )
-    model(signal, channel_locations=torch.ones(1, 3, 3, device=device))
+    model(signal, pos=torch.ones(1, 3, 3, device=device))
 
     magnitude, phase = captured[0][0, :, -1].chunk(2, dim=-1)
     expected = torch.tensor([torch.pi, 0, 0], device=device)[:, None]
@@ -1467,7 +1467,7 @@ def test_luna_matches_explicit_locations_when_channel_count_changes():
         x = torch.randn(2, len(expected), 80)
         explicit = expected.expand(len(x), -1, -1)
         with torch.no_grad():
-            torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
+            torch.testing.assert_close(model(x), model(x, pos=explicit))
 
 
 @pytest.mark.parametrize("assign", [False, True], ids=["to_empty", "assign"])
@@ -1798,36 +1798,6 @@ def test_reve_drop_channel_index_follows_device_without_saving_state():
     assert out.is_meta and out.shape == (1, 2)
 
 
-def test_reve_unpickles_legacy_attributes_as_nonpersistent_buffers():
-    import pickle
-
-    chs = [{"ch_name": "Cz"}, {"ch_name": "NOT_A_CH"}, {"ch_name": "F3"}]
-    with pytest.warns(UserWarning, match="NOT_A_CH"):
-        model = REVE(
-            n_outputs=2,
-            chs_info=chs,
-            n_times=400,
-            embed_dim=32,
-            depth=1,
-            heads=2,
-            head_dim=16,
-            on_missing="drop",
-        ).eval()
-    # braindecode 2.0 kept both as plain attributes, which .to() does not move.
-    for name in ("default_pos", "channel_index"):
-        model.__dict__[name] = model._buffers.pop(name)
-        model._non_persistent_buffers_set.discard(name)
-    loaded = pickle.loads(pickle.dumps(model))
-    for name in ("default_pos", "channel_index"):
-        assert name in loaded._buffers
-        assert name not in loaded.__dict__
-        assert name not in loaded.state_dict()
-    loaded.to("meta")
-    assert loaded.default_pos.is_meta and loaded.channel_index.is_meta
-    out = loaded(torch.empty(1, 3, 400, device="meta"))
-    assert out.is_meta and out.shape == (1, 2)
-
-
 # ==============================================================================
 # Tests for CBraMod Model
 # ==============================================================================
@@ -1836,7 +1806,7 @@ def test_reve_unpickles_legacy_attributes_as_nonpersistent_buffers():
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_cbramod_load_weights():
-    model = CBraMod(return_encoder_output=True)
+    model = CBraMod()  # headless: n_outputs=None
     state_dict = torch.hub.load_state_dict_from_url(
         "https://huggingface.co/braindecode/cbramod-pretrained/resolve/main/pytorch_model.bin",
         map_location="cpu",
@@ -2064,16 +2034,14 @@ def test_sleepfm_masked_training_with_autocast(cls):
     assert not torch.equal(before, model.final_layer.weight)
 
 
-def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
+def test_sleepfm_scripted_encode_matches_eager_with_ch_mask():
     model = _small(SleepFM).eval()
     x = torch.randn(2, 3, 1280)
-    missing = torch.tensor([[False, True, False], [False, True, True]])
-    with torch.no_grad(), pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
-        pooled, tokens = model.encode(x, missing)
-    for net in (model, torch.jit.script(model)):
-        expected = net.encode(x, ch_mask=~missing)
-        torch.testing.assert_close(pooled, expected[0])
-        torch.testing.assert_close(tokens, expected[1])
+    real = torch.tensor([[True, False, True], [True, False, False]])
+    with torch.no_grad():
+        expected = model.encode(x, ch_mask=real)
+        scripted = torch.jit.script(model).encode(x, ch_mask=real)
+    torch.testing.assert_close(scripted, expected)
 
 
 @pytest.mark.parametrize(
@@ -2097,19 +2065,6 @@ def test_sleepfm_padded_sample_gives_its_unpadded_output(cls, n_real):
     ch_mask = (torch.arange(3) < n_real).expand(2, 3)
     with torch.no_grad():
         torch.testing.assert_close(padded(x_padded, ch_mask=ch_mask), unpadded(x))
-
-
-@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
-def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
-    model = _small(cls).eval()
-    x = torch.randn(2, 3, 1280)
-    missing = torch.tensor([[False, True, False], [False, False, False]])
-    with torch.no_grad():
-        with pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
-            old = model(x, channel_mask=missing)
-        torch.testing.assert_close(old, model(x, ch_mask=~missing))
-        with pytest.raises(ValueError, match="ch_mask only"):
-            model(x, ch_mask=~missing, channel_mask=missing)
 
 
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
@@ -2559,7 +2514,7 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
 @pytest.mark.parametrize(
     "metadata,pooling,match",
     [
-        (None, "mean", "built for 6 channels but got input with 9"),
+        (None, "mean", "built for n_chans=6 and got 9 channels"),
         (torch.zeros(3, 5), "mean", r"shape \(9, 5\)"),
         (torch.zeros(9, 4), "mean", r"shape \(9, 5\)"),
         (torch.full((9, 5), 7.0), "mean", "modality column"),
@@ -2568,7 +2523,7 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
             "mean",
             "sub-modality",
         ),
-        (torch.zeros(9, 5), "flatten", "pooling='flatten'"),
+        (torch.zeros(9, 5), "flatten", "built for n_chans=6 and got 9 channels"),
     ],
 )
 def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, match):
@@ -3171,14 +3126,14 @@ def test_mapa_flatten_pooling_stays_tied_to_its_montage():
         d_model=64,
         pooling="flatten",
     ).eval()
-    with pytest.raises(ValueError, match="pooling='flatten'"):
+    with pytest.raises(ValueError, match="built for n_chans=5 and got 8 channels"):
         mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), MAPA.sensor_indices(MAPA_SUBJECT_B))
 
 
 @pytest.mark.parametrize(
     "sensor_indices,match",
     [
-        (None, "got input with 8 channels"),
+        (None, "built for n_chans=5 and got 8 channels"),
         (torch.zeros(3, 3, dtype=torch.long), r"shape \(8, 3\)"),
         (torch.zeros(8, 3), "must hold integers"),
         (torch.full((8, 3), 75), "region slots below 75"),
@@ -3191,7 +3146,7 @@ def test_mapa_bad_sensor_indices_are_rejected(mapa_model, sensor_indices, match)
 
 
 def test_mapa_window_shorter_than_one_slow_token_is_rejected(mapa_model):
-    with pytest.raises(ValueError, match="at least 448 samples"):
+    with pytest.raises(ValueError, match="needs at least 448 time samples"):
         mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 256))
 
 
@@ -3266,7 +3221,7 @@ def test_mapa_session_normalization_reads_another_subject():
     [
         ((1, 5, 2048), "takes a spectrogram"),
         ((1, 5, 19, 32), "takes a spectrogram"),
-        ((1, 5, 20, 4), "at least 8 frames"),
+        ((1, 5, 20, 4), "needs at least 8 time samples"),
     ],
 )
 def test_mapa_session_normalization_rejects_bad_input(shape, match):
@@ -3589,7 +3544,7 @@ def test_duin_rejects_invalid_geometry():
     with pytest.raises(ValueError, match="product of strides"):
         DuIN(n_chans=3, n_outputs=2, n_times=60, **{**_DUIN_SMALL, "strides": (3, 1)})
     model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL)
-    with pytest.raises(ValueError, match="time samples"):
+    with pytest.raises(ValueError, match="built for n_times=60 and got 40 samples"):
         model(torch.randn(1, 3, 40))
 
 
@@ -3696,6 +3651,18 @@ def test_labram_warns_when_tokenizer_overrides_embed_dim():
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*instead of the given embed_dim")
         Labram(n_chans=4, n_outputs=2, n_times=1000)  # defaults agree
+
+
+def test_labram_free_window_length_and_temporal_embedding_limit():
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    model = Labram(
+        n_chans=3, n_outputs=2, n_times=600, num_layers=1, num_heads=4
+    ).eval()
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, 200), ch_names=names).shape == (2, 2)
+        assert model(torch.randn(2, 3, 1200), ch_names=names).shape == (2, 2)
+    with pytest.raises(ValueError, match="exceeding temporal_embedding capacity"):
+        model(torch.randn(2, 3, 17 * 200), ch_names=names)
 
 
 # Frozen pre-reuse expression from 3991b3e6. Never call candidate rotary helpers.
@@ -3897,12 +3864,12 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
     x = torch.randn(2, 4, 80)
     locations = torch.randn(2, 4, 3)
     with torch.no_grad():
-        expected = old(x, channel_locations=locations)
+        expected = old(x, pos=locations)
         if scripted:
             old_script = torch.jit.script(old)
             model = torch.jit.script(model)
             torch.testing.assert_close(
-                old_script(x, channel_locations=locations), expected
+                old_script(x, pos=locations), expected
             )
-        actual = model(x, channel_locations=locations)
+        actual = model(x, pos=locations)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)

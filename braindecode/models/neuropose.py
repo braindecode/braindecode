@@ -198,6 +198,10 @@ class NeuroPose(EEGModuleMixin, nn.Module):
        and Benchmarks. arXiv:2412.02725
     """
 
+    _time_axis = "free"
+    _dense_conversion = True
+    _channel_axis = "fixed"  # fixed: final_layer.weight is sized by n_chans
+
     def __init__(
         self,
         # braindecode parameters
@@ -326,6 +330,10 @@ class NeuroPose(EEGModuleMixin, nn.Module):
             in_features=decoder_channels[-1] * n_electrodes,
             out_features=self.n_outputs,
         )
+        min_time = 1
+        for pool_time, _ in encoder_pool_sizes:
+            min_time *= pool_time
+        self._min_n_times = min_time
         self._init_parameters()
 
     def _init_parameters(self) -> None:

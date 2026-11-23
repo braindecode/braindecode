@@ -18,7 +18,6 @@ from torch import Tensor, nn
 
 from braindecode.functional import (
     check_ch_mask,
-    check_n_chans,
     init_weights_,
     pad_or_crop_to_patches,
 )
@@ -32,6 +31,15 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
     :bdg-secondary:`Recurrent`
+
+    .. figure:: ../_static/model/meggpt_arch.png
+       :align: center
+       :alt: MEG-GPT architecture
+       :width: 1000px
+
+       MEG-GPT predicting the next token from token, channel, position and
+       optional extra embeddings through a Transformer decoder, reproduced from
+       [huang2026meggpt]_ (CC BY 4.0).
 
     .. versionadded:: 2.1
 
@@ -177,8 +185,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     on_non_divisible : {"pad", "crop", "error"}, default="pad"
         How a window that is not a multiple of the segment length is handled:
         right zero-padded, cropped, or rejected.
-    return_features : bool, default=False
-        Whether ``forward`` returns the feature dictionary by default.
 
     Input shape
     -----------
@@ -202,6 +208,9 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
     `License <https://github.com/OHBA-analysis/MEG-GPT/blob/main/LICENSE>`_
     """
+
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_embedding
 
     def __init__(
         self,
@@ -229,7 +238,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         drop_prob: float = 0.2,
         embedding_init_bound: float = 0.05,
         on_non_divisible: str = "pad",
-        return_features: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -243,7 +251,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         _check_on_non_divisible(on_non_divisible)
         self.segment_len = n_patches[0] * patch_lens[0]
         self.on_non_divisible = on_non_divisible
-        self.return_features = return_features
         self.n_last_steps = n_last_steps
         # Read again by reset_parameters, through _init_parameters.
         self.embedding_init_bound = embedding_init_bound
@@ -279,7 +286,15 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Sequential(
             nn.Flatten(), nn.Linear(self.n_chans * embed_dim, self.n_outputs)
         )
+        self._n_times_step = self.segment_len
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.segment_len
         self._init_parameters()
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        return bool(self._call_arg(args, kwargs, "return_features"))
 
     def _init_parameters(self) -> None:
         # Reference initialisation (meg_gpt/optim/initializer.py): Xavier linear
@@ -294,7 +309,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     def forward(
         self,
         x: Tensor,
-        return_features: Optional[bool] = None,
+        return_features: bool = False,
         ch_mask: Optional[Tensor] = None,
         token_mask: Optional[Tensor] = None,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
@@ -306,15 +321,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         zeros before positions and causal context, not before tokenization.
         See :meth:`encode_tokens` for next-token targets and loss selection.
         """
-        if return_features is None:
-            return_features = self.return_features
-        if not return_features:  # the flattened head is tied to the channels
-            check_n_chans(
-                x,
-                self.n_chans,
-                "MEGGPT",
-                "build the model with the chs_info of this montage.",
-            )
         ch_mask = check_ch_mask(ch_mask, x)  # (batch, n_chans) or None
         if ch_mask is not None:
             if not return_features:

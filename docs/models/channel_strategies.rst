@@ -220,6 +220,58 @@ or ``trainable=True``. Batches of :func:`~braindecode.datasets.pad_channels_coll
 with ``pos`` and ``ch_mask``, work as they are. The layer reads the montage of each
 sample from its positions.
 
+Mask and position arguments
+===========================
+
+``forward`` takes the signal as ``x``. The other per-sample inputs, passed by keyword:
+
+.. list-table::
+    :header-rows: 1
+    :widths: 18 30 52
+
+    - - Argument
+      - Shape
+      - Meaning and models
+    - - ``ch_mask``
+      - ``(batch, n_chans)`` bool
+      - ``True`` for real channels of a padded batch
+        (:func:`~braindecode.datasets.pad_channels_collate`). BBL, BIOT, BaRISTA,
+        BrainBERT, Brant, CBraMod, CORTEG, DIVER1, EpiNT, GeoNIRS, JungMAE, LUNA,
+        Labram, MAPA, MEGGPT, MVPFormer, MtReNIRS, PopulationTransformer, REVE, SleepFM,
+        SleepFMStager.
+    - - ``pos``
+      - ``(batch, n_chans, 3)`` float
+      - Electrode positions in metres; default those of ``chs_info``. CORTEG, LUNA,
+        REVE.
+    - - ``coordinates``
+      - ``(batch, n_chans, 4)`` float
+      - Standardized position and chromophore (0 HbO, 1 HbR). MtReNIRS.
+    - - ``geometry``
+      - ``(batch, n_pairs, 6)`` float
+      - Geometry vector of each optode pair. GeoNIRS.
+    - - ``coords``
+      - ``(batch, n_chans, 3)`` int
+      - Integer coordinates. PopulationTransformer.
+    - - ``mask``
+      - ``(batch, n_chans, n_patches)``
+      - ``1`` hides a patch (masked pretraining). CBraMod, CSBrain, CodeBrain.
+    - - ``mask``
+      - ``(batch, n_chans, n_times)`` bool
+      - ``True`` hides a sample; LUNA hides every patch holding one. LUNA, NICE.
+    - - ``token_mask``
+      - ``(batch, n_chans, n_times)`` bool
+      - ``True`` hides a token. MEGGPT.
+    - - ``temporal_mask``
+      - ``(batch, n_times)`` or ``(batch, n_patches)`` bool
+      - ``True`` hides a sample (BBL) or marks a padded patch (SleepFMStager).
+    - - ``spectrogram_mask``
+      - shape of ``compute_spectrogram``
+      - ``True`` bins are visible to the encoder. TFMTokenizer.
+
+The old keywords ``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor``, LUNA's
+``channel_locations`` and SleepFM's ``channel_mask`` still work with a ``FutureWarning``
+until 2.3.
+
 Saved state and TorchScript
 ===========================
 
@@ -229,6 +281,55 @@ within 15 mm. An unfitted map raises. The state of the layer (the latent attenti
 parcel mixing, the fitted covariance) lives under ``channel_layer.*``, so a backbone
 checkpoint without these keys still loads. The layer runs in eager mode, and TorchScript
 works under ``"native"`` only.
+
+.. _adapting-a-built-model:
+
+************************
+ Adapting a built model
+************************
+
+A model that has already been trained or loaded can be adapted in place to another
+montage or sampling rate with :meth:`~braindecode.models.EEGModuleMixin.adapt_input`,
+without adding keys to its ``state_dict``:
+
+.. code-block:: python
+
+    from braindecode.datasets import pad_channels_collate
+    from braindecode.models import EEGNet
+
+    model = EEGNet(chs_info=train_chs, n_outputs=4, n_times=1000, sfreq=250)
+
+    # Fixed source montage and 500 Hz -> 250 Hz in-model resampling
+    model.adapt_input(chs_info=eval_chs, channel_strategy="spline", sfreq=500)
+    y = model(x_500hz)  # x_500hz: (batch, len(eval_chs), 2000)
+
+    # Mixed-montage batches from windows with set_return_ch_pos(True)
+    model.adapt_input(channel_strategy="spline")  # chs_info=None: per-sample pos
+    X, y_true, ind, pos, ch_mask = pad_channels_collate(batch)
+    y = model(X, pos=pos, ch_mask=ch_mask)
+
+- **Montage.** ``chs_info`` (``channel_strategy`` defaults to the one of an earlier
+  ``adapt_input`` call, else ``"nearest"``) adds a
+  :class:`~braindecode.modules.ChannelLayer` from that montage onto the montage the
+  model was built with. ``channel_strategy`` alone maps each sample from the ``pos`` and
+  ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate` with
+  ``set_return_ch_pos(True)``, so mixed-montage batches also reach native convolutional
+  models such as :class:`~braindecode.models.EEGNet`. A model built without
+  ``chs_info``, built with a ``channel_strategy`` (pass ``chs_info`` to ``forward``
+  instead), or taking MEG, fNIRS, sEMG or non-electrode channels raises a
+  ``ValueError``.
+- **Stateless strategies only.** ``"wiener"``, ``"latent"`` and ``"source"`` with
+  ``trainable=True`` raise a ``ValueError``: they add fitted or trained tensors. The
+  ``state_dict`` keys stay those of the built model, so checkpoints load with
+  ``strict=True`` before and after ``adapt_input``.
+- **Sampling rate.** An integer ``sfreq`` resamples the input to ``model.sfreq`` before
+  the length checks and the channel mapping. ``sfreq=model.sfreq`` removes it.
+- **Saved with the model.** ``get_config()["input_adaptation"]`` holds the adaptation,
+  and ``from_config`` and ``from_pretrained`` apply it again. A model without adaptation
+  has no such entry.
+- **Eager only.** ``model(x)`` and ``model.forward(x)`` both apply the adaptation.
+  ``torch.jit.script`` of an adapted model raises ``NotImplementedError``;
+  ``torch.export`` and ``torch.jit.trace`` keep the adaptation.
 
 ***************************
  Reconstruct a bad channel

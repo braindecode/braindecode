@@ -288,6 +288,10 @@ class BrainModule(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: input_projection.weight
+    _feature_axis = 1
+
     def __init__(
         self,
         # braindecode EEGModuleMixin parameters
@@ -506,6 +510,7 @@ class BrainModule(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             nn.Flatten(start_dim=1),
             nn.Linear(final_hidden_dim, self.n_outputs),
         )
+        self._min_n_times = 1
 
     def forward(
         self, x: torch.Tensor, subject_index: torch.Tensor | None = None
@@ -530,8 +535,6 @@ class BrainModule(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             raise ValueError(
                 f"Expected 3D input (batch, channels, time), got shape {x.shape}"
             )
-        if x.shape[1] != self.n_chans:
-            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}")
 
         # Apply the spatial channel merger first (if enabled): remaps the channel
         # axis n_chans -> n_virtual_channels before every other transform.

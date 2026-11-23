@@ -12,8 +12,7 @@ from typing import Dict, Optional, Union
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import check_n_chans
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import (
     FeedForwardBlock,
@@ -32,6 +31,9 @@ MIREPNET_CHANNEL_ORDER = [
 ]
 
 
+@deprecated_init_flags(
+    return_features={"features": "features", "cls_token": "cls_token"},
+)
 class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""MIRepNet from Liu et al. (2026) [liu2026mirepnet]_.
 
@@ -139,6 +141,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         Attention-score multiplier. ``None`` uses the released
         ``embed_dim ** -0.5`` scale.
     return_features : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         Whether ``forward`` returns the unified feature dictionary by default.
 
     Notes
@@ -156,6 +159,9 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     .. [mirepnetcode] Released implementation:
        https://github.com/staraink/MIRepNet
     """
+
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: embedding.conv2.weight
 
     _channel_target = MIREPNET_CHANNEL_ORDER
 
@@ -226,7 +232,6 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError("attention_scale must be positive or None.")
 
         self.embed_dim = embed_dim
-        self.return_features = return_features
         self.mapping = {
             "embedding.projection.0.weight": "embedding.projection.weight",
             "embedding.projection.0.bias": "embedding.projection.bias",
@@ -268,16 +273,14 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             ]
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self._min_n_times = filter_time_length + pool_time_length - 1
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(
-        self, x: Tensor, return_features: Optional[bool] = None
+        self, x: Tensor, return_features: bool = False
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
-        check_n_chans(x, self.n_chans, "MIRepNet")
         tokens = self.transformer(self.embedding(x))
         features = tokens.mean(dim=1)
-        if return_features is None:
-            return_features = self.return_features
         if return_features:
             out: Dict[str, Optional[Tensor]] = {"features": features, "cls_token": None}
             return out

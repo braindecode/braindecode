@@ -136,6 +136,9 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2609.08788
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: encoder.channel_positions is sized by n_chans
+
     def __init__(
         self,
         # signal parameters
@@ -217,6 +220,10 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
             att_drop_prob=att_drop_prob,
         )
         self.final_layer = self._build_head(self.n_outputs)
+        self._min_n_times = patch_size
+        self._n_times_step = patch_stride
+        self._n_times_offset = patch_size
+        self._snaps_in_prepare_inputs = "pad_only"
 
     def _build_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(

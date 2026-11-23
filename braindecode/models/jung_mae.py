@@ -16,7 +16,7 @@ from einops.layers.torch import Rearrange, Reduce
 from torch import nn
 
 from braindecode.functional import (
-    check_n_chans,
+    check_ch_mask,
     init_weights_,
     pad_or_crop_to_patches,
     patch_count,
@@ -170,6 +170,9 @@ class JungMAE(EEGModuleMixin, nn.Module):
     .. footbibliography::
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -294,6 +297,17 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
         # Initialization of the reference
         self._init_parameters()
+        self._n_times_step = self.patch_size
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        return super()._accepts_any_n_chans(args, kwargs) or self._accepts_any_n_times(
+            args, kwargs
+        )
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def _init_parameters(self) -> None:
         """Xavier-uniform weights and zero biases of the Linear layers and the
@@ -305,6 +319,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
         self,
         x: torch.Tensor,
         return_features: bool = False,
+        ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Forward pass of the JungMAE model.
 
@@ -316,6 +331,10 @@ class JungMAE(EEGModuleMixin, nn.Module):
         return_features : bool, default=False
             If True, return the input of ``final_layer`` instead of the
             logits.
+        ch_mask : torch.Tensor | None, default=None
+            Pass by keyword. ``(batch_size, n_chans)`` mask with ``True`` for
+            real channels, see :func:`~braindecode.functional.check_ch_mask`.
+            Padded channels are read as missing samples (NaN).
 
         Returns
         -------
@@ -327,13 +346,10 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # Shapes use the symbols of the class docstring: C pairs, P patches of
         # Q samples, tokens of width D.
 
-        if not return_features:
-            check_n_chans(
-                x,
-                self.n_chans,
-                "JungMAE",
-                "use return_features=True to encode another number of HbO/HbR pairs.",
-            )
+        # Padded channels become missing samples: (batch, 2C, n_times)
+        ch_mask = check_ch_mask(ch_mask, x)
+        if ch_mask is not None:
+            x = x.masked_fill(~ch_mask.unsqueeze(-1), float("nan"))
         # A token per patch of each pair, zero where the patch is invalid:
         # (batch, 2C, n_times) -> (batch, C, P, D)
         x = self.encode(x)["foundation"]

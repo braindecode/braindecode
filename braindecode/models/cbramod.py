@@ -15,18 +15,22 @@ from torch import Tensor, nn
 
 from braindecode.functional import (
     check_ch_mask,
-    check_n_chans,
     init_weights_,
     masked_group_norm,
+    patch_count,
     spectral_input,
 )
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
 
 logger = logging.getLogger(__name__)
 
 
+@deprecated_init_flags(
+    identity_head=("return_encoder_output",),
+    return_encoder_output="features",
+)
 class CBraMod(EEGModuleMixin, nn.Module):
     r"""
     **C**\ riss-\ **C**\ ross **Bra**\ in **Mod**\ el for EEG Decoding from Wang et al. (2025) [cbramod]_.
@@ -87,7 +91,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
       to learn EEG representations
     - **Reconstruction Head**: Reconstructs masked EEG patches during pretraining
     - **Task head** (``final_layer``): flatten summary tokens across patches and map to
-       ``n_outputs``; if ``return_encoder_output=True``, return the encoder features instead.
+       ``n_outputs``; ``model(x, return_features=True)`` returns the encoder features instead.
 
     The model is highly efficient, requiring only ~318.9M FLOPs on a typical 16-channel, 10-second
     EEG recording (significantly lower than full attention baselines).
@@ -113,9 +117,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
            from braindecode.models import CBraMod
 
            # Load pre-trained model from Hugging Face Hub
-           model = CBraMod.from_pretrained(
-               "braindecode/cbramod-pretrained", return_encoder_output=True
-           )
+           model = CBraMod.from_pretrained("braindecode/cbramod-pretrained")
+           features = model(x, return_features=True)["features"]
 
        To push your own trained model to the Hub:
 
@@ -150,6 +153,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
     drop_prob : float, default=0.1
         Dropout probability.
     return_encoder_output : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If false (default), the features are flattened and passed through a final linear layer
         to produce class logits of size ``n_outputs``.
         If True, the model returns the encoder output features.
@@ -161,6 +165,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
        In The Thirteenth International Conference on Learning Representations (ICLR 2025).
        https://arxiv.org/abs/2412.07236
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
 
     def __init__(
         self,
@@ -202,10 +209,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
         # padding/cropping a non-divisible time axis at forward time.
-        try:
-            tokenizer_n_times = self.n_times
-        except ValueError:  # unknown length: nothing to check at construction
-            tokenizer_n_times = patch_size
+        tokenizer_n_times = self._signal_param("n_times") or patch_size
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
             n_times=tokenizer_n_times,
@@ -231,12 +235,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
         self._patch_size = patch_size
-        self._encoder_output = return_encoder_output
         self._init_parameters()
 
-        if return_encoder_output:
-            self.final_layer = nn.Identity()
-        elif self._knows_geometry():
+        if self._knows_geometry():
             n_patch = self._n_patch()
             flat_dim = self.n_chans * n_patch * d_model
             self.final_layer = nn.Sequential(
@@ -246,19 +247,20 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.LazyLinear(self.n_outputs)
             )
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        if "_encoder_output" not in state:
-            # Earlier pickles select encoder output with this identity head.
-            self._encoder_output = isinstance(self.final_layer, nn.Identity)
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        return super()._accepts_any_n_chans(args, kwargs) or self._accepts_any_n_times(
+            args, kwargs
+        )
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def reset_head(self, n_outputs):
-        self._n_outputs = n_outputs
-        self._update_init_kwargs(n_outputs=n_outputs)
-        # A head implies a classifier, also when built with return_encoder_output.
-        self._update_init_kwargs(return_encoder_output=False)
-        self._encoder_output = False
+        self._set_n_outputs(n_outputs)
         if self._knows_geometry():
             n_patch = self._n_patch()
             # proj_out reads the encoder output, whose size is d_model.
@@ -273,26 +275,24 @@ class CBraMod(EEGModuleMixin, nn.Module):
         """True when n_chans and n_times are known (given or derivable), so the
         head can be a real Linear instead of a LazyLinear that cannot be saved
         or loaded before a forward pass."""
-        try:
-            self.n_chans, self.n_times
-        except ValueError:
-            return False
-        return True
+        return (
+            self._signal_param("n_chans") is not None
+            and self._signal_param("n_times") is not None
+        )
 
     def _n_patch(self):
-        if self._on_non_divisible == "pad":
-            return -(-self.n_times // self._patch_size)
-        return self.n_times // self._patch_size
+        return patch_count(self.n_times, self._patch_size, self._on_non_divisible)
 
     def _init_parameters(self):
         kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
-        self.apply(
-            partial(
-                init_weights_,
-                weights={(nn.Linear, nn.Conv1d): (kaiming, None)},
-                norms=(nn.BatchNorm1d,),
-            )
+        fn = partial(
+            init_weights_,
+            weights={(nn.Linear, nn.Conv1d): (kaiming, None)},
+            norms=(nn.BatchNorm1d,),
         )
+        for name, child in self.named_children():
+            if name != "final_layer":
+                child.apply(fn)
 
     def forward(
         self,
@@ -303,21 +303,16 @@ class CBraMod(EEGModuleMixin, nn.Module):
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         """``ch_mask``: optional ``(batch, n_chans)`` mask of real channels, see
         :func:`~braindecode.functional.check_ch_mask`. Needs
-        ``return_encoder_output=True`` or ``return_features=True``; the
+        ``return_features=True``; the
         tokens of padded channels are zero. Real channels come first, as
         :func:`~braindecode.datasets.pad_channels_collate` pads: the
         positional convolution reads neighbouring channels."""
         ch_mask = check_ch_mask(ch_mask, x)
-        # The encoder takes any number of channels, the flattened head does not.
-        if self._n_chans_for_jit is not None and not (
-            return_features or self._encoder_output
-        ):
-            check_n_chans(x, self._n_chans_for_jit, "CBraMod")
         key_padding_mask: Optional[Tensor] = None
         if ch_mask is not None:
-            if not return_features and not self._encoder_output:
+            if not return_features:
                 raise ValueError(
-                    "ch_mask needs return_encoder_output=True: the flattened "
+                    "ch_mask needs return_features=True: the flattened "
                     "head is tied to the channels."
                 )
             # Padding may hold NaN, which the patch embedding would spread.

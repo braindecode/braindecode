@@ -196,6 +196,9 @@ class VEMG2Pose(
        Time-Depth Separable Convolutions. arXiv:1904.01619.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: encoder.0.conv.0.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -375,6 +378,9 @@ class VEMG2Pose(
             in_features=head_in,
             out_features=self._head_multiplier * self.n_outputs,
         )
+        # forward clamps n_steps with max(1, ...), so one sample past the
+        # left context is enough for a (single-step) prediction.
+        self._min_n_times = self.left_context + 1
         self._init_parameters()
 
     def _init_parameters(self) -> None:
@@ -402,7 +408,12 @@ class VEMG2Pose(
         )
         self.decoder.apply(_init_weights)
 
-    def forward(self, x: torch.Tensor, y0: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        y0: torch.Tensor | None = None,
+        return_features: bool = False,
+    ):
         """Decode hand pose from raw EMG.
 
         Parameters
@@ -413,15 +424,14 @@ class VEMG2Pose(
             Ground-truth initial pose (Tracking mode). Falls back to zeros
             (Regression mode) when omitted, which is how the released
             ``regression`` checkpoint was trained.
+        return_features : bool, default=False
+            If True, return a dictionary with batch-first encoder ``"features"``,
+            mean-pooled ``"embedding"``, and ``"cls_token"`` before rollout.
         """
         batch_size, _, n_times = x.shape
-        if n_times <= self.left_context:
-            raise ValueError(
-                f"VEMG2Pose consumes a left context of {self.left_context} "
-                f"samples before its first prediction; got n_times={n_times}. "
-                "Use a longer window."
-            )
         features = self.encoder(x)
+        if not torch.jit.is_scripting() and return_features:
+            return {"features": features.transpose(1, 2), "cls_token": None}
 
         # Predictions span the input past the left context, unrolled at
         # ``rollout_rate``.
@@ -502,7 +512,7 @@ class _Conv1dBlock(nn.Module):
                 stride=stride,
                 padding=0,
             ),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Dropout(p=drop_prob),
         )
         self.norm = nn.LayerNorm(normalized_shape=out_channels)

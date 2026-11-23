@@ -64,6 +64,9 @@ class TSception(EEGModuleMixin, nn.Module):
         https://github.com/deepBrains/TSception/blob/master/Models.py
     """
 
+    _time_axis = "fixed"  # fixed: dense_layer.0.weight
+    _channel_axis = "fixed"  # fixed: dense_layer.0.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -217,7 +220,7 @@ class TSception(EEGModuleMixin, nn.Module):
         s_out = self.batch_spatial_lay(s_out)
 
         # Flatten and apply final layers
-        s_out = s_out.view(s_out.size(0), -1)
+        s_out = s_out.reshape(s_out.size(0), -1)
         output = self.dense_layer(s_out)
         output = self.final_layer(output)
         return output

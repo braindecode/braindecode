@@ -7,7 +7,7 @@ from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.fbcnet import _valid_layers
 from braindecode.modules import (
     Conv2dWithConstraint,
@@ -16,6 +16,12 @@ from braindecode.modules import (
 )
 
 
+@deprecated_init_flags(
+    # 2.0 returned only the logits while tracing.
+    return_features=lambda out: (
+        out["logits"] if torch.jit.is_tracing() else (out["logits"], out["features"])
+    ),
+)
 class FBMSNet(EEGModuleMixin, nn.Module):
     r"""FBMSNet from Liu et al (2022) [fbmsnet]_.
 
@@ -75,13 +81,14 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Maximum norm constraint for the convolutional layers.
     linear_max_norm : float, default=0.5
         Maximum norm constraint for the linear layers.
-    return_features : bool, default=False
-        If True, the forward method returns the class logits and the flattened
-        features before the final classification layer.
     filter_parameters : dict, default=None
         Dictionary of parameters to use for the FilterBankLayer.
         If None, a default Chebyshev Type II filter with transition bandwidth of
         2 Hz and stop-band ripple of 30 dB will be used.
+    return_features : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, the forward method returns the class logits and the flattened
+        features before the final classification layer.
     verbose : bool, default False
         Verbose parameter to create the filter using mne.
 
@@ -96,6 +103,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         EEG-based motor imagery decoding.
         https://github.com/Want2Vanish/FBMSNet
     """
+
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: spatial_conv.0.parametrizations.weight.original
 
     def __init__(
         self,
@@ -141,7 +151,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self.kernels_weights = kernels_weights
         self.filter_parameters = filter_parameters or {}
         self.out_channels_spatial = self.n_filters_spat * self.dilatability
-        self.return_features = return_features
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -216,8 +225,14 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             max_norm=linear_max_norm,
         )
+        self._n_times_step = self.stride_factor
+        self.on_non_divisible = "pad"
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = (
+            2 if temporal_layer in ("VarLayer", "StdLayer", "LogVarLayer") else 1
+        ) * self.stride_factor
 
-    def forward(self, x):
+    def forward(self, x, return_features: bool = False):
         """
         Forward pass of the FBMSNet model.
 
@@ -225,14 +240,14 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             Input tensor with shape (batch_size, n_chans, n_times).
+        return_features : bool, default=False
+            If True, return ``{"features": features, "cls_token": None, "logits": logits}``.
 
         Returns
         -------
-        torch.Tensor or tuple[torch.Tensor, torch.Tensor]
-            Output tensor with shape (batch_size, n_outputs). If
-            ``return_features`` is True, a tuple containing the output tensor
-            and flattened features with shape
-            (batch_size, out_channels_spatial * stride_factor) is returned.
+        torch.Tensor or dict
+            Output tensor with shape (batch_size, n_outputs), or feature dict
+            when ``return_features=True``.
             In TorchScript mode, only the output tensor is returned.
         """
         batch, _, _ = x.shape
@@ -250,7 +265,11 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         # shape: (batch, self.out_channels_spatial, 1, n_times)
 
         # Apply some padding to the input to make it divisible by the stride factor
-        x = self.padding_layer(x)
+        rem = x.shape[-1] % self.stride_factor
+        if rem != 0 and self.on_non_divisible == "crop":
+            x = x[..., : x.shape[-1] - rem]
+        elif rem != 0:
+            x = nn.functional.pad(x, (0, self.stride_factor - rem))
         # shape: (batch, self.out_channels_spatial, 1, n_times_padded)
 
         # Reshape for temporal layer
@@ -269,8 +288,8 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         # shape: (batch, n_outputs)
         if torch.jit.is_scripting() or torch.jit.is_tracing():
             return logits
-        if self.return_features:
-            return logits, features
+        if return_features:
+            return {"features": features, "cls_token": None, "logits": logits}
         return logits
 
 

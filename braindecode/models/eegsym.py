@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, List, Tuple, cast
 
 import torch
@@ -162,6 +163,13 @@ class EEGSym(EEGModuleMixin, nn.Module):
        IEEE Transactions on Neural Systems and Rehabilitation Engineering, 28, 2773-2782.
     """
 
+    _time_axis = (
+        "fixed"  # fixed: temporal_merging.grouped_conv.0.weight is sized by n_times
+    )
+    _channel_axis = (
+        "fixed"  # fixed: channel_merging.grouped_conv.0.weight is sized by n_chans
+    )
+
     def __init__(
         self,
         # braidecode parameters
@@ -213,10 +221,24 @@ class EEGSym(EEGModuleMixin, nn.Module):
         ch_names = [cast(dict[str, Any], ch)["ch_name"] for ch in self.chs_info]
         if left_right_chs is None:
             left_chs, right_chs, middle_chs = division_channels_idx(ch_names)
-            try:
-                # Try to match hemispheres based on channel naming
+            available_right = list(right_chs)
+            can_pair = bool(left_chs) and len(left_chs) == len(right_chs)
+            if can_pair:
+                for left in left_chs:
+                    num = re.search(r"\d+", left)
+                    target_r = (
+                        re.sub(r"\d+", str(1 + int(num.group())), left)
+                        if num is not None
+                        else None
+                    )
+                    if target_r in available_right:
+                        available_right.remove(target_r)
+                    else:
+                        can_pair = False
+                        break
+            if can_pair:
                 left_chs, right_chs = zip(*match_hemisphere_chans(left_chs, right_chs))
-            except (ValueError, IndexError):
+            else:
                 # Fallback: if matching fails, treat all channels as one hemisphere
                 # This allows the model to work with arbitrary channel configurations
                 left_chs = ch_names

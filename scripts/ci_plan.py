@@ -87,12 +87,14 @@ UTIL_CORE_SYMBOLS = frozenset(
 CROSS_MODEL_TEST_FILES = frozenset(
     {
         "test/unit_tests/models/test_integration.py",
+        "test/unit_tests/models/test_input_contract.py",
         "test/unit_tests/models/test_model_contract.py",
         "test/unit_tests/models/test_pretrained_compat.py",
         "test/unit_tests/models/test_config.py",
         "test/unit_tests/models/test_model_init.py",
         "test/unit_tests/models/test_huggingface.py",
         "test/unit_tests/models/test_return_features.py",
+        "test/unit_tests/models/test_ssl_contract.py",
         "test/unit_tests/models/test_models.py",
         "test/unit_tests/models/test_model_categorization.py",
         "test/unit_tests/models/test_model_modality.py",
@@ -944,6 +946,7 @@ def compute_plan(
                 impacted_models.update(csv_models)
             impacted_tests.update(
                 {
+                    "test/unit_tests/models/test_input_contract.py",
                     "test/unit_tests/models/test_model_categorization.py",
                     "test/unit_tests/models/test_model_modality.py",
                     "test/unit_tests/models/test_integration.py",
@@ -1078,6 +1081,7 @@ def compute_plan(
                 )
             impacted_tests.add("test/unit_tests/models/test_util.py")
             impacted_tests.add("test/unit_tests/models/test_model_rules.py")
+            impacted_tests.add("test/unit_tests/test_no_error_catching.py")
             impacted_tests.add("test/unit_tests/test_dependencies.py")
             if util_models:
                 impacted_models.update(util_models)
@@ -1096,6 +1100,14 @@ def compute_plan(
             mod = _path_to_module(path)
             if mod:
                 dirty_modules.add(mod)
+            if path.startswith(
+                (
+                    "braindecode/models/",
+                    "braindecode/modules/",
+                    "braindecode/functional/",
+                )
+            ):
+                impacted_tests.add("test/unit_tests/test_no_error_catching.py")
             impacted_tests.add("test/unit_tests/test_dependencies.py")
             continue
 

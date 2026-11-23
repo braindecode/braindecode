@@ -4,12 +4,15 @@
 
 import math
 
-import torch
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin, _too_short_input_error
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    identity_head=("return_feats",),
+    return_feats="features",
+)
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
     r"""Sleep staging architecture from Blanco et al (2020) from [Blanco2020]_
 
@@ -41,6 +44,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         If True, apply batch normalization after both temporal convolutional
         layers.
     return_feats : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
@@ -54,6 +58,9 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         neural networks for sleep stage scoring on a two-channel EEG signal.
         Soft Comput 24, 4067–4079 (2020). https://doi.org/10.1007/s00500-019-04174-1
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: feature_extractor.0.weight
 
     def __init__(
         self,
@@ -132,28 +139,28 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             nn.MaxPool2d((1, max_pool_size)),
         )
 
-        self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
-        self.return_feats = return_feats
+        self.len_last_layer = self._len_last_layer(
+            n_conv_chans, self.n_times, max_pool_size
+        )
 
-        # TODO: Add new way to handle return_features == True
-        if not return_feats:
-            self.final_layer = nn.Sequential(
-                nn.Dropout(drop_prob),
-                nn.Linear(self.len_last_layer, self.n_outputs),
-                nn.Identity(),
-            )
+        self.final_layer = nn.Sequential(
+            nn.Dropout(drop_prob),
+            nn.Linear(self.len_last_layer, self.n_outputs),
+            nn.Identity(),
+        )
 
-    def _len_last_layer(self, n_channels, input_size):
-        self.feature_extractor.eval()
-        with torch.no_grad():
-            try:
-                out = self.feature_extractor(
-                    torch.Tensor(1, n_channels, 1, input_size)
-                )  # batch_size,n_channels,height,width
-            except RuntimeError as exc:
-                raise _too_short_input_error(exc, self.input_shape) or exc
-        self.feature_extractor.train()
-        return len(out.flatten())
+    def _len_last_layer(
+        self, n_conv_chans: int, input_size: int, max_pool_size: int
+    ) -> int:
+        n_time = input_size
+        for kernel_size in (7, 7, 5, 5, 5, 3, 3):
+            n_time = (n_time - kernel_size + 1) // max_pool_size
+            if n_time < 1:
+                raise ValueError(
+                    "The convolutions and poolings leave no time sample: too small "
+                    f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+                )
+        return n_conv_chans * n_time
 
     def forward(self, x):
         """Forward pass.
@@ -166,7 +173,4 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             x = x.unsqueeze(2)
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
-        if self.return_feats:
-            return feats
-        else:
-            return self.final_layer(feats)
+        return self.final_layer(feats)

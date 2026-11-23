@@ -157,6 +157,46 @@ def test_synchronization_dispatch(monkeypatch, device):
     assert calls == ([] if device == "cpu" else [device])
 
 
+def test_registry_models_jsonl_output(tmp_path):
+    out_file = tmp_path / "bench.jsonl"
+    args = parser().parse_args(
+        [
+            "--models",
+            "EEGNet,ShallowFBCSPNet",
+            "--dtype",
+            "float32",
+            "--batch",
+            "2",
+            "--warmup",
+            "1",
+            "--repeats",
+            "2",
+            "--out",
+            str(out_file),
+        ]
+    )
+    rows = bench.benchmark_models(args)
+    assert [row["model"] for row in rows] == ["EEGNet", "ShallowFBCSPNet"]
+    lines = out_file.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    for line, expected_name in zip(lines, ["EEGNet", "ShallowFBCSPNet"]):
+        parsed = json.loads(line)
+        assert set(parsed) == {
+            "model",
+            "device",
+            "dtype",
+            "batch",
+            "eager_ms",
+            "compile_ms",
+        }
+        assert parsed["model"] == expected_name
+        assert parsed["device"] == "cpu"
+        assert parsed["dtype"] == "float32"
+        assert parsed["batch"] == 2
+        assert parsed["eager_ms"] > 0
+        assert parsed["compile_ms"] is None
+
+
 def test_cpu_benchmark_preserves_rng(tiny_benchmark):
     before = torch.random.get_rng_state()
     mps_before = (

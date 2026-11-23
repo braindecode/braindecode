@@ -24,6 +24,14 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-danger:`Foundation Model` :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
+    .. figure:: ../_static/model/bbl_arch.png
+       :align: center
+       :alt: BBL architecture
+       :width: 1000px
+
+       Architecture overview with the dataset-conditional layer, the cortex encoder
+       and the pre-training and fine-tuning heads, reproduced from [bbl]_ (CC BY 4.0).
+
     .. versionadded:: 2.1
 
     BBL is the MEG encoder of *The Brain's Bitter Lesson*, a self-supervised
@@ -154,6 +162,9 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
     `License <https://github.com/neural-processing-lab/the-brains-bitter-lesson/blob/main/LICENSE>`_
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         # braindecode parameters
@@ -235,6 +246,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         # Rows averaged when no subject_index is given.
         self.register_buffer("trained_subjects", torch.ones(n_subjects))
         self.final_layer = nn.Linear(self.features_dim, self.n_outputs)
+        self._min_n_times = 1
 
     def forward(
         self,

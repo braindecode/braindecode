@@ -133,6 +133,9 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         https://github.com/snailpt/MSCFormer
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: cnn.branches.0.1.weight
+
     def __init__(
         self,
         # Base arguments
@@ -195,6 +198,7 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_chans=self.n_chans,
             activation=activation_cnn,
         )
+        self._min_n_times = max(1, pooling_size)
 
         # Number of patches produced by the average pooling, plus one
         # class token.

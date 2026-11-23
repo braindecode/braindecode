@@ -125,10 +125,10 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
     - A single ``drop_prob`` sets the dropout of the residual blocks, the
       positions and the Transformer (all 0.1 in the reference).
     - Odd lengths are handled by rounding the pooled length up and cropping in
-      the decoder, so any input of at most ``n_times`` samples gives one
-      prediction per sample. The positional table is computed instead of
-      stored. The reference checkpoint also stores an unused copy of the
-      Transformer layer that is not part of this model.
+      the decoder, so any input length gives one prediction per sample. The
+      positional table is computed on the fly when an input exceeds the
+      configured ``n_times``. The reference checkpoint also stores an unused
+      copy of the Transformer layer that is not part of this model.
 
     .. versionadded:: 2.0
 
@@ -179,6 +179,10 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
        picking. Nature Communications, 11, 3952.
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: encoder.0.conv.weight
+    _feature_axis = 1
+
     def __init__(
         self,
         # braindecode parameters
@@ -225,7 +229,8 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
                 f"n_filters[-1] ({embed_dim})."
             )
 
-        # Longest input the positional table covers; shorter inputs also work.
+        # Longest input the precomputed positional table covers; longer inputs
+        # compute sinusoidal positions on the fly.
         self.max_n_times = self.n_times
         n_steps = self.max_n_times
         for _ in n_filters:
@@ -277,6 +282,7 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Conv1d(
             n_filters[0], self.n_outputs, final_kernel_size, padding="same"
         )
+        self._min_n_times = 1
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the output convolution for a new number of outputs."""
@@ -287,6 +293,13 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
         )
         self.final_layer = head.to(old_head.weight)
 
+    def _positional_encoding(self, steps: torch.Tensor) -> torch.Tensor:
+        if steps.shape[1] <= self.positional_encoding.shape[0]:
+            return self.positional_encoding[: steps.shape[1]]
+        return sinusoidal_positional_encoding(
+            steps.shape[1], steps.shape[2], device=steps.device
+        ).to(steps.dtype)
+
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Predict logits for every time sample.
@@ -294,19 +307,14 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
         Parameters
         ----------
         x : torch.Tensor
-            Input of shape ``(batch, n_chans, n_times)``. Inputs shorter than
-            the configured ``n_times`` are accepted.
+            Input of shape ``(batch, n_chans, n_times)``. Inputs shorter or
+            longer than the configured ``n_times`` are accepted.
 
         Returns
         -------
         torch.Tensor
             Logits of shape ``(batch, n_outputs, n_times)``.
         """
-        if x.shape[-1] > self.max_n_times:
-            raise ValueError(
-                f"SeizureTransformer was built for at most {self.max_n_times} "
-                f"time samples (n_times), but received {x.shape[-1]}."
-            )
         skips: list[torch.Tensor] = []
         for block in self.encoder:
             x = block(x)
@@ -315,7 +323,7 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
 
         features = self.res_blocks(x)
         steps = self.to_steps(features)
-        steps = steps + self.positional_encoding[: steps.shape[1]]
+        steps = steps + self._positional_encoding(steps)
         steps = self.transformer(self.positional_dropout(steps))
         x = self.to_features(steps) + features
 

@@ -20,6 +20,15 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
 
     :bdg-success:`Convolution`
 
+    .. figure:: ../_static/model/fnirs_cnn1d_arch.png
+       :align: center
+       :alt: FNIRSCNN1D architecture
+       :width: 500px
+
+       Input of the CNN of Trakoolwilaiwan et al.: a filter spanning all HbO and
+       HbR channels slides along time, reproduced from
+       :footcite:`trakoolwilaiwan2018cnn` (CC BY 3.0).
+
     .. versionadded:: 2.1
 
     Two temporal convolutions, an average over time and a linear layer: the
@@ -122,6 +131,9 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
     .. footbibliography::
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: temporal_conv1.conv.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -206,6 +218,7 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
             in_features=n_filters_conv2,
             out_features=self.n_outputs,
         )
+        self._min_n_times = max(1, pool_size)
 
     def forward(
         self,

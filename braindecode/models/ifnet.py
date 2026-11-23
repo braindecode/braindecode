@@ -106,6 +106,9 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         https://github.com/Jiaheng-Wang/IFNet
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: feature_block.spatial_conv.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -186,6 +189,10 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         )
 
         self.flatten = Rearrange("batch ... -> batch (...)")
+        self._n_times_step = self.stride_factor
+        self.on_non_divisible = "pad"
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = self.stride_factor
 
         # Initialize parameters
         self._init_parameters()
@@ -231,7 +238,7 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         # x is now of shape (batch_size, n_bands * n_chans, n_times)
 
         # Pass through the feature block
-        x = self.feature_block(x)
+        x = self.feature_block(x, self.on_non_divisible)
 
         # Flatten and pass through the final layer
         x = self.flatten(x)
@@ -396,13 +403,16 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         # Dropout
         self.dropout_layer = nn.Dropout(self.drop_prob)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, on_non_divisible: str = "pad") -> torch.Tensor:
         """Forward pass.
 
         Parameters
         ----------
         x : torch.Tensor
             Input tensor of shape (batch_size, in_channels, n_times).
+        on_non_divisible : str
+            ``"crop"`` drops trailing samples, anything else pads them, so the
+            segments split after the temporal filters.
 
         Returns
         -------
@@ -427,7 +437,11 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         x = self.inter_frequency(x_t)
 
         # Reshape for temporal segmentation
-        x = self.padding_layer(x)
+        rem = x.shape[-1] % self.stride_factor
+        if rem != 0 and on_non_divisible == "crop":
+            x = x[..., : x.shape[-1] - rem]
+        elif rem != 0:
+            x = nn.functional.pad(x, (0, self.stride_factor - rem))
         # x is now of shape (batch_size, ..., n_times_padded)
 
         # Reshape for log-power computation
@@ -435,7 +449,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
             batch_size,
             self.out_channels,
             self.stride_factor,
-            self.n_times_padded // self.stride_factor,
+            -1,
         )
 
         # Log-Power layer

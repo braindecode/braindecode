@@ -7,9 +7,13 @@ import math
 import torch
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    identity_head=("return_feats",),
+    return_feats="features",
+)
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     r"""Sleep staging architecture from Chambon et al. (2018) [Chambon2018]_.
 
@@ -40,6 +44,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         If True, apply batch normalization after both temporal convolutional
         layers.
     return_feats : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
@@ -55,6 +60,9 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
            IEEE Transactions on Neural Systems and Rehabilitation Engineering,
            26(4), 758-769.
     """
+
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
 
     def __init__(
         self,
@@ -111,8 +119,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             activation(),
             nn.MaxPool2d((1, max_pool_size)),
         )
-        self.return_feats = return_feats
-
         dim_conv_1 = (
             self.n_times + 2 * pad_size - (time_conv_size - 1)
         ) // max_pool_size
@@ -121,13 +127,20 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         ) // max_pool_size
 
         self.len_last_layer = n_conv_chs * self.n_chans * dim_after_conv
+        min_after_pool1 = max(1, max_pool_size + time_conv_size - 1 - 2 * pad_size)
+        self._min_n_times = max(
+            1, min_after_pool1 * max_pool_size + time_conv_size - 1 - 2 * pad_size
+        )
 
-        # TODO: Add new way to handle return_features == True
-        if not return_feats:
-            self.final_layer = nn.Sequential(
-                nn.Dropout(p=drop_prob),
-                nn.Linear(in_features=self.len_last_layer, out_features=self.n_outputs),
-            )
+        self.final_layer = nn.Sequential(
+            nn.Dropout(p=drop_prob),
+            nn.Linear(in_features=self.len_last_layer, out_features=self.n_outputs),
+        )
+
+    def _input_chans_and_times(self, x: torch.Tensor) -> tuple[int, int | None, bool]:
+        if x.ndim == 4 and x.shape[1] == 1:
+            return x.shape[2], x.shape[3], True
+        return super()._input_chans_and_times(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -146,8 +159,5 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             x = x.transpose(1, 2)
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
-
-        if self.return_feats:
-            return feats
 
         return self.final_layer(feats)
