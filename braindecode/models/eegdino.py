@@ -184,6 +184,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.GELU,
         patch_activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
+        *,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):
@@ -308,7 +309,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         if return_features:
             return {
                 "features": patch_out,
-                "embedding": patch_out.mean(dim=1),
                 "cls_token": global_out.mean(dim=1),
             }
 

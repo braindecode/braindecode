@@ -3092,6 +3092,14 @@ def test_fblightconvnet_default_build_is_not_deprecated():
     assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
 
 
+def test_fblightconvnet_rejects_a_longer_input():
+    # attn_conv's kernel is n_times // win_len, so a longer input is not
+    # silently cut to its first n_times samples.
+    model = FBLightConvNet(n_chans=8, n_outputs=3, n_times=1000, sfreq=250)
+    with pytest.raises(ValueError, match="built for n_times=1000 and got 2000"):
+        model(torch.randn(2, 8, 2000))
+
+
 @pytest.mark.parametrize("n_times", [200, 249])
 def test_fblightconvnet_window_shorter_than_win_len(n_times):
     # used to reach xavier_uniform_ with an empty kernel and die on a

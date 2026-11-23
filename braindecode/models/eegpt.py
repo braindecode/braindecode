@@ -250,6 +250,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         norm_layer: Optional[nn.Module] = None,
         layer_norm_eps: float = 1e-6,
         # downstream finetuning parameters
+        *,
         chan_proj_type: Literal[
             "conv1d_constraint", "linear", "none"
         ] = "conv1d_constraint",

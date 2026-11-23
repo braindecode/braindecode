@@ -1,0 +1,45 @@
+name: summary-csv
+# Regenerates braindecode/models/summary.csv on same-repository pull requests that
+# touch models and pushes it to the branch. Fork PRs are skipped: their token cannot
+# push, and test_summary_csv_matches_generator reports a stale CSV there.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - "braindecode/models/**"
+
+jobs:
+  summary-csv:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Regenerate summary.csv
+        env:
+          UV_TORCH_BACKEND: cpu
+        run: |
+          uv pip install --system -e .
+          python -m braindecode.models._summary
+
+      - name: Push summary.csv if it changed
+        run: |
+          git diff --quiet -- braindecode/models/summary.csv && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: regenerate summary.csv" -- braindecode/models/summary.csv
+          git push

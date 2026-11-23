@@ -217,7 +217,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         )
         self._n_times_step = self.stride_factor
         self.on_non_divisible = "pad"
-        self._snaps_in_prepare_inputs = "crop_only"
+        self._snaps_in_prepare_inputs = False
         self._min_n_times = (
             2 if temporal_layer in ("VarLayer", "StdLayer", "LogVarLayer") else 1
         ) * self.stride_factor
@@ -256,7 +256,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         # Apply some padding to the input to make it divisible by the stride factor
         rem = x.shape[-1] % self.stride_factor
-        if rem != 0:
+        if rem != 0 and self.on_non_divisible == "crop":
+            x = x[..., : x.shape[-1] - rem]
+        elif rem != 0:
             x = nn.functional.pad(x, (0, self.stride_factor - rem))
         # shape: (batch, self.out_channels_spatial, 1, n_times_padded)
 

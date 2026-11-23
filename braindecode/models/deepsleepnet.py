@@ -2,7 +2,6 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
-from typing import Dict, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -169,6 +168,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
     def __init__(
         self,
         n_outputs=5,
+        *,
         n_chans=None,
         chs_info=None,
         n_times=None,
@@ -293,9 +293,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         return super()._input_chans_and_times(x)
 
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(
-        self, x: torch.Tensor, return_features: bool = False
-    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+    def forward(self, x):
         if x.ndim == 3:
             x = x.unsqueeze(1)
 
@@ -307,15 +305,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         x, _ = self.bilstm(self.add_seq_dim(x))
         x = self.remove_seq_dim(x)
         x = self.dropout(x + residual)
-        feats = self.features_extractor(x)
-        if return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {
-                "features": feats,
-                "cls_token": None,
-            }
-            return out
 
-        return self.final_layer(feats)
+        return self.final_layer(self.features_extractor(x))
 
 
 def _conv_out(width, kernel_stride_padding):

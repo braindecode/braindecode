@@ -3,9 +3,7 @@
 # License: BSD (3-clause)
 
 import math
-from typing import Dict, Optional, Union
 
-import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -66,6 +64,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         max_pool_size=2,
         drop_prob=0.5,
         apply_batch_norm=False,
+        *,
         activation: type[nn.Module] = nn.ReLU,
         chs_info=None,
         n_times=None,
@@ -154,26 +153,15 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
                 )
         return n_conv_chans * n_time
 
-    def forward(
-        self, x: torch.Tensor, return_features: bool = False
-    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+    def forward(self, x):
         """Forward pass.
-
         Parameters
         ----------
-        x : torch.Tensor
+        x: torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
-        return_features : bool, default=False
-            If True, return ``{"features": feats, "cls_token": None}``.
         """
         if x.ndim == 3:
             x = x.unsqueeze(2)
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
-        if return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {
-                "features": feats,
-                "cls_token": None,
-            }
-            return out
         return self.final_layer(feats)
