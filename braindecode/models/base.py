@@ -931,9 +931,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         on_non_divisible = getattr(self, "on_non_divisible", "crop")
         snapped_len = self._snap_grid_target(got_times)
         snap_mode = getattr(self, "_snaps_in_prepare_inputs", True)
-        snap_here = (
-            snap_mode is True
-            or (snap_mode == "pad_only" and on_non_divisible == "pad")
+        snap_here = snap_mode is True or (
+            snap_mode == "pad_only" and on_non_divisible == "pad"
         )
         snapped_anywhere = snap_here or snap_mode is False
         if snap_here:
