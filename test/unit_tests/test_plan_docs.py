@@ -5,7 +5,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import shlex
+import subprocess  # nosec B404 - the test runs a fixed sh command
+import sys
 import zipfile
 from pathlib import Path
 
@@ -98,14 +99,33 @@ def test_plan_runs_only_changed_gallery_plots_and_gates_sae_extra(
     )
     assert plan["build"] == "true"
     assert plan["run_examples"] == stem
-    # make hands SPHINXOPTS to sh, which must see one -D value.
-    assert shlex.split(plan["gallery_arg"]) == [
-        "-D",
-        f"sphinx_gallery_conf.filename_pattern=/({stem})\\.py",
-    ]
+    assert stem in plan["gallery_arg"]
     assert "docs-gallery" in plan["extras"]
     assert (",sae" in plan["extras"]) is expect_sae
     assert plan["use_gallery_cache"] == "false"
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="needs a POSIX shell")
+def test_gallery_arg_survives_the_shell():
+    # The docs Makefile hands SPHINXOPTS, with this argument, to /bin/sh unquoted.
+    plan = plan_docs.compute_plan(
+        event_name="pull_request",
+        ref="refs/pull/125/merge",
+        head_ref="doc/example",
+        changed_entries=[
+            ("M", "examples/model_building/plot_a.py"),
+            ("M", "examples/advanced_training/plot_b.py"),
+        ],
+        read_old_file=lambda _: "",
+        read_new_file=lambda _: "",
+    )
+    words = subprocess.run(  # nosec B603 B607 - fixed command, POSIX sh
+        ["sh", "-c", f"printf '%s\\n' {plan['gallery_arg']}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert words == ["-D", "sphinx_gallery_conf.filename_pattern=/(plot_a|plot_b)\\.py"]
 
 
 @pytest.mark.parametrize(
