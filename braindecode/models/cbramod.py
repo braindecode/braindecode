@@ -163,7 +163,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: final_layer.1.weight
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -281,10 +280,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
         else:
             self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(n_outputs))
 
-    @property
-    def _build_time_len(self):  # also once a lazy head is materialized
-        return self._n_patch() if self._knows_geometry() else None
-
     def _knows_geometry(self):
         """True when n_chans and n_times are known (given or derivable), so the
         head can be a real Linear instead of a LazyLinear that cannot be saved
@@ -295,10 +290,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
         )
 
     def _n_patch(self):
-        n_times = self._signal_param("n_times")  # also a materialized length
         if self._on_non_divisible == "pad":
-            return -(-n_times // self._patch_size)
-        return n_times // self._patch_size
+            return -(-self.n_times // self._patch_size)
+        return self.n_times // self._patch_size
 
     def _init_parameters(self):
         kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
@@ -350,8 +344,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 "tokens": out,
             }
             return features
-        if not torch.jit.is_scripting() and not self._encoder_output:
-            out = self._pool_to_build_length(out, 2)  # adapt_input(n_times=...)
         return self.final_layer(out)
 
 

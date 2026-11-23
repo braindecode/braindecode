@@ -424,7 +424,6 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: final_layer.1.weight
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -602,7 +601,6 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         self._min_n_times = self.patch_size
         self._n_times_step = self.patch_step
         self._n_times_offset = self.patch_size
-        self._build_time_len = self.n_patches
         self._snaps_in_prepare_inputs = "pad_only"
 
     @classmethod
@@ -764,6 +762,4 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         z = self.model(self.feature_encoder(self._scale(x)))  # (B, C, P, embed_dim)
         if return_features:
             return {"features": z, "cls_token": None}  # nosec B105
-        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
-            z = self._pool_to_build_length(z, 2)
         return self.final_layer(z)

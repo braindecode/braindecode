@@ -58,7 +58,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: final_layer.1.weight
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -129,7 +128,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         self._min_n_times = max(
             1, min_after_pool1 * max_pool_size + time_conv_size - 1 - 2 * pad_size
         )
-        self._build_time_len = dim_after_conv
 
         # TODO: Add new way to handle return_features == True
         if not return_feats:
@@ -159,10 +157,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             x = self.spatial_conv(x)
             x = x.transpose(1, 2)
 
-        feats = self.feature_extractor(x)
-        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
-            feats = self._pool_to_build_length(feats, -1)
-        feats = feats.flatten(start_dim=1)
+        feats = self.feature_extractor(x).flatten(start_dim=1)
 
         if self.return_feats:
             return feats

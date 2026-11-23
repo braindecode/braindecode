@@ -634,31 +634,6 @@ def test_adapt_input_resamples(model_name, required_params, signal_params):
             adapted(torch.randn(2, C, 2 * T + max(40, 2 * (T // 100 + 2))))
 
 
-@PARAMS
-def test_adapt_input_n_times_is_identity_at_build_length(  # D2
-    model_name, required_params, signal_params
-):
-    model, x = _build_case(model_name, required_params, signal_params)
-    if model._time_axis != "fixed":
-        pytest.skip("free or dense: adapt_input(n_times=...) only records it")
-    C, T = x.shape[1:]
-    if not model._supports_n_times_adaptation:
-        with pytest.raises(ValueError, match="sizes more than its head by n_times"):
-            copy.deepcopy(model).adapt_input(n_times=2 * T)
-        return
-    _materialize(model, x)
-    longer_T = 3 * T // 2
-    if model.on_non_divisible == "error":  # stay on the patch grid
-        longer_T += -(longer_T - model._n_times_offset) % model._n_times_step
-    same = copy.deepcopy(model).adapt_input(n_times=T)
-    longer = copy.deepcopy(model).adapt_input(n_times=longer_T)
-    with torch.no_grad():
-        got, want = _tensor_leaves(same(x)), _tensor_leaves(model(x))
-        for g, w in zip(got, want, strict=True):
-            torch.testing.assert_close(g, w, atol=0, rtol=0)
-        assert _shapes(longer(torch.randn(2, C, longer_T))) == _shapes(model(x))
-
-
 def test_adapt_input_keeps_state_dict_keys():
     model, chs = _eegnet()
     keys = set(model.state_dict())

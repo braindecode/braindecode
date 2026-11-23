@@ -441,14 +441,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "_materialized_n_chans",
         "_materialized_n_times",
         "_input_sfreq",
-        "_adapted_n_times",
         "_adapt_config",
-        "_supports_n_times_adaptation",
-        "_build_time_len",
     ]
     #: Rich MNE channel dictionaries are intentionally unavailable in scripted
     #: forwards; they remain unchanged on eager models and in saved configs.
-    __jit_unused_properties__ = ["chs_info", "_build_time_len"]
+    __jit_unused_properties__ = ["chs_info"]
 
     def __init_subclass__(cls, **kwargs):
         license = kwargs.pop("license", "bsd-3-clause")
@@ -670,12 +667,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         *,
         chs_info: list[dict] | None = None,
         sfreq: float | None = None,
-        n_times: int | None = None,
         channel_strategy: str | None = None,
         channel_strategy_kwargs: dict | None = None,
     ) -> "EEGModuleMixin":
-        """Adapt the built model, in place, to another montage, sampling rate or
-        window length. The ``state_dict`` keys do not change.
+        """Adapt the built model, in place, to another montage or sampling rate.
+        The ``state_dict`` keys do not change.
 
         Parameters
         ----------
@@ -687,11 +683,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         sfreq : float | None
             Integer sampling rate of the recordings, resampled inside the model to
             ``model.sfreq``. ``sfreq=model.sfreq`` removes the resampling.
-        n_times : int | None
-            Window length in samples at ``model.sfreq``. Fixed-length models whose
-            only weight sized by ``n_times`` is the head average-pool their
-            features to the build length, the identity at the build ``n_times``.
-            Fixed-length models with such a weight inside the network raise.
         channel_strategy : str | None
             One of ``_ADAPT_STRATEGIES``, ``"nearest"`` when only ``chs_info`` is
             given.
@@ -764,30 +755,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 )[0]
                 self._input_sfreq = float(sfreq)
             config["sfreq"] = self._input_sfreq
-        if n_times is not None:
-            if self._time_axis == "fixed" and not self._supports_n_times_adaptation:
-                raise ValueError(
-                    f"{name}.adapt_input(n_times=...): {name} sizes more than its "
-                    f"head by n_times; rebuild it with n_times={n_times}."
-                )
-            if n_times < (self._min_n_times or 1):
-                raise ValueError(
-                    f"{name} needs at least {self._min_n_times or 1} time samples, "
-                    f"got n_times={n_times}."
-                )
-            self._adapted_n_times = config["n_times"] = int(n_times)
         self._adapt_config = {k: v for k, v in config.items() if v is not None} or None
         return self
-
-    def _pool_to_build_length(self, x: torch.Tensor, dim: int) -> torch.Tensor:
-        """Average-pool axis ``dim`` of ``x`` to ``_build_time_len``, its length at
-        the build ``n_times``, after ``adapt_input(n_times=...)`` (identity there)."""
-        build = self._build_time_len
-        if self._adapted_n_times is None or build is None or x.shape[dim] == build:
-            return x
-        x = x.movedim(dim, -1)
-        pooled = F.adaptive_avg_pool1d(x.reshape(-1, 1, x.shape[-1]), build)
-        return pooled.reshape(*x.shape[:-1], -1).movedim(-1, dim)
 
     @property
     def n_outputs(self) -> int:
@@ -1027,7 +996,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         offset = getattr(self, "_n_times_offset", 0)
 
         if time_axis == "fixed" and not self._accepts_any_n_times(args, kwargs):
-            n_times = self._adapted_n_times or self._signal_param("n_times")
+            n_times = self._signal_param("n_times")
             if n_times is not None and got_times != n_times:
                 diff = abs(got_times - n_times)
                 if (
@@ -1046,8 +1015,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     f"{name} was built for n_times={n_times} and got {got_times} "
                     f"samples{resampled} (input shape {tuple(x.shape)}). Rebuild it "
                     f"with n_times={got_times}, cut the signal into windows of "
-                    f"{n_times} samples, or call model.adapt_input(sfreq=...) / "
-                    "model.adapt_input(n_times=...)."
+                    f"{n_times} samples, or call model.adapt_input(sfreq=...)."
                 )
             return None
 
@@ -1076,7 +1044,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         got_times = x.shape[-1]
         explicit_policy = getattr(self, "_on_non_divisible_explicit", False)
         if action == "fixed_snap":
-            n_times = self._adapted_n_times or self._signal_param("n_times")
+            n_times = self._signal_param("n_times")
             assert n_times is not None
             args, kwargs = self._replace_time_inputs(
                 args, kwargs, lambda _name, t: self._snap_to_length(t, n_times)
@@ -1392,13 +1360,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _time_axis: str | None = None
     _channel_axis: str | None = None
     _time_inputs: ClassVar[tuple[str, ...]] = ("x",)
-    #: Head-sized fixed-length models: ``adapt_input(n_times=...)`` pools their
-    #: features to ``_build_time_len`` before the head.
-    _supports_n_times_adaptation: ClassVar[bool] = False
-    _build_time_len: Optional[int] = None
     # Set by adapt_input; class defaults also serve unpickled v2.0.0 models.
     _input_sfreq: Optional[float] = None
-    _adapted_n_times: Optional[int] = None
     _adapt_config: Optional[dict] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):

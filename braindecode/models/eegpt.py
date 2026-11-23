@@ -8,7 +8,6 @@ from typing import Dict, Literal, Optional, Union
 
 import mne
 import torch
-import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import init_weights_
@@ -226,7 +225,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.probe2.parametrizations.weight.original
     _channel_axis = "fixed"  # fixed: chan_proj.proj.parametrizations.weight.original
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -389,10 +387,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
             )
 
     @property
-    def _build_time_len(self) -> int:
-        return self.n_patches
-
-    @property
     def n_patches(self) -> int:
         """Number of temporal patches from encoder."""
         return self.target_encoder.num_patches[1]
@@ -460,8 +454,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
         if self.return_encoder_output:
             return z
-        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
-            z = self._pool_to_build_length(z, 1)
 
         # Pass to final_layer
         # _LinearConstraintProbe expects z in 4D (batch, n_patches, embed_num, embed_dim)
@@ -828,9 +820,8 @@ class _PatchEmbed(nn.Module):
         torch.Tensor
             Patch embeddings of shape (batch, n_patches, n_chans, embed_dim).
         """
-        # x: batch, n_chans, n_times; pad the last patch of the actual length
-        stride = self.patch_size if self.patch_stride is None else self.patch_stride
-        x = F.pad(x, (0, -(x.shape[-1] - self.patch_size) % stride))
+        # x: batch, n_chans, n_times
+        x = self.padding_layer(x)
         x = x.unsqueeze(1)  # (batch, 1, n_chans, n_times)
 
         if self.apply_norm:
@@ -852,7 +843,7 @@ class _PatchEmbed(nn.Module):
     def _configure_padding(self):
         """
         Validates input size, calculates padding to ensure valid patching,
-        and the patch count at n_times.
+        and initializes the padding layer.
         """
         # Validation checks
         if self.n_times < self.patch_size:
@@ -871,6 +862,12 @@ class _PatchEmbed(nn.Module):
             self.padding_size = self.patch_stride - remainder if remainder != 0 else 0
 
         self.n_times_padded = self.n_times + self.padding_size
+
+        # Layer creation
+        if self.padding_size > 0:
+            self.padding_layer = nn.ConstantPad1d((0, self.padding_size), 0.0)
+        else:
+            self.padding_layer = nn.Identity()
 
         # Num patches calculation
         eff_stride = (
@@ -1077,7 +1074,7 @@ class _EEGTransformer(nn.Module):
         # x shape: (batch, n_patches, n_chans, embed_dim)
         batch, n_patches, n_chans, embed_dim = x.shape
 
-        if n_chans != self.num_patches[0]:
+        if n_patches != self.num_patches[1] or n_chans != self.num_patches[0]:
             raise ValueError(
                 f"Patch shape mismatch: got ({n_patches}, {n_chans}), "
                 f"expected ({self.num_patches[1]}, {self.num_patches[0]})"

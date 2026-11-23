@@ -82,7 +82,6 @@ class SyncNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: amplitude
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -185,7 +184,6 @@ class SyncNet(EEGModuleMixin, nn.Module):
         self.ensuredim = Rearrange("batch ch time -> batch ch 1 time")
 
         self.final_layer = nn.Linear(self.classifier_input_size, self.n_outputs)
-        self._build_time_len = pooled_length
 
     def forward(self, x):
         """Forward pass of the SyncNet model.
@@ -230,8 +228,6 @@ class SyncNet(EEGModuleMixin, nn.Module):
         # Apply padding to the convolution result
         res_padded = self.pad_res(res)
         res_pooled = self.pool(res_padded)
-        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
-            res_pooled = self._pool_to_build_length(res_pooled, -1)
 
         # Flatten the result
         res_flat = res_pooled.flatten(1)

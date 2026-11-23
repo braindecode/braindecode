@@ -76,7 +76,6 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: spatial_conv.weight
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -156,7 +155,6 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
                 f"(would keep {n_tokens})."
             )
         self.final_layer = nn.Linear(embed_dim * n_tokens, self.n_outputs)
-        self._build_time_len = n_tokens
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.add_channel_dim(x)
@@ -169,8 +167,6 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
         x = self.avg_pool(x)
         x = self.dropout(x)
         x = self.transformer(x)
-        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
-            x = self._pool_to_build_length(x, 1)
         x = self.flatten(x)
         return self.final_layer(x)
 

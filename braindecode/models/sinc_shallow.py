@@ -89,7 +89,6 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: depthwiseconv.1.weight
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -203,7 +202,6 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
             flattened_size,
             self.n_outputs,
         )
-        self._build_time_len = size_after_pooling
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -224,11 +222,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         # batch timefil time nfilter -> batch nfilter timefil time
         x = x.permute(0, 3, 1, 2).contiguous()
         x = self.depthwiseconv(x)
-        if torch.jit.is_scripting():
-            x = self.temporal_aggregation(x)
-        else:  # adapt_input(n_times=...) pools before the flatten
-            x = self.temporal_aggregation[:-1](x)
-            x = self.temporal_aggregation[-1](self._pool_to_build_length(x, -1))
+        x = self.temporal_aggregation(x)
 
         return self.final_layer(x)
 

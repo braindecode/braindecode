@@ -144,7 +144,6 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.weight
     _channel_axis = "fixed"  # fixed: spatial_conv.weight
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -242,7 +241,6 @@ class SCCNet(EEGModuleMixin, nn.Module):
         )
 
         self.final_layer = nn.Linear(num_features, self.n_outputs)
-        self._build_time_len = num_features // self.n_spatial_filters_smooth
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Shape: (batch_size, n_chans, n_times)
@@ -265,8 +263,6 @@ class SCCNet(EEGModuleMixin, nn.Module):
         x = self.temporal_smoothing(x)
         # Shape: (batch_size, n_filters_filt, 1, n_times_reduced_avg_pool)
         x = self.activation(x)
-        if not torch.jit.is_scripting():  # adapt_input(n_times=...)
-            x = self._pool_to_build_length(x, -1)
         # Shape: (batch_size, n_filters_filt, 1, n_times_reduced_avg_pool)
         x = x.view(x.size(0), -1)
         # Shape: (batch_size, n_filters_filt*n_times_reduced_avg_pool)

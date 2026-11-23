@@ -299,7 +299,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight
     _channel_axis = "fixed"  # fixed: final_layer.1.weight
-    _supports_n_times_adaptation = True
 
     def __init__(
         self,
@@ -432,10 +431,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         ret_feat = self._call_arg(args, kwargs, "return_features", False)
         return bool(self._encoder_output or ret_feat)
 
-    @property
-    def _build_time_len(self):  # also once a lazy head is materialized
-        return self._n_patch()
-
     def _n_patch(self) -> int | None:
         n_times = self._signal_param("n_times")
         if n_times is None:
@@ -517,8 +512,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         if return_features:
             features: Dict[str, Optional[Tensor]] = {"features": out, "cls_token": None}
             return features
-        if not torch.jit.is_scripting() and not self._encoder_output:
-            out = self._pool_to_build_length(out, 2)  # adapt_input(n_times=...)
         return self.final_layer(out)
 
 

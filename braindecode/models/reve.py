@@ -270,7 +270,6 @@ class REVE(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_times
     _channel_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_chans
-    _supports_n_times_adaptation = True
 
     # Constant, so TorchScript compiles only the head in use (``cls_query_token``
     # exists only with attention pooling).
@@ -336,7 +335,7 @@ class REVE(EEGModuleMixin, nn.Module):
         if known_n_times is not None:
             step = patch_size - patch_overlap
             # Raises for "crop" below one patch and for "error" on an untiled window.
-            self._build_time_len = patch_count(known_n_times, patch_size, mode, step)
+            patch_count(known_n_times, patch_size, mode, step)
             untiled = known_n_times < patch_size or (known_n_times - patch_size) % step
             if default_mode and untiled:
                 warnings.warn(
@@ -631,8 +630,6 @@ class REVE(EEGModuleMixin, nn.Module):
 
         if self.use_attention_pooling:
             x = self._attention_pooling(x, token_mask)
-        elif not torch.jit.is_scripting():  # adapt_input(n_times=...)
-            x = self._pool_to_build_length(x, 2)
 
         x = self.final_layer(x)
         return x
