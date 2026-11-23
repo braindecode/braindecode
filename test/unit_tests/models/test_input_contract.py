@@ -634,6 +634,15 @@ def test_adapt_input_resamples(model_name, required_params, signal_params):
             adapted(torch.randn(2, C, 2 * T + max(40, 2 * (T // 100 + 2))))
 
 
+def test_adapt_input_resamples_sequential_model():
+    # EEGNet's forward is nn.Sequential.forward: the input_resample module
+    # that adapt_input adds must not run again on the model output.
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=1000, sfreq=250).eval()
+    with torch.no_grad(), pytest.warns(UserWarning, match="resampled inside"):
+        adapted = copy.deepcopy(model).adapt_input(sfreq=500)
+        assert _shapes(adapted(torch.randn(2, 3, 2000))) == [(2, 2)]
+
+
 def test_adapt_input_keeps_state_dict_keys():
     model, chs = _eegnet()
     keys = set(model.state_dict())

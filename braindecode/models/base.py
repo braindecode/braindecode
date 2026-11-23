@@ -753,6 +753,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 self.input_resample = _in_model_resample(
                     name, sfreq, int(model_sfreq), self._signal_param("n_times") or 0
                 )[0]
+                if (
+                    type(self).forward is torch.nn.Sequential.forward
+                    and "forward" not in self.__dict__
+                ):
+                    # The Sequential loop would run input_resample on the output.
+                    self.forward = self._backbone_forward
                 self._input_sfreq = float(sfreq)
             config["sfreq"] = self._input_sfreq
         self._adapt_config = {k: v for k, v in config.items() if v is not None} or None
