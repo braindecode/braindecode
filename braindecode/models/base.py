@@ -909,6 +909,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
+    def __dir__(self):
+        # torch.jit.trace probes every name of dir() with hasattr(), which lets a
+        # property's ValueError through: leave out the signal parameters the
+        # model cannot give (reading one still raises the same error).
+        def given(name):
+            try:
+                getattr(self, name)
+            except ValueError:
+                return False
+            return True
+
+        probed = {*_EEG_PARAMS, "input_shape"}  # input_shape reads n_times
+        return [n for n in super().__dir__() if n not in probed or given(n)]
+
     def __prepare_scriptable__(self):
         # Called by torch.jit.script before compiling the model.
         if self._adapt_config is not None:
