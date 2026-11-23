@@ -541,17 +541,15 @@ def _output_kind(name: str) -> str:
     return "(batch, outputs)"
 
 
-def _capabilities(name: str, cls: type[EEGModuleMixin]) -> dict[str, str]:
-    """The capability columns of a model; later hooks add their rules here."""
-    from braindecode.models.base import EEGModuleMixin
-
+def _capabilities(name: str, cls: type[EEGModuleMixin], model: Any) -> dict[str, str]:
+    """The capability columns of a model, read from a built instance."""
     head = name not in _TOKENIZERS
     flags = {
         "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
         "adapt_input": hasattr(cls, "adapt_input"),
-        "reset_head": head and cls.reset_head is not EEGModuleMixin.reset_head,
-        "return_features": head
-        and "return_features" in inspect.signature(cls.forward).parameters,
+        "reset_head": head and model._can_reset_head(),
+        # __call__ pools the final_layer input for models without a native path.
+        "return_features": head,
     }
     return {col: "yes" if flag else "no" for col, flag in flags.items()}
 
@@ -561,7 +559,7 @@ def _count_parameters(
     cls: type[EEGModuleMixin],
     init_kwargs: dict[str, Any],
     probe_shape: tuple[int, int],
-) -> int:
+) -> tuple[int, Any]:
     import torch
     from torch import nn
 
@@ -572,7 +570,7 @@ def _count_parameters(
         if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
             with torch.no_grad():
                 model.eval()(torch.zeros(1, *probe_shape))
-    return sum(p.numel() for p in model.parameters())
+    return sum(p.numel() for p in model.parameters()), model
 
 
 def _read_rows(csv_path: Path) -> list[dict[str, str]]:
@@ -625,20 +623,19 @@ def generate_summary_rows(
         for col in EDITORIAL_COLUMNS:
             if not editorial.get(col):
                 raise ValueError(f"{name} is missing editorial column {col!r}.")
+        n_params, model = _count_parameters(name, cls, init_kwargs, probe_shape)
         generated.append(
             {
                 **{col: editorial[col] for col in EDITORIAL_COLUMNS},
                 "Model": name,
                 "Hyperparameters": ", ".join(req),
-                "#Parameters": str(
-                    _count_parameters(name, cls, init_kwargs, probe_shape)
-                ),
+                "#Parameters": str(n_params),
                 "get_#Parameters": expr,
                 "Categorization": _parse_categorization(name, cls),
                 "Time axis": cls._time_axis,
                 "Channel axis": cls._channel_axis,
                 "Output": _output_kind(name),
-                **_capabilities(name, cls),
+                **_capabilities(name, cls, model),
             }
         )
     return generated
