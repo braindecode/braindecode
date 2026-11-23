@@ -31,6 +31,15 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
 
     :bdg-success:`Convolution`
 
+    .. figure:: ../_static/model/emg2qwerty_arch.png
+       :align: center
+       :alt: EMG2QwertyNet architecture
+       :width: 1000px
+
+       (A) The pipeline with tensor shapes, (B) the rotation-invariant MLP of one
+       wristband and (C) one TDS block, with the default sizes. Drawn for braindecode
+       from the implementation: the paper [emg2qwerty2024]_ has no architecture figure.
+
     Time-Depth-Separable (TDS) [hannun2019tds]_ convolutional encoder
     followed by a Connectionist Temporal Classification (CTC) head
     [graves2006ctc]_. Takes raw 32-channel sEMG (2 wristbands × 16
