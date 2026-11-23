@@ -594,6 +594,8 @@ def _cropped_capability(
     model: Any,
     base_cls: type[EEGModuleMixin],
 ) -> str:
+    if hasattr(model, "_dense_refusal_reason"):
+        return "yes" if model._dense_refusal_reason() is None else "no"
     if hasattr(base_cls, "_dense_conversion"):
         from braindecode.modules.util import _has_strided_layer
 

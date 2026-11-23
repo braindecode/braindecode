@@ -1496,6 +1496,18 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ) - from_checkpoint
         return result
 
+    def _dense_refusal_reason(self) -> str | None:
+        """Why this model cannot give dense predictions, or None if it can."""
+        if self._time_axis == "fixed":
+            return "its head needs a fixed window length"
+        if not self._dense_conversion:
+            return "it pools or tokenizes over the whole window"
+        if getattr(self, "_is_dense_converted", False):  # absent on v2.0 pickles
+            return "it is already converted"
+        if self._time_axis != "dense" and not _has_strided_layer(self):
+            return "it has no strided layer to convert"
+        return None
+
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """Transform a sequential convolutional model with strides to dense predictions.
 
@@ -1516,15 +1528,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             the whole window, is already converted, or has no strided layer to
             convert.
         """
-        reason = None
-        if self._time_axis == "fixed":
-            reason = "its head needs a fixed window length"
-        elif not self._dense_conversion:
-            reason = "it pools or tokenizes over the whole window"
-        elif getattr(self, "_is_dense_converted", False):  # absent on v2.0 pickles
-            reason = "it is already converted"
-        elif self._time_axis != "dense" and not _has_strided_layer(self):
-            reason = "it has no strided layer to convert"
+        reason = self._dense_refusal_reason()
         if reason is not None:
             raise ValueError(
                 f"{type(self).__name__} cannot give dense predictions: {reason}."
