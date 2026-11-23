@@ -538,14 +538,23 @@ def _output_kind(name: str) -> str:
     return "(batch, outputs)"
 
 
-def _capabilities(name: str, cls: type[EEGModuleMixin], model: Any) -> dict[str, str]:
-    """The capability columns of a model, read from a built instance."""
+def _capabilities(
+    name: str,
+    cls: type[EEGModuleMixin],
+    modality: str,
+    model: Any = None,
+) -> dict[str, str]:
+    """The capability columns of a model; ``reset_head`` is read from the built
+    ``model`` when one is given."""
+    from braindecode.models.util import _modalities
+
     head = name not in _TOKENIZERS
     flags = {
-        "Cropped decoding": model._dense_conversion,
-        "adapt_input": hasattr(cls, "adapt_input"),
-        "reset_head": head and model._can_reset_head(),
-        # __call__ pools the final_layer input for models without a native path.
+        "Cropped decoding": cls._dense_conversion,
+        # the rule adapt_input applies: one input of EEG electrodes
+        "adapt_input": "EEG" in _modalities(modality) and len(cls._time_inputs) == 1,
+        "reset_head": head and model is not None and model._can_reset_head(),
+        # every model but a tokenizer; test_return_features checks each one
         "return_features": head,
     }
     return {col: "yes" if flag else "no" for col, flag in flags.items()}
@@ -632,7 +641,7 @@ def generate_summary_rows(
                 "Time axis": cls._time_axis,
                 "Channel axis": cls._channel_axis,
                 "Output": _output_kind(name),
-                **_capabilities(name, cls, model),
+                **_capabilities(name, cls, editorial["Modality"], model),
             }
         )
     return generated

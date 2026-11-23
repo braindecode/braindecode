@@ -50,6 +50,26 @@ from braindecode.models.bendr import _BENDR_TARGET_CHS_INFO
 torch.manual_seed(0)
 rng = np.random.default_rng(0)
 
+INK, GREY = "#14181F", "#7F7F7F"
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "legend.frameon": False,
+    }
+)
+
 ######################################################################
 # A synthetic 32-channel recording
 # --------------------------------
@@ -161,9 +181,9 @@ print("exact, all 32 channels: observed", observed.tolist())
 # The reconstructed BENDR montage
 # -------------------------------
 #
-# Each row of the figure is the 19-channel BENDR montage the backbone
-# receives for this window, shown as the RMS over the window. The top row
-# is the full recording copied exactly; the others are rebuilt from the 29
+# Each panel of the figure is the 19-channel BENDR montage the backbone
+# receives for this window, shown as the RMS over the window. Panel A is
+# the full recording copied exactly; panels B to D are rebuilt from the 29
 # remaining channels. White crosses mark the three missing channels.
 
 bendr_eeg = [ch for ch in _BENDR_TARGET_CHS_INFO if ch["ch_name"] != "SCALE"]
@@ -178,11 +198,15 @@ bendr_info.set_montage(
 missing_mask = np.array([ch["ch_name"] in {"CZ", "P3", "O2"} for ch in bendr_eeg])
 
 rows = ["exact (all 32)"] + strategies
-rms = {k: np.sqrt((reconstructed[k][:19] ** 2).mean(axis=1)) for k in rows}
+titles = ["Exact, all 32 channels", "Spline", "Field", "Source"]
+# RMS per channel, in microvolts (the recording is stored in volts)
+rms = {k: 1e6 * np.sqrt((reconstructed[k][:19] ** 2).mean(axis=1)) for k in rows}
 vmax = max(v.max() for v in rms.values())
-fig, axes = plt.subplots(1, len(rows), figsize=(3 * len(rows), 3.2))
-for ax, key in zip(axes, rows):
-    mne.viz.plot_topomap(
+fig, axes = plt.subplots(
+    1, len(rows) + 1, figsize=(11, 3.2), gridspec_kw={"width_ratios": [1] * 4 + [0.06]}
+)
+for ax, key, letter, title in zip(axes, rows, "ABCD", titles):
+    im, _ = mne.viz.plot_topomap(
         rms[key],
         bendr_info,
         axes=ax,
@@ -191,8 +215,11 @@ for ax, key in zip(axes, rows):
         mask=missing_mask,
         mask_params=dict(marker="x", markeredgecolor="w", markersize=9),
     )
-    ax.set_title(key)
-fig.suptitle("BENDR input for one window (RMS per channel)")
+    ax.set_title(f"{letter}  {title}", loc="left", fontweight="bold", color=INK)
+cbar = fig.colorbar(im, cax=axes[-1])
+cbar.set_ticks([0, vmax])
+cbar.set_ticklabels(["0", f"{vmax:.0f}"])
+cbar.set_label("RMS (µV)")
 fig.tight_layout()
 
 ######################################################################
@@ -205,20 +232,27 @@ fig.tight_layout()
 # EEG the ranking can differ, so treat the strategy as a hyper-parameter.
 
 target_names = [ch["ch_name"].upper() for ch in bendr_eeg]
+strategy_colors = {"spline": "#0072B2", "field": "#D55E00", "source": "#009E73"}
 fig, axes = plt.subplots(len(held_out), 1, figsize=(8, 6), sharex=True)
 t = times[: int(sfreq)]  # first second
-for ax, name in zip(axes, held_out):
+for ax, name, letter in zip(axes, held_out, "ABC"):
     k = target_names.index(name.upper())
-    truth = window[ch_names.index(name), : len(t)]
-    ax.plot(t, truth, color="k", lw=2, label="true")
+    truth = 1e6 * window[ch_names.index(name), : len(t)]  # volts to microvolts
+    ax.plot(t, truth, color=INK, lw=2, label="True signal")
+    correlations = []
     for strategy in strategies:
-        rec = reconstructed[strategy][k, : len(t)]
+        rec = 1e6 * reconstructed[strategy][k, : len(t)]
         r = np.corrcoef(truth, rec)[0, 1]
-        ax.plot(t, rec, lw=1, label=f"{strategy} (r={r:.2f})")
-    ax.set_ylabel(name)
-    ax.legend(loc="upper right", fontsize=7, ncol=4)
-axes[-1].set_xlabel("time (s)")
-fig.suptitle("Missing channels rebuilt by the channel layer")
+        correlations.append(f"{strategy} {r:.2f}")
+        ax.plot(
+            t, rec, color=strategy_colors[strategy], lw=1, label=strategy.capitalize()
+        )
+    ax.set_title(f"{letter}  {name}", loc="left", fontweight="bold", color=INK)
+    # Pearson correlation of each reconstruction with the true signal
+    ax.set_title("r: " + ", ".join(correlations), loc="right", fontsize=8.5, color=GREY)
+    ax.set_ylabel("Amplitude (µV)")
+axes[-1].set_xlabel("Time (s)")
+axes[0].legend(loc="lower left", bbox_to_anchor=(0, 1.15), ncol=4, frameon=False)
 fig.tight_layout()
 plt.show()
 

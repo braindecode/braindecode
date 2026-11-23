@@ -10,9 +10,17 @@ from braindecode.models.util import _disable_batch_norm_training_if_batch_size_o
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
-    r"""Contrast with the World Representation ContraWR from Yang et al (2021) [Yang2021]_.
+    r"""Contrast with the World Representation ContraWR from Yang et al (2023) [Yang2021]_.
 
     :bdg-success:`Convolution`
+
+    .. figure:: ../_static/model/contrawr_arch.png
+       :align: center
+       :alt: ContraWR architecture
+       :width: 1000px
+
+       STFT convolutional encoder network of ContraWR (Figure 2 of the paper),
+       reproduced from [Yang2021]_ (CC BY 4.0).
 
     This model is a convolutional neural network that uses a spectral
     representation with a series of convolutional layers and residual blocks.

@@ -33,6 +33,7 @@ swap in any position-aware architecture (e.g. ``REVE``).
 #
 # License: BSD (3-clause)
 
+import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import torch
@@ -104,13 +105,110 @@ windows.set_return_ch_pos(True)
 # recordings, batches contain both -- the mask tells real channels from padding.
 
 loader = DataLoader(
-    windows, batch_size=4, shuffle=True, collate_fn=pad_channels_collate
+    windows,
+    batch_size=4,
+    shuffle=True,
+    collate_fn=pad_channels_collate,
+    generator=torch.Generator().manual_seed(0),  # a batch that mixes both caps
 )
 X, y, crop_inds, ch_pos, ch_mask = next(iter(loader))
 print("X       :", tuple(X.shape))  # (batch, max_ch, n_times)
 print("ch_pos  :", tuple(ch_pos.shape))  # (batch, max_ch, 3)
 print("ch_mask :", tuple(ch_mask.shape))  # (batch, max_ch) bool
 print("real channels per sample:", ch_mask.sum(1).tolist())
+
+######################################################################
+# Panel A places the two caps on the scalp. Panel B shows the mask of the
+# batch: each row is one window, each column one channel slot of the padded
+# tensor. Windows from the 8-channel cap leave the last two slots padded.
+
+BLUE, VERMILION, INK = "#0072B2", "#D55E00", "#14181F"
+plt.rcdefaults()  # importing MOABB applies seaborn's "whitegrid" style globally
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+ch_pos = mne.channels.make_standard_montage("colin27_1020").get_positions()["ch_pos"]
+# Electrode positions seen from above, in cm, centered on the drawn electrodes
+xy_all = 100 * np.array([ch_pos[ch][:2] for ch in chs_a + chs_b])
+center = xy_all.mean(axis=0)
+radius = 1.15 * np.linalg.norm(xy_all - center, axis=1).max()
+fig, (ax_cap, ax_mask) = plt.subplots(
+    1, 2, figsize=(9, 3.8), gridspec_kw={"width_ratios": [1, 1.3]}
+)
+
+# A: electrode positions seen from above (x, y in cm)
+for chs, color, label in [
+    (chs_a, BLUE, f"{len(chs_a)}-channel cap"),
+    (chs_b, VERMILION, f"{len(chs_b)}-channel cap"),
+]:
+    xy = 100 * np.array([ch_pos[ch][:2] for ch in chs]) - center
+    ax_cap.scatter(xy[:, 0], xy[:, 1], s=60, color=color, label=label, zorder=3)
+    for ch, (x, y) in zip(chs, xy):
+        ax_cap.annotate(
+            ch,
+            (x, y),
+            xytext=(0, 6),
+            textcoords="offset points",
+            ha="center",
+            fontsize=7.5,
+            color=color,
+        )
+ax_cap.add_patch(plt.Circle((0, 0), radius, fill=False, color="#B0B0B0", lw=0.8))
+ax_cap.set_aspect("equal")
+ax_cap.set_xlim(-1.05 * radius, 1.05 * radius)
+ax_cap.set_ylim(-1.05 * radius, 1.05 * radius)
+ax_cap.axis("off")
+ax_cap.legend(loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=2, frameon=False)
+ax_cap.set_title("A  Two montages", loc="left", fontweight="bold", color=INK)
+
+# B: real (cap color) versus padded (white) channel slots of the batch
+n_real = ch_mask.sum(1).numpy()
+for row, mask_row in enumerate(ch_mask.numpy()):
+    color = BLUE if n_real[row] == len(chs_a) else VERMILION
+    for slot, is_real in enumerate(mask_row):
+        ax_mask.add_patch(
+            plt.Rectangle(
+                (slot, row),
+                1,
+                1,
+                facecolor=color if is_real else "white",
+                edgecolor="#B0B0B0",
+                lw=0.6,
+            )
+        )
+    ax_mask.text(
+        len(mask_row) + 0.2,
+        row + 0.5,
+        f"{n_real[row]} real",
+        va="center",
+        color=color,
+        fontsize=9,
+    )
+ax_mask.set_xlim(0, ch_mask.shape[1])
+ax_mask.set_ylim(ch_mask.shape[0], 0)
+ax_mask.set_xticks(np.arange(ch_mask.shape[1]) + 0.5, np.arange(ch_mask.shape[1]))
+ax_mask.set_yticks(np.arange(ch_mask.shape[0]) + 0.5, np.arange(ch_mask.shape[0]))
+ax_mask.set_xlabel("Channel slot in the padded batch")
+ax_mask.set_ylabel("Window in the batch")
+ax_mask.set_title(
+    "B  Channel mask (white = padding)", loc="left", fontweight="bold", color=INK
+)
+fig.tight_layout()
 
 ######################################################################
 # A minimal position-aware model

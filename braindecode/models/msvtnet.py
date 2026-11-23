@@ -155,6 +155,10 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         self.flatten_layer = nn.Flatten()
         self.final_layer = nn.Linear(linear_in, self.n_outputs)
 
+    def _head_swap_refusal(self) -> str | None:
+        # branch_head is also sized by n_outputs, outside final_layer.
+        return "its branch heads are sized by n_outputs"
+
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:

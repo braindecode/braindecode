@@ -134,31 +134,89 @@ X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10.0, sfreq)  # 
 
 ######################################################################
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
-# see on the psd plot.
+# see on the psd plot. Each curve is the channel-averaged psd; the shaded band
+# spans ±1 standard error of the mean across trials.
 
 import matplotlib.pyplot as plt
 import mne
 
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
 
-def plot_psd(data, axis, label, color):
+# Importing MOABB applies a seaborn style; restore matplotlib defaults first.
+plt.rcdefaults()
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+
+def plot_psd(data, axis, color):
+    """Plot the channel-averaged PSD, mean +/- SEM across trials."""
     psds, freqs = mne.time_frequency.psd_array_multitaper(
         data, sfreq=sfreq, fmin=0.1, fmax=100
     )
-    psds = 10.0 * np.log10(psds)
-    psds_mean = psds.mean(0).mean(0)
-    axis.plot(freqs, psds_mean, color=color, label=label)
+    psds = (10.0 * np.log10(psds)).mean(1)  # (trial, freq), averaged over channels
+    psds_mean = psds.mean(0)
+    psds_sem = psds.std(0) / np.sqrt(len(psds))
+    axis.fill_between(
+        freqs,
+        psds_mean - psds_sem,
+        psds_mean + psds_sem,
+        color=color,
+        alpha=0.25,
+        linewidth=0,
+    )
+    axis.plot(freqs, psds_mean, color=color, linewidth=1.6)
+    return freqs, psds_mean
 
 
-_, ax = plt.subplots()
-plot_psd(X, ax, "original", "k")
-plot_psd(X_tr.numpy(), ax, "shifted", "r")
+fig, ax = plt.subplots(figsize=(6.8, 3.6))
+freqs, psd_original = plot_psd(X, ax, GREY)
+_, psd_shifted = plot_psd(X_tr.numpy(), ax, BLUE)
+# Direct labels beside the edge where each spectrum falls below -20 dB, past
+# the 38 Hz low-pass cut-off of the preprocessing (10 Hz higher once shifted)
+for psd, label, side, color in (
+    (psd_original, "Original", "right", GREY),
+    (psd_shifted, "+10 Hz shifted", "left", BLUE),
+):
+    edge = freqs[(freqs > 30) & (psd < -20)][0]
+    offset = -2.0 if side == "right" else 2.0
+    ax.text(edge + offset, -20, label, color=color, ha=side, va="center")
 
-ax.set(
-    title="Multitaper PSD (gradiometers)",
-    xlabel="Frequency (Hz)",
-    ylabel="Power Spectral Density (dB)",
+# Arrow from the largest peak of the original spectrum to its shifted position
+peak = freqs[np.argmax(psd_original)]
+ax.annotate(
+    "",
+    xy=(peak + 10.0, psd_original.max() + 3.0),
+    xytext=(peak, psd_original.max() + 3.0),
+    arrowprops={"arrowstyle": "->", "color": INK, "lw": 0.9},
 )
-ax.legend()
+ax.text(
+    peak + 5.0,
+    psd_original.max() + 3.5,
+    "+10 Hz",
+    color=INK,
+    fontsize=9,
+    ha="center",
+    va="bottom",
+)
+ax.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+ax.set_axisbelow(True)
+ax.set_xticks([0, 25, 50, 75, 100])
+ax.set(xlabel="Frequency (Hz)", ylabel="Power spectral density (dB)")
+fig.tight_layout()
 plt.show()
 
 ######################################################################

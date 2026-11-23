@@ -17,7 +17,8 @@ from test.unit_tests.models._fixtures import (
 def test_one_contrastive_step(model_name, required_params, signal_params):
     if model_name in _TOKENIZERS:
         pytest.skip("tokenizer")
-    # n_outputs=None: no head parameters for DistributedDataParallel to miss
+    # n_outputs=None empties final_layer; head or pretraining layers kept
+    # elsewhere (BDTCN, DuIN, SSTDPN...) get no gradient.
     model, x = _build_case(model_name, required_params, signal_params, headless=True)
     _materialize(model, x, return_features=True)
     model.train()

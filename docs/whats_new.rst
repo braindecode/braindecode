@@ -34,14 +34,18 @@ Enhancements
   :class:`~braindecode.models.CSBrain`, and :class:`~braindecode.models.GCNsNet`
   also build their classification heads at construction when input shapes are known
   (by `Bruno Aristimunha`_).
-- Models built with ``n_outputs=None`` have no head (``final_layer`` is
-  ``nn.Identity``) and return features only; ``model.reset_head(n_outputs)``
-  attaches one. ``reset_head`` works on every model with a head: by default it
-  replaces the last linear or convolutional layer of ``final_layer``
-  (by `Bruno Aristimunha`_).
+- Models built with ``n_outputs=None`` have ``nn.Identity`` as ``final_layer`` (head layers elsewhere, as in BDTCN, DuIN
+  or SSTDPN, get no gradient). The default ``reset_head`` swaps the last Linear or Conv of a head that has no weight constraint
+  and no other layer sized by ``n_outputs``; EEGITNet, EEGNeX, EEGTCNet, FBCNet, FBMSNet, IFNet, MSVTNet and USleep raise as before (by `Bruno Aristimunha`_).
 - Add :func:`braindecode.training.info_nce`, the InfoNCE (NT-Xent) contrastive
   loss, and the example :ref:`contrastive-pretraining-eeg`, which pretrains a
   headless model and then probes and fine-tunes it (by `Bruno Aristimunha`_).
+- LUNA and MetaNeuromotorHand skip the unused attention weights (outputs move by at most 2e-6), TinyMyo builds its
+  rotary table once, BaRISTA no longer syncs with the host in eval, and SCCNet, TSception, CSBrain (channels_last),
+  EEGInceptionMI, EEGNeX and NeuroRVQTokenizer (bfloat16 autocast) no longer raise (:gh:`1786` by `Bruno Aristimunha`_).
+- Add :meth:`braindecode.models.EEGModuleMixin.adapt_input` to adapt a built model, in
+  place and with unchanged ``state_dict`` keys, to another EEG montage or sampling
+  rate; ``get_config`` saves the adaptation (by `Bruno Aristimunha`_).
 - ATCNet, CareSleepNet, EEGInceptionMI, FBCNet, FBMSNet, IFNet, Labram (``neural_tokenizer=True``), NeuroRVQTokenizer, PBT
   and SeizureTransformer read the window length from the input instead of the length stored at build, so other lengths run
   with unchanged weights, and outputs at the build length stay the same (by `Bruno Aristimunha`_).

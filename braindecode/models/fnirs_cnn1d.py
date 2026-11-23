@@ -20,6 +20,15 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
 
     :bdg-success:`Convolution`
 
+    .. figure:: ../_static/model/fnirs_cnn1d_arch.png
+       :align: center
+       :alt: FNIRSCNN1D architecture
+       :width: 500px
+
+       Input of the CNN of Trakoolwilaiwan et al.: a filter spanning all HbO and
+       HbR channels slides along time, reproduced from
+       :footcite:`trakoolwilaiwan2018cnn` (CC BY 3.0).
+
     .. versionadded:: 2.1
 
     Two temporal convolutions, an average over time and a linear layer: the

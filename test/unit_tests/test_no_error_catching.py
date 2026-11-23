@@ -13,6 +13,7 @@ _ALLOWED_EXCEPT = {
     ("braindecode/models/config.py", "ImportError"),
     ("braindecode/functional/_lfilter.py", "ImportError"),
     ("braindecode/models/base.py", "ImportError"),
+    ("braindecode/models/base.py", "NotImplementedError"),  # removed by Task 9
 }
 
 

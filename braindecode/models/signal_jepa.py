@@ -395,6 +395,14 @@ class SignalJEPA(_BaseSignalJEPA):
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
+    .. figure:: ../_static/model/signal_jepa_arch.png
+       :align: center
+       :alt: SignalJEPA architecture
+       :width: 1000px
+
+       S-JEPA pre-training procedure with the local encoder, contextual encoder,
+       EMA target encoder and predictor, reproduced from [1]_ (CC BY 4.0).
+
     This model is not meant for classification but for SSL pre-training.
     Its output shape depends on the input shape.
     For classification purposes, three variants of this model are available:

@@ -541,10 +541,14 @@ sitemap_excludes = [
 ]
 
 html_redirects = {
+    "auto_examples/datasets_io/plot_hub_integration.html": "hub_integration.html",
     "user_guide/channel_strategies.html": "../models/channel_strategies.html",
     "user_guide/cropped_inference.html": (
         "../auto_examples/model_building/"
         "plot_bcic_iv_2a_moabb_cropped.html#cropped-inference"
+    ),
+    "auto_examples/advanced_training/bcic_iv_4_ecog_cropped.html": (
+        "plot_bcic_iv_4_ecog_cropped.html"
     ),
 }
 

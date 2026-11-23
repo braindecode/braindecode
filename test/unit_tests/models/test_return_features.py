@@ -8,6 +8,7 @@ import torch
 from torch import nn
 
 from braindecode.models import (
+    BDTCN,
     BENDR,
     EEGDINO,
     Labram,
@@ -223,12 +224,13 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
 
 _ALL_MODELS = dict(models_dict)
 _REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
-# Every registered model that overrides reset_head.
+# Every registered model that overrides reset_head, and three that take the
+# default swap of their last layer.
 _RESET_HEAD_CASES = [
     name
     for name in _REGISTRY
     if _ALL_MODELS[name].reset_head is not EEGModuleMixin.reset_head
-]
+] + ["Deep4Net", "EEGNet", "ShallowFBCSPNet"]
 
 
 def _build_registered(name, **kwargs):
@@ -257,6 +259,18 @@ def test_from_config_drops_removed_feature_flags():
     config = _build_registered("EEGDINO").get_config()
     config.update(return_features=False, return_encoder_output=False)
     assert "return_features" not in EEGDINO.from_config(config).get_config()
+
+
+# A constrained last layer, or a head of several layers: the default swap would
+# drop the constraint or leave the other layers behind.
+@pytest.mark.parametrize("name", ["EEGNeX", "FBCNet", "MSVTNet", "USleep"])
+def test_default_reset_head_refuses_heads_it_cannot_swap(name):
+    model = _build_registered(name)
+    state = {k: v.clone() for k, v in model.state_dict().items()}
+    with pytest.raises(NotImplementedError, match=f"{name} needs its own reset_head"):
+        model.reset_head(model.n_outputs + 3)
+    assert not model._can_reset_head()
+    torch.testing.assert_close(model.state_dict(), state)
 
 
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
@@ -317,3 +331,11 @@ def test_labram_reset_to_zero_reloads_as_identity(tmp_path, via_pretrained):
     assert reloaded.n_outputs == 0
     assert isinstance(reloaded.final_layer, torch.nn.Identity)
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
+
+
+def test_bdtcn_features_cover_the_steps_its_classifier_reads():
+    model = BDTCN(n_chans=3, n_outputs=2, n_times=500).eval()
+    x = torch.randn(2, 3, 500)
+    with torch.no_grad():
+        n_steps = model.base_tcn(x).shape[-1]  # the steps the head averages
+        assert model(x, return_features=True)["features"].shape[-1] == n_steps

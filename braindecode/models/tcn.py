@@ -99,8 +99,10 @@ class BDTCN(EEGModuleMixin, nn.Module):
             features = self.base_tcn.temporal_blocks(
                 self.base_tcn.ensuredims(x).squeeze(3)
             )
+            # The classifier reads only the steps after the min_len warm-up.
+            n_steps = 1 + max(0, features.shape[-1] - self.base_tcn.min_len)
             return {
-                "features": features,
+                "features": features[..., -n_steps:],
                 "cls_token": None,
             }
         x = self.base_tcn(x)
