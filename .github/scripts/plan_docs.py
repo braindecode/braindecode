@@ -202,7 +202,8 @@ def compute_plan(
             "build": "true",
             "run_examples": run_examples,
             "gallery_arg": (
-                f"-D sphinx_gallery_conf.filename_pattern=/({run_examples})\\.py"
+                # Quoted: the docs Makefile hands SPHINXOPTS to /bin/sh unquoted.
+                f"-D sphinx_gallery_conf.filename_pattern='/({run_examples})\\.py'"
             ),
             "extras": f"{GALLERY_EXTRAS},sae" if needs_sae else GALLERY_EXTRAS,
             "use_gallery_cache": "false",
