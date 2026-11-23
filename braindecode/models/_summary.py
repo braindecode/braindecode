@@ -82,13 +82,11 @@ _INITIAL_CROPPED_MODELS: frozenset[str] = frozenset(
     {"Deep4Net", "EEGNet", "EMG2QwertyNet", "NeuroPose", "ShallowFBCSPNet"}
 )
 
-# Models whose __init__, lazy-head materialization or return_features probe
-# executes data-dependent host ops (.item(), _unique2, CPU-only tensor copies)
-# that cannot run on meta.
+# Models whose __init__ (or lazy-head materialization) executes data-dependent
+# host ops (.item(), _unique2, CPU-only tensor copies) that cannot run on meta.
 _CPU_SUMMARY_MODELS: frozenset[str] = frozenset(
     {
         "BaRISTA",
-        "BrainOmni",
         "CORTEG",
         "DGCNN",
         "EEGPT",
@@ -96,7 +94,6 @@ _CPU_SUMMARY_MODELS: frozenset[str] = frozenset(
         "GeoNIRS",
         "Labram",
         "MAPA",
-        "MEGXL",
         "MetaNeuromotorHand",
         "NeuroRVQ",
         "NeuroRVQTokenizer",
@@ -549,27 +546,19 @@ def _capabilities(
     cls: type[EEGModuleMixin],
     modality: str,
     model: Any = None,
-    probe_shape: tuple[int, int] = (1, 1),
 ) -> dict[str, str]:
-    """The capability columns of a model; ``reset_head`` and ``return_features``
-    are read from the built ``model`` when one is given."""
-    import torch
-
+    """The capability columns of a model; ``reset_head`` is read from the built
+    ``model`` when one is given."""
     from braindecode.models.util import _modalities
 
-    head = name not in _TOKENIZERS and model is not None
-    features = None
-    if head:  # measured: one forward with return_features=True
-        device = "cpu" if name in _CPU_SUMMARY_MODELS else "meta"  # as built
-        with warnings.catch_warnings(), torch.no_grad(), torch.device(device):
-            warnings.simplefilter("ignore")
-            features = model.eval()(torch.zeros(1, *probe_shape), return_features=True)
+    head = name not in _TOKENIZERS
     flags = {
         "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
         # the rule adapt_input applies: one input of EEG electrodes
         "adapt_input": "EEG" in _modalities(modality) and len(cls._time_inputs) == 1,
-        "reset_head": head and model._can_reset_head(),
-        "return_features": isinstance(features, dict) and "embedding" in features,
+        "reset_head": head and model is not None and model._can_reset_head(),
+        # every model but a tokenizer; test_return_features checks each one
+        "return_features": head,
     }
     return {col: "yes" if flag else "no" for col, flag in flags.items()}
 
@@ -655,7 +644,7 @@ def generate_summary_rows(
                 "Time axis": cls._time_axis,
                 "Channel axis": cls._channel_axis,
                 "Output": _output_kind(name),
-                **_capabilities(name, cls, editorial["Modality"], model, probe_shape),
+                **_capabilities(name, cls, editorial["Modality"], model),
             }
         )
     return generated

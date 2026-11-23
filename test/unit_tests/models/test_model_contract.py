@@ -18,6 +18,7 @@ import sys
 from collections import namedtuple
 from collections.abc import Mapping
 
+import numpy as np
 import pytest
 import torch
 from torch import nn
@@ -28,7 +29,16 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
-from braindecode.models import LUNA, MAPA, EEGConformer, GCNsNet
+from braindecode.models import (
+    LUNA,
+    MAPA,
+    AttnSleep,
+    EEGConformer,
+    EEGNet,
+    EEGNeX,
+    GCNsNet,
+)
+from braindecode.models.base import HAS_HF_HUB
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
     _summary_table,
@@ -876,3 +886,35 @@ def test_channels_last_matches_contiguous(model_name, required_params, signal_pa
         ref = model(x)
         last = copy.deepcopy(model).to(memory_format=torch.channels_last)
         torch.testing.assert_close(last(x), ref, atol=1e-5, rtol=1e-4)
+
+
+def test_default_reset_head_judges_only_the_head():
+    # EEGNet's F1=8 equals n_outputs and a headless AttnSleep has a 1-wide SE
+    # layer: neither is part of the head.
+    eegnet = EEGNet(n_chans=3, n_times=128, n_outputs=8)
+    eegnet.reset_head(np.int64(3))  # numpy integers are accepted
+    assert eegnet.n_outputs == 3
+    attn = AttnSleep(sfreq=100, n_times=3000, n_outputs=None)
+    attn.reset_head(5)
+    with torch.no_grad():
+        assert attn(torch.randn(2, 1, 3000)).shape == (2, 5)
+    with pytest.raises(ValueError, match="positive"):
+        eegnet.reset_head(0)
+
+
+def test_headless_override_that_calls_super_attaches_a_head():
+    class _Conformer(EEGConformer):
+        def reset_head(self, n_outputs):
+            super().reset_head(n_outputs)
+
+    model = _Conformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    model.reset_head(4)
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, 1000)).shape == (2, 4)
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
+def test_from_pretrained_refused_head_change_is_a_value_error(tmp_path):
+    EEGNeX(n_chans=3, n_times=256, n_outputs=2).save_pretrained(tmp_path)
+    with pytest.raises(ValueError, match="does not support changing n_outputs"):
+        EEGNeX.from_pretrained(tmp_path, n_outputs=4)

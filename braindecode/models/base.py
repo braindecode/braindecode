@@ -11,6 +11,7 @@ import inspect
 import json
 import logging
 import math
+import operator
 import sys
 import warnings
 from collections import OrderedDict
@@ -267,7 +268,8 @@ def _new_head_follows_model(reset_head):
     @functools.wraps(reset_head)
     def wrapper(self, *args, **kwargs):
         n_outputs = args[0] if args else kwargs.get("n_outputs")
-        if not isinstance(n_outputs, int) or n_outputs < 0:
+        # numpy and torch integers count; 0 is left to overrides (Labram, LUNA)
+        if not hasattr(n_outputs, "__index__") or operator.index(n_outputs) < 0:
             raise ValueError(
                 f"n_outputs must be a non-negative integer; got {n_outputs!r}."
             )
@@ -275,7 +277,8 @@ def _new_head_follows_model(reset_head):
         # Hold the old tensors until the end, so that their ids cannot be
         # reused by the new ones.
         old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
-        head = self.__dict__.get("_head_spec")
+        # Popped here, so an override calling super() sees a model with a head.
+        head = self.__dict__.pop("_head_spec", None)
         if head is not None:  # headless build: put back its head, then resize it
             self.final_layer = head[0]
         done = False
@@ -283,10 +286,8 @@ def _new_head_follows_model(reset_head):
             out = reset_head(self, *args, **kwargs)
             done = True
         finally:
-            if head is not None and done:
-                del self._head_spec
-            elif head is not None:  # refused: the model stays headless
-                self.final_layer = torch.nn.Identity()
+            if head is not None and not done:  # refused: the model stays headless
+                self._head_spec, self.final_layer = head, torch.nn.Identity()
         if ref is not None:
             for module in self.modules():
                 tensors = [*module.parameters(), *module.buffers()]
@@ -1566,17 +1567,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             return "final_layer does not end with a Linear or Conv layer"
         if torch.nn.utils.parametrize.is_parametrized(last):
             return "the weight of its last layer is constrained"
-        # A headless build sized its head for one output.
-        n_outputs = 1 if self._head_spec is not None else self._n_outputs
         sized = (torch.nn.Linear, torch.nn.Conv1d, torch.nn.Conv2d)
-        if any(
-            isinstance(m, sized)
-            and not isinstance(m.weight, UninitializedParameter)
-            and m.weight.shape[0] == n_outputs
-            for m in [*self.modules(), *head.modules()]
-            if m is not last
-        ):
-            return "another layer is sized by n_outputs"
+        if sum(isinstance(m, sized) for m in head.modules()) > 1:
+            return "final_layer holds more than one Linear or Conv layer"
         return None
 
     @_new_head_follows_model
@@ -1588,9 +1581,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         attaches a head to a model built with ``n_outputs=None``. The default
         replaces the last linear or convolutional layer of ``final_layer`` by
         a new one with ``n_outputs`` outputs, and raises
-        :class:`NotImplementedError` when that layer is constrained, when an
-        earlier head layer is sized by ``n_outputs``, or when ``final_layer``
-        does not end with such a layer. Override in subclasses that need
+        :class:`NotImplementedError` when that layer is constrained, when
+        ``final_layer`` holds more than one such layer, or when it does not end
+        with one. Override in subclasses that need
         a model-specific head structure. Implementations keep changed
         constructor arguments in sync with ``self._update_init_kwargs``, so
         that a saved model can be loaded back. Implementations requiring
@@ -2262,13 +2255,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 and requested_n_outputs is not None
                 and requested_n_outputs != saved_n_outputs
             ):
-                if not model._can_reset_head():
+                try:
+                    model.reset_head(requested_n_outputs)
+                except NotImplementedError:
                     raise ValueError(
                         f"{type(model).__name__} does not support changing "
                         f"n_outputs after loading. Saved model has "
                         f"n_outputs={saved_n_outputs}, but "
                         f"n_outputs={requested_n_outputs} was requested."
-                    )
-                model.reset_head(requested_n_outputs)
+                    ) from None
 
             return model.adapt_input(**adaptation) if adaptation else model
