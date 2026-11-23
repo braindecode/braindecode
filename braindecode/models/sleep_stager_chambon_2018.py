@@ -3,7 +3,6 @@
 # License: BSD (3-clause)
 
 import math
-from typing import Dict, Optional, Union
 
 import torch
 from torch import nn
@@ -133,18 +132,14 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             return x.shape[2], x.shape[3], True
         return super()._input_chans_and_times(x)
 
-    def forward(
-        self, x: torch.Tensor, return_features: bool = False
-    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
         Parameters
         ----------
-        x : torch.Tensor
+        x: torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
-        return_features : bool, default=False
-            If True, return ``{"features": feats, "cls_token": None}``.
         """
         if x.ndim == 3:
             x = x.unsqueeze(1)
@@ -154,12 +149,5 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             x = x.transpose(1, 2)
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
-
-        if return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {
-                "features": feats,
-                "cls_token": None,
-            }
-            return out
 
         return self.final_layer(feats)

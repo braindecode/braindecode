@@ -30,7 +30,6 @@
 import warnings
 from copy import deepcopy
 from numbers import Integral
-from typing import Dict, Optional, Union
 
 import torch
 from torch import nn
@@ -235,9 +234,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         # Concatenation along time, preserved by AFR: (batch, after_reduced_cnn_size, fine_len + coarse_len)
         return fine_len + coarse_len
 
-    def forward(
-        self, x: torch.Tensor, return_features: bool = False
-    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
@@ -245,8 +242,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
-        return_features : bool, default=False
-            If True, return ``{"features": encoded_features, "cls_token": None}``.
         """
         # MRCNN + TCE feature extraction: (batch, 1, n_times) -> (batch, after_reduced_cnn_size, d_model)
         encoded_features = self.feature_extractor(x)
@@ -254,13 +249,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         encoded_features = encoded_features.contiguous().view(
             encoded_features.shape[0], -1
         )
-
-        if return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {
-                "features": encoded_features,
-                "cls_token": None,
-            }
-            return out
 
         # Classification head: (batch, n_outputs)
         return self.final_layer(encoded_features)

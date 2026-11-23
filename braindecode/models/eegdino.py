@@ -308,7 +308,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         if return_features:
             return {
                 "features": patch_out,
-                "embedding": patch_out.mean(dim=1),
                 "cls_token": global_out.mean(dim=1),
             }
 
