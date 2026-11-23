@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 - the test runs a fixed sh command
 import sys
 import zipfile
 from pathlib import Path
@@ -119,7 +119,7 @@ def test_gallery_arg_survives_the_shell():
         read_old_file=lambda _: "",
         read_new_file=lambda _: "",
     )
-    words = subprocess.run(
+    words = subprocess.run(  # nosec B603 B607 - fixed command, POSIX sh
         ["sh", "-c", f"printf '%s\\n' {plan['gallery_arg']}"],
         capture_output=True,
         text=True,
