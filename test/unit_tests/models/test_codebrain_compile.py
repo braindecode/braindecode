@@ -1,4 +1,4 @@
-"""CodeBrain's lazily computed kernel norm: it compiles without graph breaks and survives a checkpoint round trip."""
+"""CodeBrain's lazily computed kernel norm (compiles without graph breaks, survives a checkpoint round trip) and its reset_head."""
 import torch
 
 from braindecode.models import CodeBrain
@@ -46,3 +46,22 @@ def test_first_forward_under_inference_mode_then_train():
     with torch.inference_mode():
         model(x)
     model.train()(x).sum().backward()
+
+
+def test_codebrain_reset_head_replaces_only_the_output_layer():
+    torch.manual_seed(0)
+    model = _model()
+    before = {k: v.clone() for k, v in model.state_dict().items()}
+    model.reset_head(5)
+    after = model.state_dict()
+    # The keys and shapes are those of a model built with n_outputs=5
+    expected = CodeBrain(n_chans=4, n_times=400, sfreq=200, n_outputs=5).state_dict()
+    assert {k: v.shape for k, v in after.items()} == {
+        k: v.shape for k, v in expected.items()
+    }
+    # Every weight but the output layer is kept
+    changed = {k for k in before if before[k].shape != after[k].shape}
+    assert changed == {"final_layer.7.weight", "final_layer.7.bias"}
+    for k in before.keys() - changed:
+        assert torch.equal(before[k], after[k]), k
+    assert model(torch.randn(2, 4, 400)).shape == (2, 5)
