@@ -231,6 +231,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         n_fused_filters: int = 48,
         temporal_conv_kernel_size: int = 75,
         mvp_kernel_sizes: Optional[List[int]] = None,
+        *,
         proto_sep_maxnorm: float = 1.0,
         proto_cpt_std: float = 1.0,
         spt_attn_global_context_kernel: int = 250,

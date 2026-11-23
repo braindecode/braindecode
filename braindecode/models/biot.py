@@ -146,6 +146,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         num_layers=4,
         sfreq=None,
         hop_length=100,
+        *,
         n_outputs=None,
         n_chans=None,
         chs_info=None,

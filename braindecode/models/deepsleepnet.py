@@ -168,6 +168,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
     def __init__(
         self,
         n_outputs=5,
+        *,
         n_chans=None,
         chs_info=None,
         n_times=None,

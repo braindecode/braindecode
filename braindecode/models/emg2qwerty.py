@@ -259,6 +259,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         freq_mask_param: int = 4,
         spec_augment_prob: float = 1.0,
         # Standard braindecode args
+        *,
         n_times: int | None = None,
         input_window_seconds: float | None = None,
         chs_info: list | None = None,

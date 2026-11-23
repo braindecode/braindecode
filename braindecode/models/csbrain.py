@@ -317,6 +317,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         brain_regions: Sequence[int] | None = None,
         channel_order: Sequence[int] | None = None,
         head_hidden_dim: int | None = None,
+        *,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):

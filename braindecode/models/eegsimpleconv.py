@@ -110,6 +110,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         n_convs=2,
         resampling_freq=80,
         kernel_size=8,
+        *,
         activation: type[nn.Module] = nn.ReLU,
         # Other ways to initialize the model
         chs_info=None,

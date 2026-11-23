@@ -68,6 +68,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         n_outputs=5,
         drop_prob=0.25,
         apply_batch_norm=False,
+        *,
         chs_info=None,
         n_times=None,
     ):

@@ -127,6 +127,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         n_outputs=None,
         after_reduced_cnn_size=30,
+        *,
         chs_info=None,
         n_chans=None,
         n_times=None,

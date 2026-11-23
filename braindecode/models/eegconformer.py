@@ -219,13 +219,13 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         num_heads=10,
         att_drop_prob=0.5,
         final_fc_length="auto",
+        *,
         activation: type[nn.Module] = nn.ELU,
         activation_transfor: type[nn.Module] = nn.GELU,
         n_times=None,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        *,
         activation_checkpointing=False,
     ):
         super().__init__(

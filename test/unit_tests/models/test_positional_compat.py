@@ -8,6 +8,8 @@ the middle shifts every later positional argument by one (for example
 
 import inspect
 
+import pytest
+
 import braindecode.models as models
 
 # Positional-or-keyword parameters of each model's ``__init__`` in 1.8.1, in order,
@@ -97,3 +99,30 @@ def test_1_8_1_positional_parameters_keep_their_position():
             moved[name] = params[: len(old)]
     assert len(POSITIONAL_1_8_1) == 61
     assert not moved, moved
+
+
+# Models whose 1.8.1 entry stops at a removed feature flag: a bare ``*`` holds
+# its place, so an old positional call past it fails instead of shifting.
+_CUT_AT_REMOVED_FLAG = (
+    "AttnSleep",
+    "BIOT",
+    "CBraMod",
+    "DeepSleepNet",
+    "EEGConformer",
+    "EEGDINO",
+    "EEGPT",
+    "EEGSimpleConv",
+    "EMG2QwertyNet",
+    "FBMSNet",
+    "MSVTNet",
+    "SSTDPN",
+    "SleepStagerBlanco2020",
+    "SleepStagerChambon2018",
+)
+
+
+@pytest.mark.parametrize("name", _CUT_AT_REMOVED_FLAG)
+def test_positional_call_past_a_removed_flag_raises(name):
+    n_positional = len(POSITIONAL_1_8_1[name])
+    with pytest.raises(TypeError, match="positional argument"):
+        getattr(models, name)(*[None] * (n_positional + 1))
