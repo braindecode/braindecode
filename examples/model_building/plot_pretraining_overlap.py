@@ -90,6 +90,66 @@ for evaluation_dataset in ["BNCI2014_001", "Cho2017"]:
     print(f"{evaluation_dataset}: {status}")
 
 ######################################################################
+# The same check across several checkpoints and evaluation datasets gives
+# an overlap table. Here we add a second, illustrative checkpoint whose card
+# lists the TUH EEG Corpus (``TUEG``), and an evaluation on TUAB, one of the
+# TUEG subsets (see "Collections" below).
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+
+tueg_dir = tempfile.mkdtemp()
+EEGNet(n_chans=22, n_times=1000, n_outputs=2).save_pretrained(
+    tueg_dir, model_card_kwargs={"datasets": ["TUEG"]}
+)
+checkpoints = {
+    "Checkpoint saved above": restored.card_data.datasets,
+    "Checkpoint with a TUEG card": EEGNet.from_pretrained(tueg_dir).card_data.datasets,
+}
+evaluation_datasets = ["BNCI2014_001", "Cho2017", "TUAB"]
+collections = {"TUAB": "TUEG"}  # evaluation dataset -> collection it belongs to
+statuses = ["Held out", "Same collection", "In training data"]
+
+overlap = [
+    [
+        2 if dataset in card else 1 if collections.get(dataset) in card else 0
+        for dataset in evaluation_datasets
+    ]
+    for card in map(set, checkpoints.values())
+]
+
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+    }
+)
+# Okabe-Ito: blue = held out, amber = same collection, vermilion = seen
+cmap = ListedColormap(["#0072B2", "#E69F00", "#D55E00"])
+fig, ax = plt.subplots(figsize=(6.5, 2.2), layout="constrained")
+ax.imshow(overlap, cmap=cmap, vmin=0, vmax=2, aspect="auto")
+# White lines between the cells
+ax.set_xticks([x + 0.5 for x in range(len(evaluation_datasets) - 1)], minor=True)
+ax.set_yticks([y + 0.5 for y in range(len(checkpoints) - 1)], minor=True)
+ax.grid(which="minor", color="white", linewidth=2)
+ax.tick_params(which="minor", length=0)
+for row, values in enumerate(overlap):
+    for col, value in enumerate(values):
+        text_color = "#14181F" if value == 1 else "white"  # dark text on amber
+        ax.text(col, row, statuses[value], ha="center", va="center", color=text_color)
+ax.set_xticks(range(len(evaluation_datasets)), evaluation_datasets)
+ax.set_yticks(range(len(checkpoints)), list(checkpoints))
+ax.xaxis.set_ticks_position("top")
+ax.tick_params(length=0)
+ax.spines[:].set_visible(False)
+ax.set_xlabel("Planned evaluation dataset")
+ax.xaxis.set_label_position("top")
+
+######################################################################
 # Two things to keep in mind when reading a card:
 #
 # - **Collections.** The TUH EEG Corpus (``TUEG``) contains TUAB, TUEV, TUSL, TUAR,

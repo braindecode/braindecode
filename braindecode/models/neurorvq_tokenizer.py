@@ -85,7 +85,7 @@ class _EMAVectorQuantizer(nn.Module):
 
     def _indices(self, vectors: Tensor) -> Tensor:
         self.embedding.initialize(vectors)
-        weight = self.embedding.weight
+        weight = self.embedding.weight.to(vectors.dtype)
         distances = vectors.square().sum(dim=1, keepdim=True)
         distances = distances + weight.square().sum(dim=1)
         # - 2 * vectors @ weight.T, accumulated in place by the GEMM (one pass less)
@@ -99,7 +99,7 @@ class _EMAVectorQuantizer(nn.Module):
         z = F.normalize(z.permute(0, 2, 3, 1), dim=-1)
         vectors = z.reshape(-1, z.shape[-1])
         indices = self._indices(vectors)
-        quantized = F.embedding(indices, self.embedding.weight).view_as(z)
+        quantized = F.embedding(indices, self.embedding.weight.to(z.dtype)).view_as(z)
 
         if self.training or self.statistic_code_usage:
             with torch.no_grad():
@@ -112,7 +112,9 @@ class _EMAVectorQuantizer(nn.Module):
                 counts = ones.new_zeros(weight.shape[0]).index_add_(0, indices, ones)
                 if not torch.jit.is_scripting():
                     _all_reduce_sum(counts)
-                self.cluster_size.mul_(self.decay).add_(counts, alpha=1 - self.decay)
+                self.cluster_size.mul_(self.decay).add_(
+                    counts.to(self.cluster_size.dtype), alpha=1 - self.decay
+                )
                 if self.training:
                     safe_counts = counts.masked_fill(counts == 0, 1.0)
                     embed_sum = ones.new_zeros(weight.shape)
@@ -120,7 +122,9 @@ class _EMAVectorQuantizer(nn.Module):
                     if not torch.jit.is_scripting():
                         _all_reduce_sum(embed_sum)
                     means = F.normalize(embed_sum / safe_counts.unsqueeze(1), dim=-1)
-                    means = torch.where(counts[:, None] == 0, weight, means)
+                    means = torch.where(
+                        counts[:, None] == 0, weight, means.to(weight.dtype)
+                    )
                     weight.mul_(self.decay).add_(means, alpha=1 - self.decay)
                     weight.copy_(F.normalize(weight, dim=-1))
 
@@ -152,9 +156,9 @@ class _ResidualVectorQuantizer(nn.Module):
         codes = []
         for layer in self.layers:
             indices = layer.encode(residual)
-            quantized = F.embedding(indices, layer.embedding.weight).view(
-                x.shape[0], x.shape[2], x.shape[3], x.shape[1]
-            )
+            quantized = F.embedding(
+                indices, layer.embedding.weight.to(residual.dtype)
+            ).view(x.shape[0], x.shape[2], x.shape[3], x.shape[1])
             residual = residual - quantized.permute(0, 3, 1, 2).contiguous()
             codes.append(indices)
         return torch.stack(codes)

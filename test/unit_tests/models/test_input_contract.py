@@ -614,6 +614,15 @@ def test_summary_generator_subset_and_cli(tmp_path):
     assert row["Sampling Frequency (Hz)"] == "200"
 
 
+def test_barista_refuses_out_of_range_spatial_indices():
+    # Only indices passed to forward are range-checked there; the defaults
+    # are checked at construction.
+    case = next(c for c in models_mandatory_parameters if c[0] == "BaRISTA")
+    model, x = _build_case(*case)
+    indices = model.spatial_emb.default_indices.clone()
+    indices[0] = -1
+    with pytest.raises(ValueError, match="spatial_indices must contain integers"):
+        model.eval()(x, spatial_indices=indices)
 # adapt_input(chs_info=...) refuses MEG, fNIRS and sEMG models, and CORTEG,
 # whose second per-channel input (x_hi) the channel layer does not map.
 # The registry models whose constructor takes channel_strategy (SleepFM and

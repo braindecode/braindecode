@@ -14,6 +14,7 @@ process step by step.
 #
 # License: BSD (3-clause)
 
+import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import torch
@@ -237,6 +238,99 @@ selected_ids = description.index[description["gender_code"].eq(1)].tolist()
 selected_windows = numeric_windows.split({"selected": selected_ids})["selected"]
 print(selected_windows.description[["age", "gender_code"]])
 print(f"Selected {len(selected_windows)} of {len(numeric_windows)} windows")
+
+###############################################################################
+# The figure shows the two tables side by side. Panel **A** has one bar per
+# recording in ``description``; panel **B** has one point per window in
+# ``get_metadata()``, where every window repeats the age of its recording.
+# Recordings kept in ``selected_ids`` are drawn in blue in both panels.
+
+# Importing braindecode.datasets imports MOABB, which applies a global seaborn
+# theme (grid, serif font, no tick marks): restore matplotlib's defaults first.
+plt.style.use("default")
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+BLUE, LIGHT_GREY, INK = "#0072B2", "#B0B0B0", "#14181F"
+gender_names = {0: "M", 1: "F"}
+
+
+def selection_color(i_recording):
+    return BLUE if i_recording in selected_ids else LIGHT_GREY
+
+
+fig, (ax_rec, ax_win) = plt.subplots(
+    1, 2, figsize=(10, 3.4), gridspec_kw={"width_ratios": [1, 1.6]}
+)
+
+# A: one row per recording of the description
+for i_rec, row in description.iterrows():
+    ax_rec.barh(i_rec, row["age"], color=selection_color(i_rec), height=0.6)
+    ax_rec.text(
+        row["age"] + 1,
+        i_rec,
+        f"{row['age']:g} y, {gender_names[row['gender_code']]}",
+        va="center",
+        color=INK,
+        fontsize=9,
+    )
+ax_rec.invert_yaxis()
+ax_rec.set_yticks(description.index, [f"Recording {i}" for i in description.index])
+ax_rec.set_xlim(0, 1.3 * description["age"].max())
+ax_rec.set_xlabel("Age (years)")
+ax_rec.set_title("A  Recording description", loc="left", fontweight="bold")
+
+# B: one point per window of the metadata, in dataset order
+i_window = np.arange(len(metadata))
+n_windows = np.array([len(ds) for ds in numeric_windows.datasets])
+i_rec_of_window = np.repeat(description.index, n_windows)
+ax_win.scatter(
+    i_window,
+    metadata["age"],
+    color=[selection_color(i) for i in i_rec_of_window],
+    s=28,
+    zorder=3,
+)
+for i_rec, first in zip(description.index, np.cumsum(n_windows) - n_windows):
+    ax_win.text(
+        first + (n_windows[i_rec] - 1) / 2,
+        description.loc[i_rec, "age"] + 3,
+        f"Recording {i_rec}",
+        color=selection_color(i_rec) if i_rec in selected_ids else INK,
+        ha="center",
+        fontsize=9,
+    )
+ax_win.text(
+    0.99,
+    0.98,
+    "Selected (gender_code = 1)",
+    color=BLUE,
+    ha="right",
+    va="top",
+    transform=ax_win.transAxes,
+    fontweight="bold",
+)
+ax_win.set_ylim(-5, 1.25 * description["age"].max())
+ax_win.set_xticks(np.cumsum(n_windows) - n_windows)
+ax_win.set_xlabel("Window (row of get_metadata())")
+ax_win.set_ylabel("Age target (years)")
+ax_win.set_title("B  Window metadata", loc="left", fontweight="bold")
+fig.tight_layout()
+plt.show()
 
 ###############################################################################
 # ``split`` reuses the underlying datasets rather than copying the signals.

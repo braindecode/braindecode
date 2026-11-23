@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import csv
+import json
 import os
 import os.path as op
 from html import escape
@@ -18,19 +19,27 @@ from sphinx.util import logging
 
 logger = logging.getLogger(__name__)
 
+# Citation count of each model's original paper (OpenAlex / Semantic Scholar);
+# the zoo cards are ordered by it.
+CITATIONS_PATH = op.join(op.dirname(op.abspath(__file__)), "model_citations.json")
+with open(CITATIONS_PATH, encoding="utf-8") as _fh:
+    CITATIONS: dict[str, int] = {
+        name: entry["citations"] for name, entry in json.load(_fh).items()
+    }
+
 FEATURED_MODELS: tuple[str, ...] = (
-    "EEGPT",
-    "Labram",
-    "REVE",
-    "CBraMod",
-    "SAMBA",
-    "EEGNeX",
-    "EEGConformer",
     "ShallowFBCSPNet",
+    "EEGConformer",
+    "Labram",
+    "EEGPT",
+    "CBraMod",
+    "REVE",
     "SleepFM",
+    "EEGNeX",
+    "MEGXL",
+    "SAMBA",
     "SeizureTransformer",
     "GeoNIRS",
-    "MEGXL",
 )
 
 MODALITY_ORDER: tuple[tuple[str, str], ...] = (
@@ -394,9 +403,17 @@ def parse_summary_csv(csv_path: str) -> list[dict]:
             by_name[name] = record
             ordered_names.append(name)
 
-    featured_list = [by_name[n] for n in FEATURED_MODELS if n in by_name]
-    extra_list = [by_name[n] for n in ordered_names if n not in FEATURED_MODELS]
-    return featured_list + extra_list
+    # Most cited first, ties by name; featured cards stay ahead of the rest.
+    def by_citations(name: str) -> tuple[int, str]:
+        return (-CITATIONS.get(name, 0), name)
+
+    featured_list = [
+        by_name[n] for n in sorted(FEATURED_MODELS, key=by_citations) if n in by_name
+    ]
+    extra = sorted(
+        (n for n in ordered_names if n not in FEATURED_MODELS), key=by_citations
+    )
+    return featured_list + [by_name[n] for n in extra]
 
 
 def render_zoo_html(models: list[dict]) -> str:
@@ -549,7 +566,9 @@ def generate_zoo_data(app, *_args) -> None:
 
     if op.exists(out_path):
         out_mtime = op.getmtime(out_path)
-        if out_mtime >= op.getmtime(csv_path) and out_mtime >= op.getmtime(__file__):
+        if out_mtime >= max(
+            op.getmtime(p) for p in (csv_path, __file__, CITATIONS_PATH)
+        ):
             return
 
     models = parse_summary_csv(csv_path)

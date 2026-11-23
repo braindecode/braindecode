@@ -263,8 +263,10 @@ def test_conf_html_redirects_resolve_to_existing_docs():
     assert "html_redirects" in conf_values["extensions"]
     redirects = conf_values["html_redirects"]
     assert set(redirects) == {
+        "auto_examples/datasets_io/plot_hub_integration.html",
         "user_guide/channel_strategies.html",
         "user_guide/cropped_inference.html",
+        "auto_examples/advanced_training/bcic_iv_4_ecog_cropped.html",
     }
 
     for src, target in redirects.items():

@@ -456,11 +456,11 @@ orgs = [orgs[i] for i in order]
 
 from matplotlib.ticker import FuncFormatter
 
-# -- palette ----------------------------------------------------------
+# -- palette (Okabe-Ito, one color and one marker per organization) ---
 org_palette = {
-    "braindecode": "#2D6A9F",
-    "brain-bzh": "#C04E3E",
-    "PulpBio": "#4A8B6F",
+    "braindecode": "#0072B2",
+    "brain-bzh": "#D55E00",
+    "PulpBio": "#009E73",
 }
 org_markers = {"braindecode": "o", "brain-bzh": "D", "PulpBio": "s"}
 colors = [org_palette[o] for o in orgs]
@@ -468,17 +468,13 @@ markers = [org_markers[o] for o in orgs]
 
 # -- figure setup ------------------------------------------------------
 fig, ax = plt.subplots(figsize=(7.5, 5.0), dpi=120)
-fig.patch.set_facecolor("#FAFAFA")
-ax.set_facecolor("#FAFAFA")
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
 
 y_pos = np.arange(len(names))
 
-# Horizontal reference lines (subtle, behind everything)
-for y in y_pos:
-    ax.axhline(y, color="#E8E8E8", linewidth=0.6, zorder=0)
-
 # Stem lines from left edge to dot
-ax.hlines(y_pos, 0.5, params_m, color="#D0D0D0", linewidth=0.9, zorder=1)
+ax.hlines(y_pos, 0.5, params_m, color="#B0B0B0", linewidth=0.9, zorder=1)
 
 # Dots (different shapes per org for accessibility)
 for i in range(len(names)):
@@ -502,43 +498,27 @@ for i, pm in enumerate(params_m):
         ha="left",
         va="center",
         fontsize=7.8,
-        color="#444444",
-        fontweight="bold",
+        color="#14181F",
         zorder=4,
     )
 
-# Y-axis
+# Y-axis: checkpoint names, no spine or tick marks
 ax.set_yticks(y_pos)
-ax.set_yticklabels(names, fontsize=9, color="#333333", fontweight="medium")
+ax.set_yticklabels(names, fontsize=9, color="#14181F")
+ax.tick_params(axis="y", length=0)
+ax.spines[["top", "right", "left"]].set_visible(False)
 
-# X-axis: log scale with human-readable labels
+# X-axis: log scale with human-readable labels, thin spine, outward ticks
 ax.set_xscale("log")
 ax.set_xlim(1.5, params_m.max() * 2.5)
 ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.0f}M"))
 ax.set_xticks([3, 10, 30, 100, 300])
-ax.tick_params(axis="x", colors="#999999", labelsize=8, length=0, pad=4)
-ax.tick_params(axis="y", length=0)
+ax.xaxis.set_minor_locator(plt.NullLocator())
+ax.spines["bottom"].set_linewidth(0.8)
+ax.tick_params(axis="x", direction="out", width=0.8, labelsize=9)
+ax.set_xlabel("Parameters (log scale)")
 
-# Title + subtitle
-ax.set_title(
-    "EEG Foundation Models",
-    fontsize=13,
-    fontweight="bold",
-    color="#1a1a1a",
-    loc="left",
-    pad=22,
-)
-ax.text(
-    0.0,
-    1.02,
-    "Parameter count of curated checkpoints on Hugging Face Hub",
-    transform=ax.transAxes,
-    fontsize=8.5,
-    color="#777777",
-    va="bottom",
-)
-
-# Organization legend with shape + color
+# Organization key with shape + color, without a frame
 for org_name in org_palette:
     ax.scatter(
         [],
@@ -549,28 +529,22 @@ for org_name in org_palette:
         label=org_name,
         edgecolors="white",
     )
-legend = ax.legend(
-    fontsize=7.5,
+ax.legend(
+    title="Hosted by",
+    fontsize=8,
+    title_fontsize=8.5,
     loc="lower right",
-    frameon=True,
-    framealpha=0.95,
-    edgecolor="#E0E0E0",
+    frameon=False,
     handletextpad=0.4,
-    borderpad=0.8,
     labelspacing=0.7,
 )
-legend.get_frame().set_facecolor("#FAFAFA")
 
-# Clean spines
-for spine in ax.spines.values():
-    spine.set_visible(False)
-
-# Minimal grid on x only
-ax.xaxis.grid(True, color="#E8E8E8", linewidth=0.5, which="major")
+# Faint vertical grid on x only
+ax.xaxis.grid(True, color="#EAEAEA", linewidth=0.6, which="major")
 ax.yaxis.grid(False)
 ax.set_axisbelow(True)
 
-fig.tight_layout(rect=[0, 0, 1, 0.96])
+fig.tight_layout()
 plt.show()
 
 ######################################################################

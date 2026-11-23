@@ -900,7 +900,9 @@ class _ClassificationHeadWithQueries(nn.Module):
         B, num_patches, embed_dim = x.shape
         decoder_queries = self.learned_agg.repeat(x.shape[0], 1, 1)
 
-        x = self.decoder_attn(query=decoder_queries, key=x, value=x)[0]
+        x = self.decoder_attn(
+            query=decoder_queries, key=x, value=x, need_weights=False
+        )[0]
         x = x[:, 0, :]
         x = self.decoder_ffn(x)
         return x
@@ -969,7 +971,11 @@ class _CrossAttentionBlock(nn.Module):
         values = self.values_norm(x)
 
         attention_out, attention_scores = self.cross_attention(
-            query=queries, key=keys, value=values, key_padding_mask=key_padding_mask
+            query=queries,
+            key=keys,
+            value=values,
+            key_padding_mask=key_padding_mask,
+            need_weights=False,
         )  # Shape: (batch_size*num_patches, num_queries, embed_dim)
         attention_out = self.ffn(attention_out) + attention_out
 

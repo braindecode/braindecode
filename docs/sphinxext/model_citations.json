@@ -1,0 +1,626 @@
+{
+    "ATCNet": {
+        "citations": 482,
+        "source": "s2",
+        "paper": "Physics-Informed Attention Temporal Convolutional Network for EEG-Based Motor Imagery Classification",
+        "retrieved": "2026-11-23"
+    },
+    "AXON": {
+        "citations": 0,
+        "source": "s2",
+        "paper": "Adaptive Anisotropic Attention for Axis-Structured Signals",
+        "retrieved": "2026-11-23"
+    },
+    "AttentionBaseNet": {
+        "citations": 55,
+        "source": "s2",
+        "paper": "EEG motor imagery decoding: a framework for comparative analysis with channel attention mechanisms",
+        "retrieved": "2026-11-23"
+    },
+    "AttnSleep": {
+        "citations": 846,
+        "source": "openalex",
+        "paper": "An Attention-Based Deep Learning Approach for Sleep Stage Classification With Single-Channel EEG",
+        "retrieved": "2026-11-23"
+    },
+    "BBL": {
+        "citations": 29,
+        "source": "s2",
+        "paper": "The Brain's Bitter Lesson: Scaling Speech Decoding With Self-Supervised Learning",
+        "retrieved": "2026-11-23"
+    },
+    "BDTCN": {
+        "citations": 216,
+        "source": "s2",
+        "paper": "Machine-Learning-Based Diagnostics of EEG Pathology",
+        "retrieved": "2026-11-23"
+    },
+    "BENDR": {
+        "citations": 547,
+        "source": "openalex",
+        "paper": "BENDR: Using transformers and a contrastive self-supervised learning task to learn from massive amounts of EEG data",
+        "retrieved": "2026-11-23"
+    },
+    "BIOT": {
+        "citations": 432,
+        "source": "openalex",
+        "paper": "BIOT: Biosignal Transformer for Cross-data Learning in the Wild",
+        "retrieved": "2026-11-23"
+    },
+    "BaRISTA": {
+        "citations": 10,
+        "source": "s2",
+        "paper": "BaRISTA: Brain Scale Informed Spatiotemporal Representation of Human Intracranial Neural Activity",
+        "retrieved": "2026-11-23"
+    },
+    "BrainBERT": {
+        "citations": 139,
+        "source": "openalex",
+        "paper": "BrainBERT: Self-supervised representation learning for intracranial recordings",
+        "retrieved": "2026-11-23"
+    },
+    "BrainModule": {
+        "citations": 337,
+        "source": "s2",
+        "paper": "Decoding speech perception from non-invasive brain recordings",
+        "retrieved": "2026-11-23"
+    },
+    "BrainOmni": {
+        "citations": 54,
+        "source": "openalex",
+        "paper": "BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals",
+        "retrieved": "2026-11-23"
+    },
+    "BrainTokenizer": {
+        "citations": 54,
+        "source": "openalex",
+        "paper": "BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals",
+        "retrieved": "2026-11-23"
+    },
+    "Brant": {
+        "citations": 130,
+        "source": "openalex",
+        "paper": "Brant: Foundation Model for Intracranial Neural Signal",
+        "retrieved": "2026-11-23"
+    },
+    "CBraMod": {
+        "citations": 324,
+        "source": "s2",
+        "paper": "CBraMod: A Criss-Cross Brain Foundation Model for EEG Decoding",
+        "retrieved": "2026-11-23"
+    },
+    "CORTEG": {
+        "citations": 1,
+        "source": "s2",
+        "paper": "CORTEG: Foundation Models Enable Cross-Modality Representation Transfer from Scalp to Intracranial Brain Recordings",
+        "retrieved": "2026-11-23"
+    },
+    "CSBrain": {
+        "citations": 90,
+        "source": "openalex",
+        "paper": "CSBrain: A Cross-scale Spatiotemporal Brain Foundation Model for EEG Decoding",
+        "retrieved": "2026-11-23"
+    },
+    "CTNet": {
+        "citations": 281,
+        "source": "openalex",
+        "paper": "CTNet: a convolutional transformer network for EEG-based motor imagery classification",
+        "retrieved": "2026-11-23"
+    },
+    "CareSleepNet": {
+        "citations": 44,
+        "source": "s2",
+        "paper": "CareSleepNet: A Hybrid Deep Learning Network for Automatic Sleep Staging",
+        "retrieved": "2026-11-23"
+    },
+    "CodeBrain": {
+        "citations": 41,
+        "source": "s2",
+        "paper": "CodeBrain: Bridging Decoupled Tokenizer and Multi-Scale Architecture for EEG Foundation Model",
+        "retrieved": "2026-11-23"
+    },
+    "ContraWR": {
+        "citations": 74,
+        "source": "s2",
+        "paper": "Self-Supervised Electroencephalogram Representation Learning for Automatic Sleep Staging: Model Development and Evaluation Study",
+        "retrieved": "2026-11-23"
+    },
+    "DANCE": {
+        "citations": 3,
+        "source": "s2",
+        "paper": "DANCE: Detect and Classify Events in EEG",
+        "retrieved": "2026-11-23"
+    },
+    "DGCNN": {
+        "citations": 1522,
+        "source": "s2",
+        "paper": "EEG Emotion Recognition Using Dynamical Graph Convolutional Neural Networks",
+        "retrieved": "2026-11-23"
+    },
+    "DIVER1": {
+        "citations": 9,
+        "source": "s2",
+        "paper": "DIVER-1: Scaling Intracranial EEG Foundation Models for Transferable Representations",
+        "retrieved": "2026-11-23"
+    },
+    "Deep4Net": {
+        "citations": 3844,
+        "source": "s2",
+        "paper": "Deep learning with convolutional neural networks for EEG decoding and visualization",
+        "retrieved": "2026-11-23"
+    },
+    "DeepSOZ": {
+        "citations": 21,
+        "source": "s2",
+        "paper": "DeepSOZ: A Robust Deep Model for Joint Temporal and Spatial Seizure Onset Localization from Multichannel EEG Data",
+        "retrieved": "2026-11-23"
+    },
+    "DeepSleepNet": {
+        "citations": 1337,
+        "source": "s2",
+        "paper": "DeepSleepNet: A Model for Automatic Sleep Stage Scoring Based on Raw Single-Channel EEG",
+        "retrieved": "2026-11-23"
+    },
+    "DuIN": {
+        "citations": 23,
+        "source": "s2",
+        "paper": "Du-IN: Discrete units-guided mask modeling for decoding speech from Intracranial Neural signals",
+        "retrieved": "2026-11-23"
+    },
+    "EEGCLIP": {
+        "citations": 21,
+        "source": "s2",
+        "paper": "EEG-CLIP: learning EEG representations from natural language descriptions",
+        "retrieved": "2026-11-23"
+    },
+    "EEGConformer": {
+        "citations": 1319,
+        "source": "s2",
+        "paper": "EEG Conformer: Convolutional Transformer for EEG Decoding and Visualization",
+        "retrieved": "2026-11-23"
+    },
+    "EEGDINO": {
+        "citations": 11,
+        "source": "s2",
+        "paper": "EEG-DINO: Learning EEG Foundation Models via Hierarchical Self-distillation",
+        "retrieved": "2026-11-23"
+    },
+    "EEGITNet": {
+        "citations": 132,
+        "source": "s2",
+        "paper": "EEG-ITNet: An Explainable Inception Temporal Convolutional Network for motor imagery classification",
+        "retrieved": "2026-11-23"
+    },
+    "EEGInceptionERP": {
+        "citations": 216,
+        "source": "s2",
+        "paper": "EEG-Inception: A Novel Deep Convolutional Neural Network for Assistive ERP-Based Brain-Computer Interfaces",
+        "retrieved": "2026-11-23"
+    },
+    "EEGInceptionMI": {
+        "citations": 224,
+        "source": "s2",
+        "paper": "EEG-inception: an accurate and robust end-to-end neural network for EEG-based motor imagery classification",
+        "retrieved": "2026-11-23"
+    },
+    "EEGMiner": {
+        "citations": 19,
+        "source": "s2",
+        "paper": "EEGminer: discovering interpretable features of brain activity with learnable filters",
+        "retrieved": "2026-11-23"
+    },
+    "EEGNeX": {
+        "citations": 136,
+        "source": "s2",
+        "paper": "Toward reliable signals decoding for electroencephalogram: A benchmark study to EEGNeX",
+        "retrieved": "2026-11-23"
+    },
+    "EEGNet": {
+        "citations": 5236,
+        "source": "s2",
+        "paper": "EEGNet: a compact convolutional neural network for EEG-based brain\u2013computer interfaces",
+        "retrieved": "2026-11-23"
+    },
+    "EEGPT": {
+        "citations": 336,
+        "source": "s2",
+        "paper": "EEGPT: Pretrained Transformer for Universal and Reliable Representation of EEG Signals",
+        "retrieved": "2026-11-23"
+    },
+    "EEGSimpleConv": {
+        "citations": 45,
+        "source": "openalex",
+        "paper": "A Strong and Simple Deep Learning Baseline for BCI Motor Imagery Decoding",
+        "retrieved": "2026-11-23"
+    },
+    "EEGSym": {
+        "citations": 74,
+        "source": "s2",
+        "paper": "EEGSym: Overcoming Inter-Subject Variability in Motor Imagery Based BCIs With Deep Learning",
+        "retrieved": "2026-11-23"
+    },
+    "EEGTCNet": {
+        "citations": 426,
+        "source": "s2",
+        "paper": "EEG-TCNet: An Accurate Temporal Convolutional Network for Embedded Motor-Imagery Brain\u2013Machine Interfaces",
+        "retrieved": "2026-11-23"
+    },
+    "EMG2QwertyNet": {
+        "citations": 52,
+        "source": "s2",
+        "paper": "emg2qwerty: A Large Dataset with Baselines for Touch Typing using Surface Electromyography",
+        "retrieved": "2026-11-23"
+    },
+    "EpiNT": {
+        "citations": 2,
+        "source": "s2",
+        "paper": "Cross-Modal Epileptic Signal Harmonization: Frequency Domain Mapping Quantization for Pre-training a Unified Neurophysiological Transformer",
+        "retrieved": "2026-11-23"
+    },
+    "FBCNet": {
+        "citations": 277,
+        "source": "s2",
+        "paper": "FBCNet: A Multi-view Convolutional Neural Network for Brain-Computer Interface",
+        "retrieved": "2026-11-23"
+    },
+    "FBLightConvNet": {
+        "citations": 103,
+        "source": "openalex",
+        "paper": "A temporal dependency learning CNN with attention mechanism for MI-EEG decoding",
+        "retrieved": "2026-11-23"
+    },
+    "FBMSNet": {
+        "citations": 135,
+        "source": "s2",
+        "paper": "FBMSNet: A Filter-Bank Multi-Scale Convolutional Neural Network for EEG-Based Motor Imagery Decoding",
+        "retrieved": "2026-11-23"
+    },
+    "FNIRS4D": {
+        "citations": 2,
+        "source": "s2",
+        "paper": "Domain Knowledge Fused State Space Model for fNIRS-Based Brain\u2013Computer Interfaces",
+        "retrieved": "2026-11-23"
+    },
+    "FNIRSCNN1D": {
+        "citations": 106,
+        "source": "s2",
+        "paper": "Convolutional neural network for high-accuracy functional near-infrared spectroscopy in a brain\u2013computer interface: three-class classification of rest, right-, and left-hand motor execution",
+        "retrieved": "2026-11-23"
+    },
+    "FNIRSNet": {
+        "citations": 60,
+        "source": "s2",
+        "paper": "Rethinking Delayed Hemodynamic Responses for fNIRS Classification",
+        "retrieved": "2026-11-23"
+    },
+    "FNIRSPreT": {
+        "citations": 115,
+        "source": "s2",
+        "paper": "Transformer Model for Functional Near-Infrared Spectroscopy Classification",
+        "retrieved": "2026-11-23"
+    },
+    "FNIRST": {
+        "citations": 115,
+        "source": "s2",
+        "paper": "Transformer Model for Functional Near-Infrared Spectroscopy Classification",
+        "retrieved": "2026-11-23"
+    },
+    "GCNsNet": {
+        "citations": 191,
+        "source": "s2",
+        "paper": "GCNs-Net: A Graph Convolutional Neural Network Approach for Decoding Time-Resolved EEG Motor Imagery Signals",
+        "retrieved": "2026-11-23"
+    },
+    "GeoNIRS": {
+        "citations": 1,
+        "source": "s2",
+        "paper": "GeoNIRS: Geometry-Aware Pretraining for Heterogeneous fNIRS Representation Learning",
+        "retrieved": "2026-11-23"
+    },
+    "Guetschel2026": {
+        "citations": 0,
+        "source": "s2",
+        "paper": "What masking geometry works best for EEG foundation models?",
+        "retrieved": "2026-11-23"
+    },
+    "IFNet": {
+        "citations": 144,
+        "source": "s2",
+        "paper": "IFNet: An Interactive Frequency Convolutional Neural Network for Enhancing Motor Imagery Decoding From EEG",
+        "retrieved": "2026-11-23"
+    },
+    "JungMAE": {
+        "citations": 3,
+        "source": "s2",
+        "paper": "fNIRS Foundation Model for Few-Shot Based fNIRS Classification",
+        "retrieved": "2026-11-23"
+    },
+    "LUNA": {
+        "citations": 41,
+        "source": "s2",
+        "paper": "LUNA: Efficient and Topology-Agnostic Foundation Model for EEG Signal Analysis",
+        "retrieved": "2026-11-23"
+    },
+    "Labram": {
+        "citations": 614,
+        "source": "s2",
+        "paper": "Large Brain Model for Learning Generic Representations with Tremendous EEG Data in BCI",
+        "retrieved": "2026-11-23"
+    },
+    "MAPA": {
+        "citations": 0,
+        "source": "s2",
+        "paper": "Pretraining for Sample-Efficient Neural Interfaces",
+        "retrieved": "2026-11-23"
+    },
+    "MEDFormer": {
+        "citations": 172,
+        "source": "s2",
+        "paper": "Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification",
+        "retrieved": "2026-11-23"
+    },
+    "MEGGPT": {
+        "citations": 8,
+        "source": "s2",
+        "paper": "MEG-GPT: A transformer-based foundation model for magnetoencephalography data",
+        "retrieved": "2026-11-23"
+    },
+    "MEGXL": {
+        "citations": 8,
+        "source": "s2",
+        "paper": "MEG-XL: Data-Efficient Brain-to-Text via Long-Context Pre-Training",
+        "retrieved": "2026-11-23"
+    },
+    "MIRepNet": {
+        "citations": 16,
+        "source": "s2",
+        "paper": "MIRepNet: A Pipeline and Foundation Model for EEG-Based Motor Imagery Classification",
+        "retrieved": "2026-11-23"
+    },
+    "MSCFormer": {
+        "citations": 76,
+        "source": "s2",
+        "paper": "Multi-scale convolutional transformer network for motor imagery brain-computer interface",
+        "retrieved": "2026-11-23"
+    },
+    "MSVTNet": {
+        "citations": 86,
+        "source": "s2",
+        "paper": "MSVTNet: Multi-Scale Vision Transformer Neural Network for EEG-Based Motor Imagery Decoding",
+        "retrieved": "2026-11-23"
+    },
+    "MVPFormer": {
+        "citations": 7,
+        "source": "s2",
+        "paper": "A foundation model with multi-variate parallel attention to generate neuronal activity",
+        "retrieved": "2026-11-23"
+    },
+    "MetaNeuromotorHand": {
+        "citations": 232,
+        "source": "openalex",
+        "paper": "A generic non-invasive neuromotor interface for human-computer interaction",
+        "retrieved": "2026-11-23"
+    },
+    "MtReNIRS": {
+        "citations": 0,
+        "source": "s2",
+        "paper": "MtReNIRS: A Self-Supervised Foundation Model for Transferable Neurovascular Representations",
+        "retrieved": "2026-11-23"
+    },
+    "NICE": {
+        "citations": 202,
+        "source": "s2",
+        "paper": "Decoding Natural Images from EEG for Object Recognition",
+        "retrieved": "2026-11-23"
+    },
+    "NeuroPose": {
+        "citations": 101,
+        "source": "s2",
+        "paper": "NeuroPose: 3D Hand Pose Tracking using EMG Wearables",
+        "retrieved": "2026-11-23"
+    },
+    "NeuroRVQ": {
+        "citations": 12,
+        "source": "s2",
+        "paper": "NeuroRVQ: Multi-Scale Biosignal Tokenization for Generative Foundation Models",
+        "retrieved": "2026-11-23"
+    },
+    "NeuroRVQTokenizer": {
+        "citations": 12,
+        "source": "s2",
+        "paper": "NeuroRVQ: Multi-Scale Biosignal Tokenization for Generative Foundation Models",
+        "retrieved": "2026-11-23"
+    },
+    "PBT": {
+        "citations": 28,
+        "source": "s2",
+        "paper": "Flexible Patched Brain Transformer model for EEG decoding",
+        "retrieved": "2026-11-23"
+    },
+    "PopulationTransformer": {
+        "citations": 33,
+        "source": "s2",
+        "paper": "Population Transformer: Learning Population-level Representations of Neural Activity",
+        "retrieved": "2026-11-23"
+    },
+    "Pratibha2": {
+        "citations": 1,
+        "source": "s2",
+        "paper": "MANAS-2: Constrained Reconstruction for EEG Foundation Models",
+        "retrieved": "2026-11-23"
+    },
+    "REVE": {
+        "citations": 152,
+        "source": "s2",
+        "paper": "REVE: A Foundation Model for EEG - Adapting to Any Setup with Large-Scale Pretraining on 25,000 Subjects",
+        "retrieved": "2026-11-23"
+    },
+    "SAMBA": {
+        "citations": 6,
+        "source": "s2",
+        "paper": "SAMBA: Toward an EEG Foundation Model via Differential Mamba and Coordinate-Driven Spatial Embedding",
+        "retrieved": "2026-11-23"
+    },
+    "SCCNet": {
+        "citations": 59,
+        "source": "s2",
+        "paper": "Spatial Component-wise Convolutional Network (SCCNet) for Motor-Imagery EEG Classification",
+        "retrieved": "2026-11-23"
+    },
+    "SPARCNet": {
+        "citations": 177,
+        "source": "s2",
+        "paper": "Development of Expert-Level Classification of Seizures and Rhythmic and Periodic Patterns During EEG Interpretation",
+        "retrieved": "2026-11-23"
+    },
+    "SSTDPN": {
+        "citations": 47,
+        "source": "openalex",
+        "paper": "A spatial-spectral and temporal dual prototype network for motor imagery brain-computer interface",
+        "retrieved": "2026-11-23"
+    },
+    "STEEGFormer": {
+        "citations": 32,
+        "source": "openalex",
+        "paper": "Are EEG foundation models worth it? Comparative evaluation with traditional decoders in diverse BCI tasks",
+        "retrieved": "2026-11-23"
+    },
+    "SeizureTransformer": {
+        "citations": 6,
+        "source": "s2",
+        "paper": "Large EEG-U-Transformer for Time-Step Level Detection Without Pre-Training",
+        "retrieved": "2026-11-23"
+    },
+    "SensingDynamics": {
+        "citations": 16,
+        "source": "s2",
+        "paper": "Sensing the Full Dynamics of the Human Hand with a Neural Interface and Deep Learning",
+        "retrieved": "2026-11-23"
+    },
+    "ShallowFBCSPNet": {
+        "citations": 3844,
+        "source": "s2",
+        "paper": "Deep learning with convolutional neural networks for EEG decoding and visualization",
+        "retrieved": "2026-11-23"
+    },
+    "SignalJEPA": {
+        "citations": 27,
+        "source": "s2",
+        "paper": "S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention",
+        "retrieved": "2026-11-23"
+    },
+    "SignalJEPA_Contextual": {
+        "citations": 27,
+        "source": "s2",
+        "paper": "S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention",
+        "retrieved": "2026-11-23"
+    },
+    "SignalJEPA_PostLocal": {
+        "citations": 27,
+        "source": "s2",
+        "paper": "S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention",
+        "retrieved": "2026-11-23"
+    },
+    "SignalJEPA_PreLocal": {
+        "citations": 27,
+        "source": "s2",
+        "paper": "S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention",
+        "retrieved": "2026-11-23"
+    },
+    "SincShallowNet": {
+        "citations": 130,
+        "source": "s2",
+        "paper": "Interpretable and lightweight convolutional neural network for EEG decoding: Application to movement execution and imagination",
+        "retrieved": "2026-11-23"
+    },
+    "SleepFM": {
+        "citations": 140,
+        "source": "openalex",
+        "paper": "A multimodal sleep foundation model for disease prediction",
+        "retrieved": "2026-11-23"
+    },
+    "SleepFMStager": {
+        "citations": 140,
+        "source": "openalex",
+        "paper": "A multimodal sleep foundation model for disease prediction",
+        "retrieved": "2026-11-23"
+    },
+    "SleepStagerBlanco2020": {
+        "citations": 47,
+        "source": "s2",
+        "paper": "Convolutional neural networks for sleep stage scoring on a two-channel EEG signal",
+        "retrieved": "2026-11-23"
+    },
+    "SleepStagerChambon2018": {
+        "citations": 736,
+        "source": "openalex",
+        "paper": "A deep learning architecture for temporal sleep stage classification using multivariate and multimodal time series",
+        "retrieved": "2026-11-23"
+    },
+    "SyncNet": {
+        "citations": 70,
+        "source": "s2",
+        "paper": "Targeting EEG/LFP Synchrony with Neural Nets",
+        "retrieved": "2026-11-23"
+    },
+    "TCCNet": {
+        "citations": 90,
+        "source": "s2",
+        "paper": "Improved Gesture Recognition Based on sEMG Signals and TCN",
+        "retrieved": "2026-11-23"
+    },
+    "TCFormer": {
+        "citations": 42,
+        "source": "s2",
+        "paper": "Temporal convolutional transformer for EEG based motor imagery decoding",
+        "retrieved": "2026-11-23"
+    },
+    "TFMTokenizer": {
+        "citations": 23,
+        "source": "s2",
+        "paper": "Tokenizing Single-Channel EEG with Time-Frequency Motif Learning",
+        "retrieved": "2026-11-23"
+    },
+    "TIDNet": {
+        "citations": 103,
+        "source": "s2",
+        "paper": "Thinker invariance: enabling deep neural networks for BCI across more people",
+        "retrieved": "2026-11-23"
+    },
+    "TMSANet": {
+        "citations": 50,
+        "source": "s2",
+        "paper": "TMSA-Net:A novel attention mechanism for improved motor imagery EEG signal processing",
+        "retrieved": "2026-11-23"
+    },
+    "TSception": {
+        "citations": 128,
+        "source": "s2",
+        "paper": "TSception:A Deep Learning Framework for Emotion Detection Using EEG",
+        "retrieved": "2026-11-23"
+    },
+    "TinyMyo": {
+        "citations": 17,
+        "source": "s2",
+        "paper": "TinyMyo: a Tiny Foundation Model for Flexible EMG Signal Processing at the Edge",
+        "retrieved": "2026-11-23"
+    },
+    "USleep": {
+        "citations": 438,
+        "source": "s2",
+        "paper": "U-Sleep: resilient high-frequency sleep staging",
+        "retrieved": "2026-11-23"
+    },
+    "VEMG2Pose": {
+        "citations": 63,
+        "source": "s2",
+        "paper": "emg2pose: A Large and Diverse Benchmark for Surface Electromyographic Hand Pose Estimation",
+        "retrieved": "2026-11-23"
+    },
+    "ZUNA": {
+        "citations": 4,
+        "source": "s2",
+        "paper": "ZUNA: Flexible EEG Superresolution with Position-Aware Diffusion Autoencoders",
+        "retrieved": "2026-11-23"
+    }
+}
