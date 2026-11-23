@@ -1655,6 +1655,9 @@ html[data-theme="dark"] .bd-landing .inst-logos .inst-freiburg {
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   padding: 4px max(28px, calc((100vw - 1280px) / 2)) 14px;
+
+  /* Without it, mandatory snapping pins the first card to the viewport edge. */
+  scroll-padding-inline: max(28px, calc((100vw - 1280px) / 2));
 }
 
 .bd-landing .venue-track::-webkit-scrollbar {
@@ -3097,5 +3100,24 @@ html[data-theme="dark"] .bd-landing .inst-logos .inst-freiburg {
     flex: 0 0 min(320px, calc(100vw - 44px));
     min-height: 368px;
     padding: 24px 22px;
+  }
+
+  .bd-landing .venue-track {
+    padding-inline: 16px;
+    scroll-padding-inline: 16px;
+  }
+
+  .bd-landing .venue-brand-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .bd-landing .venue-quote {
+    font-size: 1.125rem;
+  }
+
+  /* The Models table and the tutorial gallery carry these on phones. */
+  .bd-landing :is(.zoo-section, .tut-section, .btn[href="#model-zoo"]) {
+    display: none;
   }
 }
