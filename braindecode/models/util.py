@@ -265,14 +265,6 @@ def build_model_config(model) -> dict:
         config["chs_info"] = model._serialize_chs_info(chs_info)
     if adaptation.get("chs_info") is not None:
         adaptation["chs_info"] = model._serialize_chs_info(adaptation["chs_info"])
-    if adaptation.get("channel_strategy_kwargs"):  # numpy values as python ones
-        options = {
-            k: v.tolist() if isinstance(v, (np.generic, np.ndarray)) else v
-            for k, v in adaptation["channel_strategy_kwargs"].items()
-        }
-        adaptation["channel_strategy_kwargs"] = {
-            k: v for k, v in options.items() if _is_jsonable(v)
-        }
     if adaptation:
         config["input_adaptation"] = adaptation
     return config

@@ -551,7 +551,7 @@ def _capabilities(
     flags = {
         "Cropped decoding": name in _INITIAL_CROPPED_MODELS,
         # the rule adapt_input applies: one input of EEG electrodes
-        "adapt_input": "EEG" in modality and len(cls._time_inputs) == 1,
+        "adapt_input": "EEG" in modality.split(", ") and len(cls._time_inputs) == 1,
         "reset_head": head and cls.reset_head is not EEGModuleMixin.reset_head,
         "return_features": head
         and "return_features" in inspect.signature(cls.forward).parameters,

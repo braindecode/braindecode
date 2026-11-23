@@ -847,6 +847,51 @@ def test_adapt_input_refuses_a_montage_without_channel_dicts(chs_info):
         model.adapt_input(chs_info=chs_info)
 
 
+def test_adapt_input_leaves_the_model_unchanged_when_it_raises():
+    model, chs = _eegnet()
+    with pytest.raises(ValueError, match="integer rates only"):
+        model.adapt_input(chs_info=chs[::-1], sfreq=333.5)
+    assert "channel_layer" not in model.__dict__ and model._adapt_config is None
+    model.adapt_input(chs_info=chs[::-1])  # not refused as a channel_strategy build
+
+
+@pytest.mark.parametrize("sfreq", [0, -500])
+def test_adapt_input_refuses_a_non_positive_sfreq(sfreq):
+    model, _ = _eegnet()
+    with pytest.raises(ValueError, match="needs sfreq > 0"):
+        model.adapt_input(sfreq=sfreq)
+
+
+def test_adapt_input_records_the_lazy_length_at_model_sfreq():
+    model = CBraMod(n_chans=4, n_outputs=2, sfreq=200)
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        model.adapt_input(sfreq=400)
+    with torch.no_grad():
+        model(torch.randn(2, 4, 1600))
+    assert model.n_times == 800
+
+
+def test_adapt_input_refuses_intracranial_models():
+    from braindecode.models._summary import _capabilities
+
+    assert _capabilities("BrainBERT", BrainBERT, "iEEG")["adapt_input"] == "no"
+    assert _capabilities("EEGNet", EEGNet, "EEG, iEEG")["adapt_input"] == "yes"
+    chs = _draw_chs_info(4, np.random.default_rng(4))
+    model = BrainBERT(chs_info=chs, n_outputs=2, n_times=1000, sfreq=250)
+    with pytest.raises(ValueError, match="cannot map channels"):
+        model.adapt_input(chs_info=chs[::-1])
+
+
+def test_adapt_input_refuses_strategy_options_that_are_not_json():
+    model, chs = _eegnet()
+    with pytest.raises(ValueError, match=r"not JSON: \['reg'\]"):
+        model.adapt_input(
+            chs_info=chs,
+            channel_strategy="spline",
+            channel_strategy_kwargs={"reg": torch.tensor(0.1)},
+        )
+
+
 def test_adapt_input_reads_summary_csv_once(monkeypatch):
     from braindecode.models import util as model_util
 

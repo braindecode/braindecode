@@ -38,6 +38,7 @@ from braindecode.models import util as model_util
 from braindecode.models.util import (
     _EEG_PARAMS,
     _in_model_resample,
+    _is_jsonable,
     build_model_config,
     resolve_config_type,
     resolve_type_kwargs,
@@ -716,9 +717,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             The model. :meth:`get_config` saves the adaptation, and
             :meth:`from_config` and ``from_pretrained`` apply it again.
             ``model(x)`` and ``model.forward(x)`` apply it; TorchScript does not.
+            The added layers are not submodules: ``.modules()`` and ``.apply()``
+            do not see them.
         """
         name = type(self).__name__
         config = dict(self._adapt_config or {})
+        layer = resample = None  # validate everything, then change the model
         if chs_info is not None and not (
             chs_info and all(isinstance(c, dict) for c in chs_info)
         ):
@@ -733,7 +737,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     "channel_strategy_kwargs"
                 )
             strategy = channel_strategy
-            kwargs = channel_strategy_kwargs or {}
+            kwargs = {  # saved in the config: numpy values as python ones
+                k: v.tolist() if isinstance(v, (np.generic, np.ndarray)) else v
+                for k, v in (channel_strategy_kwargs or {}).items()
+            }
+            bad = [k for k, v in kwargs.items() if not _is_jsonable(v)]
+            if bad:
+                raise ValueError(
+                    f"{name}.adapt_input saves channel_strategy_kwargs in the config "
+                    f"and needs JSON values; not JSON: {bad}."
+                )
             if (strategy in STRATEGIES and strategy not in _ADAPT_STRATEGIES) or (
                 strategy == "source" and kwargs.get("trainable")
             ):
@@ -741,7 +754,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     f"adapt_input takes {_ADAPT_STRATEGIES}: {strategy!r} adds "
                     "learned or fitted state to the state_dict."
                 )
-            if hasattr(self, "channel_layer") and "channel_strategy" not in config:
+            if "channel_layer" in self._modules:  # registered by __init__
                 raise ValueError(
                     f"{name} was built with a channel_strategy and maps any montage "
                     "already: pass the montage of x to forward (chs_info=...)."
@@ -756,7 +769,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             table = model_util._summary_table
             modality = table.at[name, "Modality"] if name in table.index else "EEG"
             kinds = sorted(set(_resolve(target)[3]) - set(_ELECTRODES))
-            if "EEG" not in modality or kinds or len(self._time_inputs) > 1:
+            if "EEG" not in modality.split(", ") or kinds or len(self._time_inputs) > 1:
                 raise ValueError(
                     f"{name}.adapt_input cannot map channels: the channel layer maps "
                     f"one input of EEG electrodes, and {name} takes {modality} "
@@ -764,15 +777,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 )
             if chs_info is not None and isinstance(chs_info[0].get("loc"), list):
                 chs_info = self._deserialize_chs_info(chs_info)  # from a config
-            # Not a child: see _apply.
-            self.__dict__["channel_layer"] = self._to_model_device(
-                ChannelLayer(target, strategy, chs_info, **kwargs)
-            )
-            self.forward = self._channel_forward
+            layer = ChannelLayer(target, strategy, chs_info, **kwargs)
             config.update(
                 chs_info=chs_info,
                 channel_strategy=strategy,
-                channel_strategy_kwargs=channel_strategy_kwargs,
+                channel_strategy_kwargs=kwargs or None,
             )
         elif channel_strategy_kwargs:
             raise ValueError("channel_strategy_kwargs needs a channel_strategy.")
@@ -783,17 +792,22 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     f"{name}.adapt_input(sfreq=...) needs the integer sampling rate "
                     f"the model was built with, got sfreq={model_sfreq}."
                 )
-            if sfreq == model_sfreq:
-                self.__dict__.pop("input_resample", None)
-                self._input_sfreq = None
-            else:
+            if sfreq <= 0:
+                raise ValueError(f"{name}.adapt_input needs sfreq > 0, got {sfreq=}.")
+            if sfreq != model_sfreq:
                 resample = _in_model_resample(
                     name, sfreq, int(model_sfreq), self._signal_param("n_times") or 0
                 )[0]
-                self.__dict__["input_resample"] = self._to_model_device(resample)
+            config["sfreq"] = None if resample is None else float(sfreq)
+        # Not children: see _apply.
+        for key, module in (("channel_layer", layer), ("input_resample", resample)):
+            if module is not None:
+                self.__dict__[key] = self._to_model_device(module)
                 self.forward = self._channel_forward
-                self._input_sfreq = float(sfreq)
-            config["sfreq"] = self._input_sfreq
+        if sfreq is not None:
+            if resample is None:
+                self.__dict__.pop("input_resample", None)
+            self._input_sfreq = config["sfreq"]
         self._adapt_config = {k: v for k, v in config.items() if v is not None} or None
         return self
 
@@ -1162,7 +1176,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 if need_chans and not self._accepts_any_n_chans(args, kwargs):
                     self._materialized_n_chans = x.shape[1]
                 if need_times and not self._accepts_any_n_times(args, kwargs):
-                    self._materialized_n_times = x.shape[-1]
+                    n_times = x.shape[-1]
+                    if self._input_sfreq is not None:  # the length at model.sfreq
+                        n_times = -(
+                            -n_times
+                            * int(self._signal_param("sfreq"))
+                            // int(self._input_sfreq)
+                        )
+                    self._materialized_n_times = n_times
         return out
 
     def get_output_shape(self) -> tuple[int, ...]:
