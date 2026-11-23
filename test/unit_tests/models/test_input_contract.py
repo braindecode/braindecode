@@ -173,6 +173,28 @@ def test_reset_head_keeps_materialized_geometry():
         model(torch.randn(2, 4, 400))
 
 
+@pytest.mark.parametrize(
+    "model_name",
+    ["DeepSOZ", "Guetschel2026", "SAMBA", "STEEGFormer", "TinyMyo"],
+)
+def test_scripted_model_rejects_wrong_channel_count(model_name):
+    # TorchScript never reaches EEGModuleMixin.__call__, so these models
+    # repeat the channel check in forward under scripting; without it a
+    # wrong channel count silently broadcasts or reads the wrong token.
+    required, signal = next(
+        (rp, sp)
+        for name, rp, sp in models_mandatory_parameters
+        if name == model_name
+    )
+    model, x = _build_case(model_name, required, signal)
+    _materialize(model, x)
+    scripted = torch.jit.script(model.eval())
+    with torch.no_grad():
+        scripted(x)
+        with pytest.raises(Exception, match="channels"):
+            scripted(torch.randn(2, 1, x.shape[2]))
+
+
 def test_vemg2pose_accepts_one_sample_past_left_context():
     required, signal = next(
         (rp, sp)
