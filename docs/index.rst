@@ -705,7 +705,7 @@
           </div>
         </a>
 
-        <a class="venue-card tone-copper" href="https://pubmed.ncbi.nlm.nih.gov/34874850/" target="_blank" rel="noopener">
+        <a class="venue-card tone-copper" href="https://pure.ulster.ac.uk/en/publications/9f9d76be-d102-42a9-aa17-300b5df0451a" target="_blank" rel="noopener">
           <svg class="venue-art" viewBox="0 0 396 432" fill="none" aria-hidden="true">
             <path d="M18 176 Q68 124 118 176 T218 176 T318 176 T396 176" stroke="rgba(242,176,119,0.36)" stroke-width="1.6"/>
             <path d="M18 212 Q68 164 118 212 T218 212 T318 212 T396 212" stroke="rgba(137,200,247,0.28)" stroke-width="1.3"/>
