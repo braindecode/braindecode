@@ -16,7 +16,7 @@ from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.functional import _real_dft, spectral_input
 from braindecode.functional.functions import _next_fast_len
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 
 # Cache of one-sided DFT cosine/sine bases keyed by (device, n_fft): the TUEG
 # geometry reuses one basis for every block, forward and backward.
@@ -277,6 +277,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             remapped[new_key] = value
         return super().load_state_dict(remapped, *args, **kwargs)
 
+    @deprecated_forward_kwargs(inputs="x")
     def forward(
         self,
         x: torch.Tensor,

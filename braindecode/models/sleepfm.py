@@ -20,7 +20,11 @@ from braindecode.functional import (
     sinusoidal_positional_encoding,
 )
 from braindecode.functional.patches import _check_on_non_divisible
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import (
+    EEGModuleMixin,
+    _warn_deprecated_argument,
+    deprecated_forward_kwargs,
+)
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
 
@@ -201,6 +205,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def encode(
         self,
         x: torch.Tensor,
+        channel_mask: torch.Tensor | None = None,
         ch_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         r"""Return the pooled and the per-patch representations.
@@ -220,6 +225,9 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         ----------
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
+        channel_mask : torch.Tensor | None
+            Deprecated, removed in 2.3: the braindecode 2.0 mask, ``True`` for
+            missing channels. Pass ``ch_mask=~channel_mask`` instead.
         ch_mask : torch.Tensor | None
             ``(batch, n_chans)`` mask with ``True`` for real
             channels, see :func:`~braindecode.functional.check_ch_mask`.
@@ -231,6 +239,20 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         contextual_tokens : torch.Tensor
             :math:`h`, shape ``(batch, n_patches, embed_dim)``.
         """
+        if channel_mask is not None:  # the 2.0 positional mask, True for missing
+            if not torch.jit.is_scripting():
+                _warn_deprecated_argument(
+                    "SleepFM.encode",
+                    "channel_mask",
+                    "ch_mask",
+                    torch.logical_not,
+                    note=" From 2.3 its second positional argument is ch_mask.",
+                )
+            if ch_mask is not None:
+                raise TypeError(
+                    "SleepFM.encode got both 'channel_mask' (deprecated) and 'ch_mask'."
+                )
+            ch_mask = torch.logical_not(channel_mask)
         real = check_ch_mask(ch_mask, x)
         patch_mask: Optional[torch.Tensor] = None
         if real is None:
@@ -254,6 +276,10 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         # Pool the patches into one trial vector: (batch, embed_dim)
         return self.temporal_pooling(contextual_tokens), contextual_tokens
 
+    @deprecated_forward_kwargs(
+        channel_mask=("ch_mask", torch.logical_not),
+        old_positional=("channel_mask", "return_features"),
+    )
     def forward(
         self,
         x: torch.Tensor,
@@ -552,6 +578,10 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         model.eval()
         return model
 
+    @deprecated_forward_kwargs(
+        channel_mask=("ch_mask", torch.logical_not),
+        old_positional=("channel_mask", "return_features", "temporal_mask"),
+    )
     def forward(
         self,
         x: torch.Tensor,

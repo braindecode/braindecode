@@ -32,7 +32,7 @@ from braindecode.functional import (
     rotary_frequencies,
     spectral_input,
 )
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.util import chs_info_positions
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
@@ -423,6 +423,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         return x_tokenized, channel_locations_emb
 
+    @deprecated_forward_kwargs(X="x", channel_locations="pos")
     def forward(
         self,
         x: torch.Tensor,

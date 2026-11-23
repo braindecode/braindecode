@@ -7,7 +7,7 @@ from mne.utils import warn
 from torch import nn
 from torch.nn import init
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules import (
     AvgPool2dWithConv,
     CombinedConv,
@@ -363,6 +363,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
         self.train()
 
+    @deprecated_forward_kwargs(input="x")
     def forward(self, x):
         """Run the layers in order on ``x``, ``(batch, n_chans, n_times)``."""
         for module in self:

@@ -3,9 +3,11 @@
 # License: BSD-3
 
 
+import inspect
 import json
 import subprocess
 import sys
+import warnings
 import weakref
 from operator import attrgetter
 from pathlib import Path
@@ -1158,3 +1160,103 @@ def test_attn_sleep_loads_a_v2_safetensors_file(tmp_path):
     state = _v2_layout("attn_sleep_v2.0.0_safetensors.txt")
     save_file(state, tmp_path / "model.safetensors")
     AttnSleep.from_pretrained(tmp_path, strict=True)
+
+
+# Old forward arguments of v2.0.0 keep working until their removal release
+# (deprecated_forward_kwargs); forward itself only takes the new names.
+def _aliases(cls):
+    return (cls._forward_deprecation or (None, {}, None))[1]
+
+
+_V2_FORWARD = [
+    (name, set(args))
+    for name, *args in (
+        line.split()
+        for line in (_V2_DATA / "v2_forward_arguments.txt").read_text().splitlines()
+    )
+]
+
+
+@pytest.mark.parametrize("name,v2_args", _V2_FORWARD)
+def test_v2_forward_arguments_are_still_accepted(name, v2_args):
+    cls = models_dict[name]
+    accepted = set(inspect.signature(cls.forward).parameters) | set(_aliases(cls))
+    assert v2_args <= accepted
+
+
+@pytest.mark.parametrize(
+    "name",
+    sorted(n for n, c in models_dict.items() if "_deprecated_kwargs" in vars(c.forward)),
+)
+def test_deprecated_forward_keywords_rename_to_forward_parameters(name):
+    params = inspect.signature(models_dict[name].forward).parameters
+    for old, new in _aliases(models_dict[name]).items():
+        new = new[0] if isinstance(new, tuple) else new
+        assert new in params and old not in params
+
+
+def test_old_forward_keyword_warns_and_matches_the_new_one():
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+
+    class Wrapped(EEGNet):  # overrides forward without the decorator
+        def forward(self, x):
+            return super().forward(x)
+
+    class Old(EEGNet):  # a 2.0 subclass whose forward still says input
+        def forward(self, input):
+            return super().forward(input)
+
+    wrapped = Wrapped(n_chans=3, n_outputs=2, n_times=128).eval()
+    wrapped.load_state_dict(model.state_dict())
+    old = Old(n_chans=3, n_outputs=2, n_times=128).eval()
+    old.load_state_dict(model.state_dict())
+    x = torch.randn(2, 3, 128)
+    with torch.no_grad():
+        expected = model(x)
+        with pytest.warns(FutureWarning, match="Calling EEGNet with input="):
+            assert torch.equal(model(input=x), expected)
+        with pytest.warns(FutureWarning, match="Calling Wrapped with input="):
+            assert torch.equal(wrapped(input=x), expected)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            assert torch.equal(old(input=x), expected)
+        with pytest.raises(TypeError, match="got both 'input'"):
+            model(input=x, x=x)
+    assert "input" not in str(torch.jit.script(model).forward.schema)
+
+
+def test_old_forward_arguments_compile_with_fullgraph():
+    # __call__ reads a plain class attribute, so torch.compile traces it whole.
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+    x = torch.randn(2, 3, 128)
+    compiled = torch.compile(model, fullgraph=True, backend="eager")
+    with torch.no_grad():
+        assert torch.equal(compiled(input=x), model(x))
+
+
+def test_old_sleepfm_channel_mask_is_the_inverse_of_ch_mask():
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == "SleepFM"
+    )
+    signal = _get_signal_params(signal_params)
+    model = models_dict["SleepFM"](**_get_signal_params(signal_params, required))
+    model.eval()
+    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+    missing = torch.zeros(2, x.shape[1], dtype=torch.bool)
+    missing[:, -1] = True  # the 2.0 channel_mask is True for missing channels
+    with torch.no_grad():
+        expected = model(x, ch_mask=~missing)
+        assert not torch.equal(expected, model(x))
+        with pytest.warns(FutureWarning, match="channel_mask"):
+            assert torch.equal(model(x, channel_mask=missing), expected)
+        with pytest.warns(FutureWarning, match="channel_mask"):
+            assert torch.equal(model(x, missing), expected)  # 2.0 positional order
+        with pytest.warns(FutureWarning, match="channel_mask"):
+            assert torch.equal(model(x, channel_mask=None), model(x))
+        with pytest.raises(TypeError, match="multiple values for argument"):
+            model(x, missing, channel_mask=missing)
+        with pytest.raises(TypeError, match="at most 3 positional"):
+            model(x, missing, False, None)
+        with pytest.warns(FutureWarning, match="second positional argument is ch_mask"):
+            old = model.encode(x, missing)[0]
+        assert torch.equal(old, model.encode(x, ch_mask=~missing)[0])

@@ -16,7 +16,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import scaled_dot_product_attention
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
     warn_if_sfreq_differs,
@@ -360,6 +360,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.on_non_divisible = on_non_divisible
         self._n_times_step = fine_time_pts
 
+    @deprecated_forward_kwargs(input_tensor="x")
     def forward(
         self,
         x: torch.Tensor,

@@ -18,7 +18,7 @@ from braindecode.functional import (
     scaled_dot_product_attention,
     sinusoidal_positional_encoding,
 )
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
     (8, 32, 8),
@@ -548,6 +548,7 @@ class SignalJEPA(_BaseSignalJEPA):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
 
+    @deprecated_forward_kwargs(X="x")
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
@@ -738,6 +739,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             n_spat_filters=self._clf_n_spat_filters,
         )
 
+    @deprecated_forward_kwargs(X="x")
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
@@ -1055,6 +1057,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         new_model.feature_encoder = deepcopy(feature_encoder)
         return new_model
 
+    @deprecated_forward_kwargs(X="x")
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
@@ -1299,6 +1302,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         new_model.feature_encoder = deepcopy(feature_encoder)
         return new_model
 
+    @deprecated_forward_kwargs(X="x")
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:

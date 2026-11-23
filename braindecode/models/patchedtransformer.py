@@ -16,7 +16,7 @@ from braindecode.functional import (
     init_weights_,
     scaled_dot_product_attention,
 )
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 
 # Weight initialization of the reference implementation.
 _init_weights = partial(
@@ -307,6 +307,7 @@ class PBT(EEGModuleMixin, nn.Module):
         """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
+    @deprecated_forward_kwargs(X="x")
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Classify a window from the transformer output of its class token.
 

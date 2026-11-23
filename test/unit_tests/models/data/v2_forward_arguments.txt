@@ -1,0 +1,85 @@
+ATCNet X
+AXON x return_features
+AttentionBaseNet x
+AttnSleep x
+BDTCN x
+BENDR x return_features
+BIOT x return_features
+BaRISTA x spatial_indices return_features ch_mask
+BrainBERT x return_features ch_mask
+BrainModule x subject_index
+BrainOmni x return_features
+BrainTokenizer x
+Brant x return_features ch_mask
+CBraMod x mask return_features
+CSBrain x mask return_features
+CTNet x
+CodeBrain inputs mask return_features
+ContraWR X
+DANCE x
+DGCNN x
+DIVER1 x chan_metadata ch_mask
+Deep4Net input
+DeepSleepNet x
+DuIN x return_features
+EEGCLIP X
+EEGConformer x
+EEGDINO x return_features
+EEGITNet input
+EEGInceptionERP input
+EEGInceptionMI X
+EEGMiner x
+EEGNeX x
+EEGNet input
+EEGPT x return_features
+EEGSimpleConv x
+EEGSym x
+EEGTCNet x
+EMG2QwertyNet x return_features
+EpiNT x return_features ch_mask
+FBCNet x
+FBLightConvNet x
+FBMSNet x
+GCNsNet x
+Guetschel2026 x return_features
+IFNet x
+LUNA X mask channel_locations channel_names
+Labram x return_patch_tokens return_all_tokens return_features ch_names
+MAPA x sensor_indices return_features
+MEDFormer x
+MIRepNet x return_features
+MSCFormer x
+MSVTNet x
+MVPFormer x return_features ch_mask
+MetaNeuromotorHand x
+NeuroPose x
+NeuroRVQ x return_features
+NeuroRVQTokenizer x
+PBT X
+PopulationTransformer x coords seq_id return_features ch_mask
+REVE eeg pos return_output return_features
+SCCNet x
+SPARCNet X
+SSTDPN x
+STEEGFormer x return_features
+SeizureTransformer x
+SensingDynamics x x_lowpass
+ShallowFBCSPNet input
+SignalJEPA X return_features
+SignalJEPA_Contextual X return_features
+SignalJEPA_PostLocal X return_features
+SignalJEPA_PreLocal X return_features
+SincShallowNet x
+SleepFM x channel_mask return_features
+SleepFMStager x channel_mask return_features temporal_mask
+SleepStagerBlanco2020 x
+SleepStagerChambon2018 x
+SyncNet x
+TCFormer x
+TFMTokenizer x spectrogram_mask
+TIDNet x
+TMSANet x
+TSception x
+USleep x
+VEMG2Pose x y0
+ZUNA input_tensor return_features
