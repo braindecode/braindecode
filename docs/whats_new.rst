@@ -207,6 +207,9 @@ Enhancements
 - Add the :ref:`seizure-alarm-chbmit` tutorial. A seizure detector trained on two CHB-MIT
   patients is tested on a third, and :func:`braindecode.training.szcore_event_scores`
   scores its alarms (:gh:`1736` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Restyle the applied-examples gallery figures after :gh:`1761` and run the ECoG trialwise and
+  fixed-length-window examples in the gallery as ``plot_bcic_iv_4_ecog_trial`` and
+  ``plot_create_fixed_window_length``, with redirects from the old pages (:gh:`1789` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================

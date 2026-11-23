@@ -243,18 +243,80 @@ print(table.to_string(index=False))
 # Look at one record
 # ------------------
 #
-# The plot shows the smoothed score of ``chb05_13`` with the seizure shaded.
+# Panel A draws the sweep above: the false alarms per hour of each threshold,
+# labelled with the number of test seizures it detects. Panel B shows the
+# smoothed score of ``chb05_13`` with the seizure shaded and the 0.9 threshold
+# dashed.
 
 import matplotlib.pyplot as plt
 
+BLUE, VERMILION, GREY, INK = "#0072B2", "#D55E00", "#7F7F7F", "#14181F"
+# MOABB, imported by ``braindecode.datasets``, sets a seaborn style when it is
+# imported, so we go back to the matplotlib defaults before our own settings.
+plt.rcdefaults()
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+fig, (ax_sweep, ax_trace) = plt.subplots(
+    1, 2, figsize=(9.5, 3.4), gridspec_kw={"width_ratios": [1, 1.9]}
+)
+ax_sweep.plot(
+    table["threshold"], table["false alarms per hour"], color=BLUE, marker="o"
+)
+for threshold, fa, n_detected in zip(
+    table["threshold"], table["false alarms per hour"], table["detected seizures"]
+):
+    ax_sweep.annotate(
+        n_detected,
+        xy=(threshold, fa),
+        xytext=(0, 7),
+        textcoords="offset points",
+        color=INK,
+        fontsize=8.5,
+        ha="center",
+    )
+ax_sweep.set_ylim(0, 1.2 * table["false alarms per hour"].max())
+ax_sweep.set_xlabel("Alarm threshold")
+ax_sweep.set_ylabel("False alarms per hour")
+ax_sweep.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+ax_sweep.set_axisbelow(True)
+ax_sweep.set_title("A  Threshold sweep", loc="left", fontweight="bold", color=INK)
+
 starts, score = scores["chb05_13"]
 onset, offset, _ = TEST["chb05_13"]
-fig, ax = plt.subplots(figsize=(8, 3))
-ax.plot(starts + WINDOW_S, score, label="smoothed seizure score")
-ax.axvspan(onset, offset, color="tab:red", alpha=0.3, label="seizure")
-ax.axhline(0.9, color="k", linestyle="--", label="threshold 0.9")
-ax.set(xlabel="Time in the record (s)", ylabel="Score", ylim=(0, 1))
-ax.legend(loc="upper right")
+ax_trace.axvspan(onset, offset, color=VERMILION, alpha=0.18, linewidth=0)
+ax_trace.text(offset + 20, 0.86, "Seizure", color=VERMILION, va="top")
+ax_trace.plot(starts + WINDOW_S, score, color=BLUE, linewidth=1.0)
+ax_trace.axhline(0.9, color=GREY, linestyle="--", linewidth=0.9)
+ax_trace.text(
+    0,
+    0.92,
+    "Alarm threshold (0.9)",
+    color=GREY,
+    fontsize=8.5,
+    va="bottom",
+)
+ax_trace.set_xlim(0, starts[-1] + WINDOW_S)
+ax_trace.set_ylim(0, 1)
+ax_trace.set_yticks([0, 0.5, 1])
+ax_trace.set_xlabel("Time in the record (s)")
+ax_trace.set_ylabel("Smoothed seizure score")
+ax_trace.set_title("B  Score on chb05_13", loc="left", fontweight="bold", color=INK)
 fig.tight_layout()
 plt.show()
 
