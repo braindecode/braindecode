@@ -22,7 +22,36 @@
 .. _current:
 
 
-Current 2.1.0 (GitHub)
+Current 2.2.0 (GitHub)
+===============================
+
+Enhancements
+============
+
+- None yet
+
+API and behavior changes
+========================
+
+- None yet
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- None yet
+
+Code health
+============
+
+- None yet
+
+
+Current 2.1.0 (2026-11-23)
 ===============================
 
 Enhancements
