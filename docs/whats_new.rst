@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- LUNA and MetaNeuromotorHand skip the unused attention weights (outputs move by at most 2e-6), TinyMyo builds its
+  rotary table once, BaRISTA no longer syncs with the host in eval, and SCCNet, TSception, CSBrain (channels_last),
+  EEGInceptionMI, EEGNeX and NeuroRVQTokenizer (bfloat16 autocast) no longer raise (:gh:`1786` by `Bruno Aristimunha`_).
 - ATCNet, CareSleepNet, EEGInceptionMI, FBCNet, FBMSNet, IFNet, Labram (``neural_tokenizer=True``), NeuroRVQTokenizer, PBT
   and SeizureTransformer read the window length from the input instead of the length stored at build, so other lengths run
   with unchanged weights, and outputs at the build length stay the same (by `Bruno Aristimunha`_).

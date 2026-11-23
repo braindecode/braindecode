@@ -10,10 +10,11 @@ from functools import partial
 from math import sqrt
 from typing import List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 
-from braindecode.functional import init_weights_, scaled_dot_product_attention
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import SinusoidalPositionalEncoding
 
@@ -550,6 +551,11 @@ class _FullAttention(nn.Module):
         self.mask_flag = mask_flag
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
+        super().__init__()
+        self.scale = scale
+        self.mask_flag = mask_flag
+        self.output_attention = output_attention
+        self.dropout = nn.Dropout(attention_dropout)
 
     def forward(
         self,
@@ -560,27 +566,42 @@ class _FullAttention(nn.Module):
         tau: Optional[torch.Tensor] = None,
         delta: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        embed_dim = queries.shape[-1]
+        batch_size, query_len, _, embed_dim = queries.shape
+        _, _, _, _ = values.shape
         # Avoid using `or` because TorchScript may fail to cast None/float
         if self.scale is None:
             scale = 1.0 / sqrt(embed_dim)
         else:
             scale = self.scale
 
+        # (batch, heads, len, dim) operands: both products are batched GEMMs.
         queries, keys, values = (
             queries.transpose(1, 2),
             keys.transpose(1, 2),
             values.transpose(1, 2),
         )
-        dropout_p = self.dropout.p if self.training else 0.0
-        output_values = scaled_dot_product_attention(
-            queries,
-            keys,
-            values,
-            dropout_p=dropout_p,
-            scale=scale,
-        ).transpose(1, 2)
-        return output_values.contiguous(), None
+        scores = torch.matmul(queries, keys.transpose(-2, -1))
+
+        if self.mask_flag:
+            if attn_mask is None:
+                # create a triangular causal mask tensor of shape [B,1,L,L]
+                attn_mask = torch.triu(
+                    torch.ones([batch_size, 1, query_len, query_len], dtype=torch.bool),
+                    diagonal=1,
+                ).to(queries.device)
+
+            # attn_mask is expected to be a boolean tensor with same shape
+            scores.masked_fill_(attn_mask, -np.inf)
+
+        attention_weights = self.dropout(
+            torch.softmax(scale * scores, dim=-1)
+        )  # Scaled Dot-Product Attention
+        output_values = torch.matmul(attention_weights, values).transpose(1, 2)
+
+        if self.output_attention:
+            return output_values.contiguous(), attention_weights
+        else:
+            return output_values.contiguous(), None
 
 
 class _MedformerLayer(nn.Module):
