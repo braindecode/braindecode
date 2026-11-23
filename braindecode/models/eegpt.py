@@ -11,13 +11,17 @@ import torch
 from torch import nn
 
 from braindecode.functional import init_weights_
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
 from braindecode.util import resolve_montage_name
 
 
+@deprecated_init_flags(
+    identity_head=("return_encoder_output",),
+    return_encoder_output="tokens",
+)
 class EEGPT(EEGModuleMixin, nn.Module):
     r"""
     EEGPT: Pretrained Transformer for Universal and Reliable Representation of EEG Signals from Wang et al. (2024) [eegpt]_.
@@ -199,6 +203,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Normalization layer. If None, defaults to ``nn.LayerNorm`` with epsilon ``layer_norm_eps``.
     layer_norm_eps : float, default=1e-6
         Epsilon value for the normalization layer.
+    return_encoder_output : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        Whether to return the encoder output or the classifier output.
     n_chans_target : int, default=19
         Output channels of the learned channel projection. It must be 19, the
         electrodes of EEGPT's original linear probe (``EEGPT_19_CHANNELS``).
@@ -250,7 +257,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         norm_layer: Optional[nn.Module] = None,
         layer_norm_eps: float = 1e-6,
         # downstream finetuning parameters
-        *,
+        return_encoder_output: bool = False,
         chan_proj_type: Literal[
             "conv1d_constraint", "linear", "none"
         ] = "conv1d_constraint",

@@ -1,6 +1,7 @@
 """Tests for the unified ``return_features`` and ``reset_head`` API."""
 
 import inspect
+import warnings
 
 import mne
 import pytest
@@ -254,11 +255,15 @@ def test_reset_head_model_reloads_after_saving(name, tmp_path):
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
 
 
-def test_from_config_drops_removed_feature_flags():
-    # The released EEG-DINO config still holds both flags.
+def test_from_config_loads_false_feature_flags_silently():
+    # The released EEG-DINO config still holds both deprecated flags, false.
     config = _build_registered("EEGDINO").get_config()
     config.update(return_features=False, return_encoder_output=False)
-    assert "return_features" not in EEGDINO.from_config(config).get_config()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        loaded = EEGDINO.from_config(config).get_config()
+    assert loaded["return_features"] is False
+    assert loaded["return_encoder_output"] is False
 
 
 # A constrained last layer, or a head of several layers: the default swap would

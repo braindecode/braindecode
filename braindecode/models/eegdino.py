@@ -11,11 +11,16 @@ import torch
 from torch import nn
 
 from braindecode.functional import spectral_input
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer, PreNormBlock, TimmAttention
 
 
+@deprecated_init_flags(
+    identity_head=("return_encoder_output",),
+    return_encoder_output=lambda out: out["features"].mean(dim=1),
+    return_features={"features": "features", "cls_token": "cls_token"},
+)
 class EEGDINO(EEGModuleMixin, nn.Module):
     r"""EEG-DINO from Wang et al. (2025) [eegdino]_.
 
@@ -142,6 +147,13 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         ``nn.GELU`` to match the released pretrained weights.
     drop_prob : float, default=0.1
         Dropout / stochastic-depth probability in the encoder.
+    return_features : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, ``forward`` returns ``{"features", "cls_token"}``.
+    return_encoder_output : bool, default=False
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, ``final_layer`` is :class:`~torch.nn.Identity` and ``forward``
+        returns the pooled encoder representation (linear probing).
 
     References
     ----------
@@ -183,7 +195,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.GELU,
         patch_activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
-        *,
+        return_features: bool = False,
+        return_encoder_output: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):

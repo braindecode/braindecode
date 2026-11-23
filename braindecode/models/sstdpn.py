@@ -10,9 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 
 
+@deprecated_init_flags(
+    return_features=("features", "logits"),
+)
 class SSTDPN(EEGModuleMixin, nn.Module):
     r"""SSTDPN from Can Han et al (2025) [Han2025]_.
 
@@ -172,6 +175,10 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     mvp_kernel_sizes : list[int], optional
         Kernel sizes for Multi-scale Variance Pooling (MVP) module.
         Larger kernels capture long-term temporal dependencies .
+    return_features : bool, optional
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If True, the forward pass returns (features, logits). If False, returns only logits.
+        Default is False.
 
     proto_sep_maxnorm : float, optional
         Maximum L2 norm constraint for Inter-class Separation Prototypes during forward pass.
@@ -231,7 +238,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         n_fused_filters: int = 48,
         temporal_conv_kernel_size: int = 75,
         mvp_kernel_sizes: Optional[List[int]] = None,
-        *,
+        return_features: bool = False,
         proto_sep_maxnorm: float = 1.0,
         proto_cpt_std: float = 1.0,
         spt_attn_global_context_kernel: int = 250,

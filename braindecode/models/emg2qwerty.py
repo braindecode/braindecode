@@ -18,10 +18,13 @@ import torchaudio.transforms as ta_transforms
 from torch import nn
 
 from braindecode.functional import spectral_input
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_init_flags
 from braindecode.modules import TDSConvEncoder
 
 
+@deprecated_init_flags(
+    return_feature=("logits", "features"),
+)
 class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
     r"""Decoder mapping surface electromyography (sEMG) to keystrokes
     (emg2qwerty) [emg2qwerty2024]_.
@@ -178,6 +181,17 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
     spec_augment_prob : float
         Probability of running SpecAugment on a given training batch
         (Bernoulli gate before sampling mask counts). Defaults to ``1.0``.
+    return_feature : bool
+        Deprecated, removed in 2.3: call ``model(x, return_features=True)`` instead.
+        If ``True``, ``forward`` returns a tuple
+        ``(emissions, features)`` instead of just ``emissions`` —
+        :class:`braindecode.models.BIOT`-style legacy feature path. Lets
+        configuration-driven downstream wrappers (e.g. neuroai's
+        ``DownstreamWrapperModel`` with ``model_output_key=1``) pick up
+        the encoder representation without passing a runtime kwarg.
+        Defaults to ``False``. Mutually compatible with the runtime
+        ``return_features`` (plural) flag, which still wins when set
+        to ``True``.
 
     Examples
     --------
@@ -260,7 +274,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         freq_mask_param: int = 4,
         spec_augment_prob: float = 1.0,
         # Standard braindecode args
-        *,
+        return_feature: bool = False,
         n_times: int | None = None,
         input_window_seconds: float | None = None,
         chs_info: list | None = None,
