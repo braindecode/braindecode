@@ -433,7 +433,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         return bool(self._encoder_output or ret_feat)
 
     @property
-    def _build_time_len(self):  # also once a lazy head is materialized
+    def _build_time_len(self):  # ty: ignore[incompatible-property-override]
         return self._n_patch()
 
     def _n_patch(self) -> int | None:

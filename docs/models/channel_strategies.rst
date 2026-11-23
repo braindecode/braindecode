@@ -258,13 +258,14 @@ montage, sampling rate or window length with
     y = model(X, pos=pos, ch_mask=ch_mask)
 
 - **Montage.** ``chs_info`` (``channel_strategy`` defaults to ``"nearest"``) adds a
-  :class:`~braindecode.modules.ChannelLayer` from that montage onto the montage the model
-  was built with. ``channel_strategy`` alone maps each sample from the ``pos`` and
+  :class:`~braindecode.modules.ChannelLayer` from that montage onto the montage the
+  model was built with. ``channel_strategy`` alone maps each sample from the ``pos`` and
   ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate` with
   ``set_return_ch_pos(True)``, so mixed-montage batches also reach native convolutional
-  models such as :class:`~braindecode.models.EEGNet`. A model built without ``chs_info``,
-  built with a ``channel_strategy`` (pass ``chs_info`` to ``forward`` instead), or taking
-  MEG, fNIRS, sEMG or non-electrode channels raises a ``ValueError``.
+  models such as :class:`~braindecode.models.EEGNet`. A model built without
+  ``chs_info``, built with a ``channel_strategy`` (pass ``chs_info`` to ``forward``
+  instead), or taking MEG, fNIRS, sEMG or non-electrode channels raises a
+  ``ValueError``.
 - **Stateless strategies only.** ``"wiener"``, ``"latent"`` and ``"source"`` with
   ``trainable=True`` raise a ``ValueError``: they add fitted or trained tensors. The
   ``state_dict`` keys stay those of the built model, so checkpoints load with

@@ -389,7 +389,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             )
 
     @property
-    def _build_time_len(self) -> int:
+    def _build_time_len(self) -> int:  # ty: ignore[incompatible-property-override]
         return self.n_patches
 
     @property

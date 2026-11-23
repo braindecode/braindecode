@@ -282,7 +282,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(n_outputs))
 
     @property
-    def _build_time_len(self):  # also once a lazy head is materialized
+    def _build_time_len(self):  # ty: ignore[incompatible-property-override]
         return self._n_patch() if self._knows_geometry() else None
 
     def _knows_geometry(self):
