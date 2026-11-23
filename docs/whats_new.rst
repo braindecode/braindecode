@@ -231,7 +231,9 @@ API and behavior changes
   ``input_tensor``, ``channel_locations``) warns and keeps working until 2.3 (by `Bruno Aristimunha`_).
 - The 2.0 constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
   ``return_features`` of 16 models warn and keep their 2.0 output and head until 2.3 (eager only);
-  call ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
+  call ``model(x, return_features=True)`` instead. The flags are read when the model is built:
+  setting one as an attribute afterwards, which switched the output in 2.0, no longer changes it
+  (by `Bruno Aristimunha`_).
 - ``to_dense_prediction_model`` raises ``ValueError`` on every model except Deep4Net, EEGNet,
   ShallowFBCSPNet, EMG2QwertyNet and NeuroPose, which affects code that converted any other model (by `Bruno Aristimunha`_).
 - Registered models declare their time and channel axes, and :class:`braindecode.models.EEGModuleMixin` checks channel counts
@@ -239,7 +241,12 @@ API and behavior changes
   ``UserWarning`` unless ``on_non_divisible="error"``; larger mismatches raise ``ValueError`` (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
-  so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).
+  so released ``PulpBio/LUNA`` checkpoints load strictly. A LUNA saved with 2.0 lacks the weights
+  and biases of these two LayerNorms: a strict load fails, and ``from_pretrained`` loads it with
+  freshly initialized LayerNorms and no warning, so it predicts differently. To keep its 2.0
+  outputs, set ``channel_location_embedder.norm`` and ``cross_attn.ffn.norm`` to ``nn.Identity()``,
+  before ``load_state_dict`` or after ``from_pretrained`` (:gh:`1758` by
+  `@aloneangel45 <https://github.com/aloneangel45>`_).
 - :class:`braindecode.models.USleep` crops the upsampled tensor at the start before each skip connection,
   like U-Time's ``CropToMatch``, so at an odd level each residual sample meets its own pooled pair. A USleep
   trained with 2.0 loads but gives different predictions (:gh:`1730` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
@@ -635,7 +642,7 @@ Bug fixes
   :class:`~braindecode.models.BrainModule` or :class:`~braindecode.models.DANCE`.
   Nonfinite values in excluded electrodes no longer leak into the merged signal
   (:gh:`1617` by `Bruno Aristimunha`_).
-- :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config. A ZUNA built in 2.0 with the default ``pos_bins`` and reloaded from a bare state dict predicts differently: pass ``pos_bins=50`` to keep its outputs (configs saved with 2.0 already hold 50) (:gh:`1557` by `Bruno Aristimunha`_).
 - Model configs keep each channel's MNE ``coord_frame``. A
   :class:`~braindecode.models.STEEGFormer` built on channels outside the head frame
   reloads with the slots it was built with (:gh:`1631` by `Bruno Aristimunha`_).
