@@ -15,6 +15,8 @@ _ALLOWED_EXCEPT = {
     ("braindecode/models/base.py", "ImportError"),
     # The model card is metadata only: a broken YAML header must not block the weights.
     ("braindecode/models/base.py", "yaml.YAMLError"),
+    # Same for the card download: a network failure warns, the weights still load.
+    ("braindecode/models/base.py", "OSError"),
     ("braindecode/models/base.py", "NotImplementedError"),  # removed by Task 9
 }
 
