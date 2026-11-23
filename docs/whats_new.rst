@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- LUNA and MetaNeuromotorHand skip the unused attention weights (outputs move by at most 2e-6), TinyMyo builds its
+  rotary table once, BaRISTA no longer syncs with the host in eval, and SCCNet, TSception, CSBrain (channels_last),
+  EEGInceptionMI, EEGNeX and NeuroRVQTokenizer (bfloat16 autocast) no longer raise (:gh:`1786` by `Bruno Aristimunha`_).
 - Add :meth:`braindecode.models.EEGModuleMixin.adapt_input` to adapt a built model, in
   place and with unchanged ``state_dict`` keys, to another EEG montage or sampling
   rate; ``get_config`` saves the adaptation (by `Bruno Aristimunha`_).

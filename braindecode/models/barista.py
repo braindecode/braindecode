@@ -563,6 +563,8 @@ class _SpatialEmbedding(nn.Module):
 
         Per-sample indices give ``(batch, n_chans, d_model)``, one montage per sample.
         """
+        # The default indices were range-checked at construction.
+        given = indices is not None
         if indices is None:
             default = self.default_indices
             if default is None:
@@ -586,7 +588,7 @@ class _SpatialEmbedding(nn.Module):
         # Value check only in eager mode: it branches on tensor data, which
         # TorchScript, torch.export and torch.compile graphs cannot express.
         if not torch.jit.is_scripting():
-            if not torch.compiler.is_compiling():
+            if given and not torch.compiler.is_compiling():
                 n_slots = self.tables[0].num_embeddings
                 if bool((grid < 0).any()) or bool((grid >= n_slots).any()):
                     raise ValueError(

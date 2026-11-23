@@ -546,10 +546,10 @@ class _CrossScaleTemporalEmbedding(nn.Module):
 
     def forward(self, x):
         batch, chans, time, d_model = x.shape
-        x = x.view(batch * chans, d_model, time, 1)
+        x = x.reshape(batch * chans, d_model, time, 1)
         fmaps = [conv(x) for conv in self.convs]
         x = torch.cat(fmaps, dim=1)
-        return x.view(batch, chans, time, -1)
+        return x.reshape(batch, chans, time, -1)
 
 
 class _RegionEmbedding(nn.Module):

@@ -36,6 +36,7 @@ from braindecode.models.util import (
     models_mandatory_parameters,
 )
 from test.unit_tests.models._fixtures import (
+    PARAMS,
     _build_case,
     _materialize,
     _tensor_leaves,
@@ -62,9 +63,7 @@ def _batched_tensor_leaves(value, batch_size):
     "model_name,required_params,signal_params",
     models_mandatory_parameters,
 )
-def test_registered_model_runtime_contract(
-    model_name, required_params, signal_params
-):
+def test_registered_model_runtime_contract(model_name, required_params, signal_params):
     """Registered models preserve inputs and emit finite batched tensors."""
     model, x = _build_case(model_name, required_params, signal_params)
     x_before = x.clone()
@@ -81,8 +80,7 @@ def test_registered_model_runtime_contract(
 
     batched = _batched_tensor_leaves(output, x.shape[0])
     assert batched, (
-        f"{model_name} returned no tensor leaf preserving batch dimension "
-        f"{x.shape[0]}"
+        f"{model_name} returned no tensor leaf preserving batch dimension {x.shape[0]}"
     )
 
     for leaf in leaves:
@@ -123,8 +121,7 @@ def test_registered_model_runtime_contract(
             actual_leaf,
             expected_leaf.index_select(0, permutation),
             msg=lambda msg: (
-                f"{model_name} is not batch-permutation equivariant in eval "
-                f"mode: {msg}"
+                f"{model_name} is not batch-permutation equivariant in eval mode: {msg}"
             ),
         )
     # Permutation equivariance alone cannot detect all cross-sample mixing: a
@@ -211,9 +208,7 @@ _UNUSED_IN_FORWARD = {
     "model_name,required_params,signal_params",
     models_mandatory_parameters,
 )
-def test_registered_model_training_contract(
-    model_name, required_params, signal_params
-):
+def test_registered_model_training_contract(model_name, required_params, signal_params):
     """A model used under ``torch.inference_mode`` still trains, then evaluates."""
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
@@ -467,11 +462,9 @@ _QUANTIZER = (
     "dead-code expiry (the released EuclideanCodebook)",
 )
 _HOST_SYNC = {
-    "BaRISTA": (("_local_scalar_dense",), "eager-only spatial_indices range check"),
     "BENDR": (("_local_scalar_dense",), "LayerDrop coin flip on a CPU torch.rand(1)"),
     "BrainOmni": _QUANTIZER,
     "BrainTokenizer": _QUANTIZER,
-    "CodeBrain": (("_local_scalar_dense",), "lazy kernel-norm init flag (buffer)"),
     "EEGSimpleConv": (
         ("_local_scalar_dense",),
         "torchaudio Resample takes the output length from a CPU scalar",
@@ -609,7 +602,8 @@ _CH_MASK_EXTRAS = {
     "Labram": ("ch_names", lambda i, n: LABRAM_CHANNEL_ORDER[:n]),
     "CORTEG": (
         "pos",
-        lambda i, n: 0.1 * torch.rand((n, 3), generator=torch.Generator().manual_seed(i)),
+        lambda i, n: 0.1
+        * torch.rand((n, 3), generator=torch.Generator().manual_seed(i)),
     ),
     "MAPA": (
         "sensor_indices",
@@ -636,7 +630,10 @@ def _ch_mask_case(model_name, required_params, signal_params):
     zero-padded to ``C`` in the batch, which shares any other value built for
     ``C`` channels.
     """
-    if "ch_mask" not in inspect.signature(all_models_dict[model_name].forward).parameters:
+    if (
+        "ch_mask"
+        not in inspect.signature(all_models_dict[model_name].forward).parameters
+    ):
         pytest.skip("forward takes no ch_mask")
     if model_name in _CH_MASK_SLOTS:
         pytest.skip(_CH_MASK_SLOTS[model_name])
@@ -702,6 +699,7 @@ def test_registered_model_ch_mask_contract(model_name, required_params, signal_p
                 padded = features["tokens"][~mask]
                 assert torch.equal(padded, torch.zeros_like(padded))
 
+
 # One checkpoint of a foundation model serves many recordings, so a recording
 # whose channels do not match the model must be told so.
 _FOUNDATION_MODELS = set(
@@ -757,3 +755,24 @@ def _check_mapping_targets(name, model):
         f"{name}.mapping points at keys that are not in state_dict: {missing}"
     )
     assert len(targets) == len(set(targets)), f"{name}.mapping repeats a target"
+
+
+@PARAMS
+def test_autocast_bfloat16_forward(model_name, required_params, signal_params):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+        out = model(x)
+    assert all(torch.isfinite(t).all() for t in _tensor_leaves(out))
+
+
+@PARAMS
+def test_channels_last_matches_contiguous(model_name, required_params, signal_params):
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    if any(t.ndim == 5 for t in (*model.parameters(), *model.buffers())):
+        pytest.skip("5-D tensors: channels_last does not apply")
+    with torch.no_grad():
+        ref = model(x)
+        last = copy.deepcopy(model).to(memory_format=torch.channels_last)
+        torch.testing.assert_close(last(x), ref, atol=1e-5, rtol=1e-4)
