@@ -4350,7 +4350,8 @@ def test_emg2qwerty_feature_flags():
     # Runtime ``return_features=True`` → dict (BIOT / signal-JEPA convention).
     # ``features`` must be the pre-classifier representation, so applying
     # ``final_layer`` to it reproduces the emissions tensor.
-    assert set(bundle) == {"features", "cls_token"} and bundle["cls_token"] is None
+    assert set(bundle) == {"features", "embedding", "cls_token"}
+    assert bundle["cls_token"] is None
     feats = bundle["features"]
     assert feats.shape == (2, emissions.shape[1], num_features)
     assert torch.allclose(m.final_layer(feats), emissions, atol=1e-5)
