@@ -40,9 +40,8 @@ _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS = set(non_classification_models).diffe
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
-    reason="huggingface_hub not installed. Install with: pip install 'braindecode[hub]'",
+    reason="huggingface_hub not installed. Install with: pip install 'braindecode[hub]'"
 )
-
 
 @pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
 def sample_model(request):
@@ -60,13 +59,13 @@ def sample_chs_info():
     """Create sample channel information."""
     return [
         {
-            "ch_name": f"EEG {i:03d}",
-            "coil_type": 0,
-            "kind": 2,
-            "unit": 107,
-            "cal": 1.0,
-            "range": 1.0,
-            "loc": np.random.randn(12),
+            'ch_name': f'EEG {i:03d}',
+            'coil_type': 0,
+            'kind': 2,
+            'unit': 107,
+            'cal': 1.0,
+            'range': 1.0,
+            'loc': np.random.randn(12),
         }
         for i in range(22)
     ]
@@ -102,14 +101,14 @@ def test_serialize_chs_info(sample_chs_info):
     assert isinstance(serialized, list)
 
     first_ch = serialized[0]
-    assert "ch_name" in first_ch
-    assert "coil_type" in first_ch
-    assert "kind" in first_ch
-    assert "unit" in first_ch
-    assert "cal" in first_ch
-    assert "range" in first_ch
-    assert "loc" in first_ch
-    assert isinstance(first_ch["loc"], list)
+    assert 'ch_name' in first_ch
+    assert 'coil_type' in first_ch
+    assert 'kind' in first_ch
+    assert 'unit' in first_ch
+    assert 'cal' in first_ch
+    assert 'range' in first_ch
+    assert 'loc' in first_ch
+    assert isinstance(first_ch['loc'], list)
 
 
 def test_deserialize_chs_info(sample_chs_info):
@@ -118,7 +117,7 @@ def test_deserialize_chs_info(sample_chs_info):
 
     assert deserialized is not None
     assert len(deserialized) == len(sample_chs_info)
-    assert isinstance(deserialized[0]["loc"], np.ndarray)
+    assert isinstance(deserialized[0]['loc'], np.ndarray)
 
 
 def test_roundtrip_serialization(sample_chs_info):
@@ -126,25 +125,25 @@ def test_roundtrip_serialization(sample_chs_info):
     deserialized = EEGModuleMixin._deserialize_chs_info(serialized)
 
     for orig, deser in zip(sample_chs_info, deserialized):
-        assert orig["ch_name"] == deser["ch_name"]
-        assert orig["coil_type"] == deser["coil_type"]
-        assert orig["kind"] == deser["kind"]
-        assert orig["unit"] == deser["unit"]
-        assert np.allclose(orig["loc"], deser["loc"])
+        assert orig['ch_name'] == deser['ch_name']
+        assert orig['coil_type'] == deser['coil_type']
+        assert orig['kind'] == deser['kind']
+        assert orig['unit'] == deser['unit']
+        assert np.allclose(orig['loc'], deser['loc'])
 
 
 def test_json_serialization(tmp_path, sample_chs_info):
     serialized = EEGModuleMixin._serialize_chs_info(sample_chs_info)
 
-    temp_path = tmp_path / "chs_info.json"
-    with open(temp_path, "w") as tmp_file:
-        json.dump({"chs_info": serialized}, tmp_file)
+    temp_path = tmp_path / 'chs_info.json'
+    with open(temp_path, 'w') as tmp_file:
+        json.dump({'chs_info': serialized}, tmp_file)
 
-    with open(temp_path, "r") as file:
+    with open(temp_path, 'r') as file:
         loaded = json.load(file)
 
-    assert "chs_info" in loaded
-    assert len(loaded["chs_info"]) == len(sample_chs_info)
+    assert 'chs_info' in loaded
+    assert len(loaded['chs_info']) == len(sample_chs_info)
 
 
 def test_save_pretrained_creates_config(tmp_path, sample_model):
@@ -153,16 +152,14 @@ def test_save_pretrained_creates_config(tmp_path, sample_model):
         pytest.skip(f"Skipping config test for non-classification model: {name}")
 
     if any(isinstance(p, nn.UninitializedParameter) for p in sample_model.parameters()):
-        pytest.skip(
-            f"Skipping config test for model with uninitialized parameters: {name}"
-        )
+        pytest.skip(f"Skipping config test for model with uninitialized parameters: {name}")
 
     sample_model._save_pretrained(tmp_path)
 
-    config_path = tmp_path / "config.json"
+    config_path = tmp_path / 'config.json'
     assert config_path.exists()
 
-    with open(config_path, "r") as config_file:
+    with open(config_path, 'r') as config_file:
         config = json.load(config_file)
 
     # Use getattr with exception handling to safely get model properties
@@ -173,48 +170,48 @@ def test_save_pretrained_creates_config(tmp_path, sample_model):
         except (ValueError, AttributeError):
             return None
 
-    n_times = safe_get_property(sample_model, "n_times")
-    n_chans = safe_get_property(sample_model, "n_chans")
-    n_outputs = safe_get_property(sample_model, "n_outputs")
+    n_times = safe_get_property(sample_model, 'n_times')
+    n_chans = safe_get_property(sample_model, 'n_chans')
+    n_outputs = safe_get_property(sample_model, 'n_outputs')
 
     if n_chans is not None and name != "SignalJEPA_Contextual":
         if name == "Labram":
-            assert config["n_chans"] in (n_chans, None)
-        elif config.get("n_chans") is None and config.get("chs_info") is not None:
+            assert config['n_chans'] in (n_chans, None)
+        elif config.get('n_chans') is None and config.get('chs_info') is not None:
             # Models built from chs_info may store it instead of n_chans
             # (n_chans may be absent OR present-but-null in the saved config)
-            assert len(config["chs_info"]) == n_chans
+            assert len(config['chs_info']) == n_chans
         else:
-            assert config["n_chans"] == n_chans
+            assert config['n_chans'] == n_chans
     if n_times is not None:
-        assert config["n_times"] == n_times
+        assert config['n_times'] == n_times
     if n_outputs is not None:
         if name == "Labram":
-            assert config["n_outputs"] in (n_outputs, None)
+            assert config['n_outputs'] in (n_outputs, None)
         else:
-            assert config["n_outputs"] == n_outputs
+            assert config['n_outputs'] == n_outputs
+
+
 
 
 def test_config_contains_all_parameters(tmp_path, sample_model):
     sample_model, _, _ = sample_model
 
     if any(isinstance(p, nn.UninitializedParameter) for p in sample_model.parameters()):
-        pytest.skip(
-            "Skipping config parameter test for model with uninitialized parameters."
-        )
+        pytest.skip("Skipping config parameter test for model with uninitialized parameters.")
 
     sample_model._save_pretrained(tmp_path)
 
-    config_path = tmp_path / "config.json"
-    with open(config_path, "r") as config_file:
+    config_path = tmp_path / 'config.json'
+    with open(config_path, 'r') as config_file:
         config = json.load(config_file)
 
     # The config must contain braindecode_version and at least one key that
     # identifies the channel space.  Since all __init__ parameters are saved,
     # model-specific keys (including EEG-specific ones) will also be present
     # whenever the constructor accepts them.
-    assert "braindecode_version" in config, "Config must contain 'braindecode_version'"
-    assert "n_chans" in config or "chs_info" in config, (
+    assert 'braindecode_version' in config, "Config must contain 'braindecode_version'"
+    assert 'n_chans' in config or 'chs_info' in config, (
         "Config must contain either 'n_chans' or 'chs_info'"
     )
 
@@ -223,19 +220,15 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     """Roundtrip through local Hub save/load mimics push/pull."""
     model, name, sp = sample_model
     if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS:
-        pytest.skip(
-            f"Skipping Hugging Face Hub test for non-classification model: {name}"
-        )
-    assert hasattr(model, "from_pretrained")
-    assert callable(getattr(model, "from_pretrained"))
+        pytest.skip(f"Skipping Hugging Face Hub test for non-classification model: {name}")
+    assert hasattr(model, 'from_pretrained')
+    assert callable(getattr(model, 'from_pretrained'))
     model.eval()
 
     if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
-        pytest.skip(
-            f"Skipping Hugging Face Hub test for model with uninitialized parameters: {name}"
-        )
+        pytest.skip(f"Skipping Hugging Face Hub test for model with uninitialized parameters: {name}")
 
-    repo_dir = tmp_path / f"hf_local_repo_{name}"
+    repo_dir = tmp_path / f'hf_local_repo_{name}'
     repo_dir.mkdir()
     model._save_pretrained(repo_dir)
 
@@ -244,10 +237,10 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     restored = model_class.from_pretrained(repo_dir)
     restored.eval()
 
-    n_times = sp.get("n_times", 1000)
-    n_chans = sp.get("n_chans")
-    if n_chans is None and sp.get("chs_info") is not None:
-        n_chans = len(sp["chs_info"])
+    n_times = sp.get('n_times', 1000)
+    n_chans = sp.get('n_chans')
+    if n_chans is None and sp.get('chs_info') is not None:
+        n_chans = len(sp['chs_info'])
     if n_chans is None:
         n_chans = 22
     torch.manual_seed(42)
@@ -264,87 +257,73 @@ def test_serialize_chs_info_with_string_kind():
     """Test serialization when kind field is a string."""
     chs_info = [
         {
-            "ch_name": "EEG 001",
-            "kind": "eeg",  # String instead of int
-            "coil_type": 0,
-            "unit": 107,
-            "cal": 1.0,
-            "range": 1.0,
-            "loc": np.array([0.0] * 12),
+            'ch_name': 'EEG 001',
+            'kind': 'eeg',  # String instead of int
+            'coil_type': 0,
+            'unit': 107,
+            'cal': 1.0,
+            'range': 1.0,
+            'loc': np.array([0.0] * 12),
         }
     ]
     serialized = EEGModuleMixin._serialize_chs_info(chs_info)
-    assert serialized[0]["kind"] == "eeg"
+    assert serialized[0]['kind'] == 'eeg'
 
 
 def test_serialize_chs_info_without_optional_fields():
     """Test serialization when optional fields are missing."""
     chs_info = [
         {
-            "ch_name": "EEG 001",
+            'ch_name': 'EEG 001',
             # Missing coil_type, unit, cal, range, loc, kind
         }
     ]
     serialized = EEGModuleMixin._serialize_chs_info(chs_info)
-    assert serialized[0]["ch_name"] == "EEG 001"
+    assert serialized[0]['ch_name'] == 'EEG 001'
     # Optional fields should not be in the serialized output
-    assert "coil_type" not in serialized[0] or serialized[0].get("coil_type") is None
+    assert 'coil_type' not in serialized[0] or serialized[0].get('coil_type') is None
 
 
 def test_init_with_serialized_chs_info():
     """Test model initialization with serialized channel info from Hub."""
     serialized_chs_info = [
         {
-            "ch_name": "EEG 001",
-            "kind": 2,
-            "coil_type": 0,
-            "unit": 107,
-            "cal": 1.0,
-            "range": 1.0,
-            "loc": [
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ],  # List, not ndarray
+            'ch_name': 'EEG 001',
+            'kind': 2,
+            'coil_type': 0,
+            'unit': 107,
+            'cal': 1.0,
+            'range': 1.0,
+            'loc': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # List, not ndarray
         }
     ]
     # Model should deserialize this automatically in __init__
     model = EEGNet(n_chans=1, n_outputs=2, n_times=100, chs_info=serialized_chs_info)
     # Check that chs_info was deserialized (loc should be ndarray now)
-    assert isinstance(model.chs_info[0]["loc"], np.ndarray)
+    assert isinstance(model.chs_info[0]['loc'], np.ndarray)
 
 
 def test_init_with_already_deserialized_chs_info():
     """Test model initialization with already-deserialized channel info."""
     deserialized_chs_info = [
         {
-            "ch_name": "EEG 001",
-            "kind": 2,
-            "coil_type": 0,
-            "unit": 107,
-            "cal": 1.0,
-            "range": 1.0,
-            "loc": np.array([0.0] * 12),  # Already ndarray
+            'ch_name': 'EEG 001',
+            'kind': 2,
+            'coil_type': 0,
+            'unit': 107,
+            'cal': 1.0,
+            'range': 1.0,
+            'loc': np.array([0.0] * 12),  # Already ndarray
         }
     ]
     # Model should handle this without error
     model = EEGNet(n_chans=1, n_outputs=2, n_times=100, chs_info=deserialized_chs_info)
-    assert isinstance(model.chs_info[0]["loc"], np.ndarray)
+    assert isinstance(model.chs_info[0]['loc'], np.ndarray)
 
 
 def test_save_pretrained_without_hf_hub():
     """Test that _save_pretrained returns early when HF Hub is not available."""
     from braindecode.models import base
-
     original_has_hf_hub = base.HAS_HF_HUB
     try:
         # Temporarily set HAS_HF_HUB to False
@@ -352,48 +331,27 @@ def test_save_pretrained_without_hf_hub():
         model = EEGNet(n_chans=22, n_outputs=4, n_times=1000)
         # Should return early without error
         import tempfile
-
         with tempfile.TemporaryDirectory() as tmpdir:
             model._save_pretrained(tmpdir)
     finally:
         base.HAS_HF_HUB = original_has_hf_hub
 
-
 def test_init_subclass_without_hf_hub():
     """Test that __init_subclass__ works when HF Hub is not available."""
     from braindecode.models import base
-
     original_has_hf_hub = base.HAS_HF_HUB
     try:
         base.HAS_HF_HUB = False
-
         # Creating a subclass should work without HF Hub
         class TestModel(base.EEGModuleMixin):
             pass
-
         # Should complete without error
         assert TestModel is not None
     finally:
         base.HAS_HF_HUB = original_has_hf_hub
 
 
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "",
-        "../outside.safetensors",
-        "/outside.safetensors",
-        "C:/outside.safetensors",
-        "C:outside.safetensors",
-        "..\\outside.safetensors",
-        "a/../outside.safetensors",
-        "a//b",
-        "a/./b",
-        "a/",
-        "bad\x00name",
-        42,
-    ],
-)
+@pytest.mark.parametrize("filename", ["", "../outside.safetensors", "/outside.safetensors", "C:/outside.safetensors", "C:outside.safetensors", "..\\outside.safetensors", "a/../outside.safetensors", "a//b", "a/./b", "a/", "bad\x00name", 42])
 def test_custom_weights_reject_invalid_paths(tmp_path, monkeypatch, filename):
     from huggingface_hub import PyTorchModelHubMixin
 
@@ -405,9 +363,7 @@ def test_custom_weights_reject_invalid_paths(tmp_path, monkeypatch, filename):
         EEGNet.from_pretrained(tmp_path, filename=filename, local_files_only=True)
 
 
-@pytest.mark.parametrize(
-    "filename", [None, "custom.safetensors", "nested/custom.safetensors"]
-)
+@pytest.mark.parametrize("filename", [None, "custom.safetensors", "nested/custom.safetensors"])
 def test_local_weights_reject_external_symlinks(tmp_path, filename):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -420,9 +376,7 @@ def test_local_weights_reject_external_symlinks(tmp_path, filename):
         EEGNet.from_pretrained(repo, filename=filename, local_files_only=True)
 
 
-@pytest.mark.parametrize(
-    "filename", ["custom.safetensors", "nested/custom.safetensors"]
-)
+@pytest.mark.parametrize("filename", ["custom.safetensors", "nested/custom.safetensors"])
 def test_custom_weights_roundtrip_and_global_isolation(tmp_path, monkeypatch, filename):
     import huggingface_hub
     from huggingface_hub import PyTorchModelHubMixin
@@ -444,12 +398,8 @@ def test_custom_weights_roundtrip_and_global_isolation(tmp_path, monkeypatch, fi
         seen.append(str(model_file))
         return original_loader(instance, model_file, map_location, strict)
 
-    monkeypatch.setattr(
-        DummyModuleConfigRoundTrip, "_load_as_safetensor", classmethod(load)
-    )
-    restored = DummyModuleConfigRoundTrip.from_pretrained(
-        tmp_path, filename=filename, strict=True
-    ).eval()
+    monkeypatch.setattr(DummyModuleConfigRoundTrip, "_load_as_safetensor", classmethod(load))
+    restored = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, filename=filename, strict=True).eval()
     default = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, strict=True).eval()
     x = torch.randn(2, 2, 8)
     torch.testing.assert_close(restored(x), model(x), rtol=0, atol=0)
@@ -458,13 +408,8 @@ def test_custom_weights_roundtrip_and_global_isolation(tmp_path, monkeypatch, fi
     assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original_name
 
 
-@pytest.mark.parametrize(
-    "download_options",
-    [{}, {"proxies": {"https": "http://proxy.invalid"}, "resume_download": True}],
-)
-def test_custom_weights_download_arguments_and_failure_isolation(
-    tmp_path, monkeypatch, download_options
-):
+@pytest.mark.parametrize("download_options", [{}, {"proxies": {"https": "http://proxy.invalid"}, "resume_download": True}])
+def test_custom_weights_download_arguments_and_failure_isolation(tmp_path, monkeypatch, download_options):
     import huggingface_hub
 
     original_name = huggingface_hub.constants.SAFETENSORS_SINGLE_FILE
@@ -480,32 +425,16 @@ def test_custom_weights_download_arguments_and_failure_isolation(
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
     with pytest.raises(RuntimeError, match="local download stub"):
         EEGNet._from_pretrained(
-            model_id="test/model",
-            filename="nested/custom.safetensors",
-            revision="fixed-revision",
-            cache_dir=tmp_path,
-            force_download=True,
-            local_files_only=True,
-            token=False,
-            **download_options,
+            model_id="test/model", filename="nested/custom.safetensors",
+            revision="fixed-revision", cache_dir=tmp_path, force_download=True,
+            local_files_only=True, token=False, **download_options,
         )
-    assert calls[-1] == dict(
-        repo_id="test/model",
-        filename="nested/custom.safetensors",
-        revision="fixed-revision",
-        cache_dir=tmp_path,
-        force_download=True,
-        local_files_only=True,
-        token=False,
-        **download_options,
-    )
+    assert calls[-1] == dict(repo_id="test/model", filename="nested/custom.safetensors", revision="fixed-revision", cache_dir=tmp_path, force_download=True, local_files_only=True, token=False, **download_options)
     assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original_name
 
 
 @pytest.mark.parametrize("second_filename", ["second.safetensors", None])
-def test_concurrent_custom_weights_keep_independent_filenames(
-    tmp_path, monkeypatch, second_filename
-):
+def test_concurrent_custom_weights_keep_independent_filenames(tmp_path, monkeypatch, second_filename):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
@@ -521,36 +450,22 @@ def test_concurrent_custom_weights_keep_independent_filenames(
         assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original
         return model_file
 
-    monkeypatch.setattr(
-        DummyModuleConfigRoundTrip, "_load_as_safetensor", classmethod(load)
-    )
+    monkeypatch.setattr(DummyModuleConfigRoundTrip, "_load_as_safetensor", classmethod(load))
 
     def load_one(filename):
         return DummyModuleConfigRoundTrip.from_pretrained(
-            tmp_path,
-            filename=filename,
-            local_files_only=True,
-            n_chans=2,
-            n_times=8,
-            n_outputs=2,
+            tmp_path, filename=filename, local_files_only=True,
+            n_chans=2, n_times=8, n_outputs=2,
         )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         paths = list(pool.map(load_one, ["first.safetensors", second_filename]))
-    assert paths == [
-        str(tmp_path / name)
-        for name in ("first.safetensors", second_filename or "model.safetensors")
-    ]
+    assert paths == [str(tmp_path / name) for name in ("first.safetensors", second_filename or "model.safetensors")]
     assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original
 
 
-@pytest.mark.parametrize(
-    "filename",
-    ["../outside.safetensors", "/outside.safetensors", "C:/outside.safetensors"],
-)
-def test_custom_weights_reject_filename_from_saved_config(
-    tmp_path, monkeypatch, filename
-):
+@pytest.mark.parametrize("filename", ["../outside.safetensors", "/outside.safetensors", "C:/outside.safetensors"])
+def test_custom_weights_reject_filename_from_saved_config(tmp_path, monkeypatch, filename):
     """Validate config-supplied filenames without requiring caller overrides."""
     from huggingface_hub import PyTorchModelHubMixin
 
@@ -588,9 +503,7 @@ def test_local_weights_selected_symlinks_and_native_modes(tmp_path, filename):
     )
     expected = PyTorchModelHubMixin._load_as_safetensor(
         DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2),
-        str(target),
-        "cpu",
-        True,
+        str(target), "cpu", True,
     )
     # Do not normalize modes: older and newer Hub loaders differ intentionally.
     assert {n: m.training for n, m in restored.named_modules()} == {
@@ -641,9 +554,7 @@ def test_override_preserves_the_inferred_saved_geometry(
 
 
 @pytest.mark.parametrize("filename", [None, "missing.safetensors"])
-def test_custom_weights_missing_does_not_use_default_pickle_fallback(
-    tmp_path, monkeypatch, filename
-):
+def test_custom_weights_missing_does_not_use_default_pickle_fallback(tmp_path, monkeypatch, filename):
     import huggingface_hub
     from huggingface_hub import hub_mixin
     from huggingface_hub.errors import EntryNotFoundError
@@ -669,33 +580,18 @@ def test_custom_weights_missing_does_not_use_default_pickle_fallback(
 
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
     monkeypatch.setattr(hub_mixin, "hf_hub_download", download)
-    monkeypatch.setattr(
-        DummyModuleConfigRoundTrip, "_load_as_pickle", classmethod(load)
-    )
+    monkeypatch.setattr(DummyModuleConfigRoundTrip, "_load_as_pickle", classmethod(load))
     kwargs = dict(
-        model_id="test/model",
-        filename=filename,
-        revision="fixed-revision",
-        cache_dir=tmp_path,
-        force_download=False,
-        local_files_only=True,
-        token=False,
-        n_chans=2,
-        n_times=8,
-        n_outputs=2,
-        strict=True,
+        model_id="test/model", filename=filename, revision="fixed-revision",
+        cache_dir=tmp_path, force_download=False, local_files_only=True,
+        token=False, n_chans=2, n_times=8, n_outputs=2, strict=True,
     )
     # Public Hub loading supplies these required arguments on older versions.
-    parent_parameters = inspect.signature(
-        hub_mixin.PyTorchModelHubMixin._from_pretrained
-    ).parameters
-    kwargs.update(
-        {
-            name: None
-            for name in ("proxies", "resume_download")
-            if name in parent_parameters
-        }
-    )
+    parent_parameters = inspect.signature(hub_mixin.PyTorchModelHubMixin._from_pretrained).parameters
+    kwargs.update({
+        name: None for name in ("proxies", "resume_download")
+        if name in parent_parameters
+    })
     if filename is not None:
         with pytest.raises(EntryNotFoundError, match="missing weights"):
             DummyModuleConfigRoundTrip._from_pretrained(**kwargs)
@@ -718,34 +614,32 @@ def test_custom_weights_legacy_options_do_not_reach_constructor(tmp_path, monkey
 
     def download(**kwargs):
         calls.append(kwargs)
-        name = (
-            "model.safetensors"
-            if kwargs["filename"] == "custom.safetensors"
-            else kwargs["filename"]
-        )
+        name = "model.safetensors" if kwargs["filename"] == "custom.safetensors" else kwargs["filename"]
         return str(tmp_path / name)
 
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
     restored = DummyModuleConfigRoundTrip._from_pretrained(
-        model_id="test/model",
-        filename="custom.safetensors",
-        revision=None,
-        cache_dir=None,
-        force_download=False,
-        local_files_only=True,
-        token=None,
-        n_chans=2,
-        n_times=8,
-        n_outputs=2,
-        proxies={"https": "http://proxy.invalid"},
-        resume_download=True,
-        map_location="cpu",
-        strict=True,
+        model_id="test/model", filename="custom.safetensors", revision=None,
+        cache_dir=None, force_download=False, local_files_only=True, token=None,
+        n_chans=2, n_times=8, n_outputs=2, proxies={"https": "http://proxy.invalid"},
+        resume_download=True, map_location="cpu", strict=True,
     )
     assert calls[-1]["proxies"] == {"https": "http://proxy.invalid"}
     assert calls[-1]["resume_download"] is True
     for key, value in model.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_save_pretrained_falls_back_to_bin_for_partial_shared_tensors(tmp_path):
+    model = EEGNet(n_chans=2, n_outputs=2, n_times=128)
+    storage = torch.zeros(4)
+    model.register_buffer("head_half", storage[:2])  # neither view covers
+    model.register_buffer("tail_half", storage[2:])  # the whole storage
+    (tmp_path / "model.safetensors").write_bytes(b"stale")
+    with pytest.warns(UserWarning, match="no complete storage"):
+        model.save_pretrained(tmp_path)
+    assert (tmp_path / "pytorch_model.bin").is_file()
+    assert not (tmp_path / "model.safetensors").exists()
 
 
 def test_model_card_datasets_roundtrip(tmp_path):
@@ -760,10 +654,7 @@ def test_model_card_datasets_roundtrip(tmp_path):
     assert restored.card_data.datasets == ["TUEG", "Siena"]
     assert restored.card_data.base_model == "org/parent"
     assert "braindecode" in restored.card_data.tags
-    assert (
-        DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "b").card_data.datasets
-        is None
-    )
+    assert DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "b").card_data.datasets is None
 
     (tmp_path / "a" / "README.md").unlink()  # no card: still loads
     assert DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "a").card_data is None
@@ -783,19 +674,25 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
         return str(readme)
 
     monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", cached)
-    data = _load_card_data(
-        "org/repo", revision="v1", local_files_only=True, n_outputs=3
-    )
+    data = _load_card_data("org/repo", revision="v1", local_files_only=True, n_outputs=3)
     assert data.datasets == ["PREST", "SHHS"]
     assert calls == [(("org/repo", "README.md"), {"cache_dir": None, "revision": "v1"})]
 
     monkeypatch.undo()  # real hub, nothing cached, no network: None, no error
-    assert (
-        _load_card_data(
-            "braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True
-        )
-        is None
-    )
+    assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None
+
+
+def test_model_card_offline_never_queries_hub(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from braindecode.models.base import _load_card_data
+
+    def no_network(*args, **kwargs):
+        raise ConnectionError("network down")
+
+    monkeypatch.setattr(huggingface_hub, "file_exists", no_network)
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", True)
+    assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path) is None
 
 
 def test_pretrained_provenance_in_repr(tmp_path):
@@ -803,9 +700,7 @@ def test_pretrained_provenance_in_repr(tmp_path):
 
     from braindecode.models import BIOT
 
-    kwargs = dict(
-        n_chans=4, n_times=400, sfreq=200, embed_dim=16, num_heads=2, num_layers=1
-    )
+    kwargs = dict(n_chans=4, n_times=400, sfreq=200, embed_dim=16, num_heads=2, num_layers=1)
     model = BIOT(n_outputs=2, **kwargs)
     datasets = ["BNCI2014_001", "ds002718", "braindecode/chbmit"]
     model.save_pretrained(tmp_path, model_card_kwargs={"datasets": datasets})
@@ -846,15 +741,7 @@ def test_pretrained_provenance_reads_hub_cache_commit(tmp_path, monkeypatch):
     from braindecode.models.base import _checkpoint_source
 
     commit = "0123456789abcdef0123456789abcdef01234567"
-    cached = (
-        tmp_path
-        / "snapshots"
-        / "hf-cache"
-        / "models--org--repo"
-        / "snapshots"
-        / commit
-        / "config.json"
-    )
+    cached = tmp_path / "snapshots" / "hf-cache" / "models--org--repo" / "snapshots" / commit / "config.json"
     monkeypatch.setattr(
         huggingface_hub, "try_to_load_from_cache", lambda *a, **k: str(cached)
     )
@@ -888,9 +775,7 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
     other.mkdir()
     (other / "config.json").write_text((tmp_path / "same" / "config.json").read_text())
     weights = load_file(tmp_path / "same" / "model.safetensors")
-    save_file(
-        {f"model.{k}": v for k, v in weights.items()}, other / "model.safetensors"
-    )
+    save_file({f"model.{k}": v for k, v in weights.items()}, other / "model.safetensors")
     with pytest.warns(UserWarning, match="parameters of EEGNet were not loaded from"):
         renamed = EEGNet.from_pretrained(other)
     assert not renamed._pretrained_provenance["loaded"]
@@ -934,9 +819,7 @@ def test_model_card_scalar_and_escaped_html(tmp_path):
     assert "T, U, E, G" not in str(model)
     page = model._repr_html_()
     assert page.count('class="bd-chip"') == 1
-    model.card_data = ModelCardData(
-        datasets=["nm000253", "on004362", "<script>bad</script>"]
-    )
+    model.card_data = ModelCardData(datasets=["nm000253", "on004362", "<script>bad</script>"])
     page = model._repr_html_()
     assert 'href="https://nemar.org/dataset/on004362"' in page
     assert "<script>bad</script>" not in page
@@ -957,18 +840,9 @@ def test_provenance_duin_mismatched_window_keeps_head_local(tmp_path, head_hidde
     from braindecode.models import DuIN
 
     kwargs = dict(
-        n_chans=2,
-        n_outputs=2,
-        sfreq=1000,
-        patch_size=20,
-        n_neural=2,
-        n_filters=(8, 4),
-        kernel_sizes=(5, 3),
-        strides=(5, 1),
-        n_layers=1,
-        n_heads=2,
-        head_dim=8,
-        ffn_dim=16,
+        n_chans=2, n_outputs=2, sfreq=1000, patch_size=20,
+        n_neural=2, n_filters=(8, 4), kernel_sizes=(5, 3), strides=(5, 1),
+        n_layers=1, n_heads=2, head_dim=8, ffn_dim=16,
         head_hidden_dim=head_hidden_dim,
     )
     saved = DuIN(n_times=60, **kwargs)
@@ -976,7 +850,8 @@ def test_provenance_duin_mismatched_window_keeps_head_local(tmp_path, head_hidde
     with pytest.warns(UserWarning, match="head keeps its initialization"):
         loaded = DuIN.from_pretrained(tmp_path, n_times=80, local_files_only=True)
     heads = {
-        k for k in loaded.state_dict() if k.startswith(("head_hidden.", "final_layer."))
+        k for k in loaded.state_dict()
+        if k.startswith(("head_hidden.", "final_layer."))
     }
     provenance = loaded._pretrained_provenance
     assert heads and not heads & provenance["loaded"]
@@ -995,20 +870,13 @@ def test_provenance_duin_mismatched_window_keeps_head_local(tmp_path, head_hidde
 
 @pytest.mark.parametrize("source_slots,target_slots", [(16, 30), (30, 16)])
 def test_provenance_labram_resized_embedding_is_conservatively_mixed(
-    tmp_path,
-    source_slots,
-    target_slots,
+    tmp_path, source_slots, target_slots,
 ):
     from braindecode.models import Labram
 
     kwargs = dict(
-        n_chans=2,
-        n_outputs=2,
-        patch_size=8,
-        embed_dim=8,
-        conv_out_channels=8,
-        num_layers=1,
-        num_heads=2,
+        n_chans=2, n_outputs=2, patch_size=8, embed_dim=8,
+        conv_out_channels=8, num_layers=1, num_heads=2,
     )
     saved = Labram(n_times=source_slots * 8, **kwargs)
     saved.save_pretrained(tmp_path)
@@ -1018,21 +886,15 @@ def test_provenance_labram_resized_embedding_is_conservatively_mixed(
     expected.load_state_dict(saved.state_dict())
     torch.manual_seed(42)
     loaded = Labram.from_pretrained(
-        tmp_path,
-        n_times=target_slots * 8,
-        local_files_only=True,
+        tmp_path, n_times=target_slots * 8, local_files_only=True,
     )
     provenance = loaded._pretrained_provenance
     assert "temporal_embedding" not in provenance["loaded"]
     assert provenance["mixed"] == {"temporal_embedding"}
-    assert (
-        set(dict(loaded.named_parameters())) - {"temporal_embedding"}
-        <= provenance["loaded"]
-    )
+    assert set(dict(loaded.named_parameters())) - {"temporal_embedding"} <= provenance["loaded"]
     copied = min(source_slots, target_slots)
     torch.testing.assert_close(
-        loaded.temporal_embedding[:, :copied],
-        saved.temporal_embedding[:, :copied],
+        loaded.temporal_embedding[:, :copied], saved.temporal_embedding[:, :copied],
     )
     torch.testing.assert_close(loaded.temporal_embedding[:, copied:], local[:, copied:])
     for key, value in expected.state_dict().items():
@@ -1070,32 +932,17 @@ def test_provenance_sleepfm_supplement_records_encoder_and_source(tmp_path):
     from braindecode.models import SleepFM, SleepFMStager
 
     kwargs = dict(
-        n_chans=2,
-        n_times=128,
-        n_outputs=2,
-        sfreq=128,
-        patch_size=64,
-        embed_dim=8,
-        drop_prob=0.0,
+        n_chans=2, n_times=128, n_outputs=2, sfreq=128, patch_size=64,
+        embed_dim=8, drop_prob=0.0,
     )
     stager = SleepFMStager(
-        **kwargs,
-        channel_modalities=["A", "B"],
-        max_seq_length=2,
-        encoder_num_heads=2,
-        encoder_num_layers=1,
-        encoder_pooling_heads=2,
-        encoder_chunk_patches=2,
-        staging_num_heads=2,
-        staging_num_layers=1,
+        **kwargs, channel_modalities=["A", "B"], max_seq_length=2,
+        encoder_num_heads=2, encoder_num_layers=1, encoder_pooling_heads=2,
+        encoder_chunk_patches=2, staging_num_heads=2, staging_num_layers=1,
         staging_pooling_heads=2,
     )
     encoder = SleepFM(
-        **kwargs,
-        max_seq_length=128,
-        num_heads=2,
-        num_layers=1,
-        pooling_heads=2,
+        **kwargs, max_seq_length=128, num_heads=2, num_layers=1, pooling_heads=2,
     )
     stager.save_pretrained(tmp_path / "stager")
     encoder.save_pretrained(tmp_path / "encoder")
@@ -1103,8 +950,7 @@ def test_provenance_sleepfm_supplement_records_encoder_and_source(tmp_path):
     head_only = {k: v for k, v in stager.state_dict().items() if k.startswith(head)}
     save_file(head_only, tmp_path / "stager" / "model.safetensors")
     loaded = SleepFMStager.from_pretrained(
-        tmp_path / "stager",
-        encoder_model_name_or_path=tmp_path / "encoder",
+        tmp_path / "stager", encoder_model_name_or_path=tmp_path / "encoder",
         local_files_only=True,
     )
     assert loaded.training is False
@@ -1134,32 +980,17 @@ def test_sleepfm_stager_from_pretrained_eval_and_supplementary_warnings(
     from braindecode.models import SleepFM, SleepFMStager
 
     kwargs = dict(
-        n_chans=2,
-        n_times=128,
-        n_outputs=2,
-        sfreq=128,
-        patch_size=64,
-        embed_dim=8,
-        drop_prob=0.0,
+        n_chans=2, n_times=128, n_outputs=2, sfreq=128, patch_size=64,
+        embed_dim=8, drop_prob=0.0,
     )
     stager = SleepFMStager(
-        **kwargs,
-        channel_modalities=["A", "B"],
-        max_seq_length=2,
-        encoder_num_heads=2,
-        encoder_num_layers=6,
-        encoder_pooling_heads=2,
-        encoder_chunk_patches=2,
-        staging_num_heads=2,
-        staging_num_layers=1,
+        **kwargs, channel_modalities=["A", "B"], max_seq_length=2,
+        encoder_num_heads=2, encoder_num_layers=6, encoder_pooling_heads=2,
+        encoder_chunk_patches=2, staging_num_heads=2, staging_num_layers=1,
         staging_pooling_heads=2,
     )
     encoder = SleepFM(
-        **kwargs,
-        max_seq_length=128,
-        num_heads=2,
-        num_layers=6,
-        pooling_heads=2,
+        **kwargs, max_seq_length=128, num_heads=2, num_layers=6, pooling_heads=2,
     )
     stager.save_pretrained(tmp_path / "full")
     full = SleepFMStager.from_pretrained(tmp_path / "full", local_files_only=True)
@@ -1175,14 +1006,10 @@ def test_sleepfm_stager_from_pretrained_eval_and_supplementary_warnings(
     snap.mkdir(parents=True)
     save_file(encoder.state_dict(), snap / "model.safetensors")
     monkeypatch.setattr(
-        huggingface_hub,
-        "hf_hub_download",
-        lambda *a, **k: str(snap / "model.safetensors"),
+        huggingface_hub, "hf_hub_download", lambda *a, **k: str(snap / "model.safetensors")
     )
     monkeypatch.setattr(
-        huggingface_hub,
-        "try_to_load_from_cache",
-        lambda *a, **k: str(snap / "model.safetensors"),
+        huggingface_hub, "try_to_load_from_cache", lambda *a, **k: str(snap / "model.safetensors")
     )
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -1200,13 +1027,9 @@ def test_sleepfm_stager_from_pretrained_eval_and_supplementary_warnings(
     empty_enc = tmp_path / "empty_enc"
     empty_enc.mkdir()
     save_file({"unrelated": torch.zeros(1)}, empty_enc / "model.safetensors")
-    with pytest.warns(
-        UserWarning, match="parameters of SleepFMStager were not loaded from"
-    ):
+    with pytest.warns(UserWarning, match="parameters of SleepFMStager were not loaded from"):
         SleepFMStager.from_pretrained(
-            tmp_path / "stager",
-            encoder_model_name_or_path=empty_enc,
-            local_files_only=True,
+            tmp_path / "stager", encoder_model_name_or_path=empty_enc, local_files_only=True
         )
 
 
@@ -1231,10 +1054,7 @@ def test_provenance_html_discloses_unbuilt_and_adapted_parameters(tmp_path):
     assert "100.0%" not in page
     del loaded.extra
     loaded._pretrained_provenance["mixed"] = {"adapted_embedding"}
-    loaded._pretrained_provenance["supplementary"] = {
-        "repo_id": "org/encoder",
-        "revision": "123456789",
-    }
+    loaded._pretrained_provenance["supplementary"] = {"repo_id": "org/encoder", "revision": "123456789"}
     page = loaded._repr_html_()
     assert "lower bound" in page and "adapted tensors excluded" in page.lower()
     assert "parameters in fully loaded tensors; adapted tensors excluded" in str(loaded)
@@ -1271,36 +1091,19 @@ def test_checkpoint_source_without_config(monkeypatch, tmp_path):
     from braindecode.models.base import _checkpoint_source
 
     def cached(repo, filename, **kwargs):
-        return (
-            str(tmp_path / "snapshots" / "abc12345" / filename)
-            if filename == "model.safetensors"
-            else None
-        )
-
+        return str(tmp_path / "snapshots" / "abc12345" / filename) if filename == "model.safetensors" else None
     monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", cached)
     assert _checkpoint_source("org/repo")["commit"] == "abc12345"
 
 
 def test_labram_reset_classifier_invalidates_head_origin(tmp_path):
     from braindecode.models import Labram
-
-    model = Labram(
-        n_chans=2,
-        n_times=128,
-        n_outputs=2,
-        patch_size=8,
-        embed_dim=8,
-        conv_out_channels=8,
-        num_layers=1,
-        num_heads=2,
-    )
+    model = Labram(n_chans=2, n_times=128, n_outputs=2, patch_size=8, embed_dim=8,
+                   conv_out_channels=8, num_layers=1, num_heads=2)
     model.save_pretrained(tmp_path)
     loaded = Labram.from_pretrained(tmp_path)
     loaded.reset_classifier(3)
-    assert (
-        not {"final_layer.weight", "final_layer.bias"}
-        & loaded._pretrained_provenance["loaded"]
-    )
+    assert not {"final_layer.weight", "final_layer.bias"} & loaded._pretrained_provenance["loaded"]
 
 
 def test_model_html_citation_exports_and_dataset_readers(tmp_path):
@@ -1314,9 +1117,7 @@ def test_model_html_citation_exports_and_dataset_readers(tmp_path):
     model = EEGNet.from_pretrained(tmp_path)
     model.card_data = ModelCardData(datasets=["nm000139", "on004362", "TUEG", "PREST"])
     page = model._repr_html_()
-    exports = re.findall(
-        r'href="data:text/plain;charset=utf-8,([^"]+)" download="([^"]+)"', page
-    )
+    exports = re.findall(r'href="data:text/plain;charset=utf-8,([^"]+)" download="([^"]+)"', page)
     assert len(exports) == 2
     texts = {name: unquote(content) for content, name in exports}
     bibtex = texts["braindecode.bib"]

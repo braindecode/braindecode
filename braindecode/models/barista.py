@@ -359,8 +359,8 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             return True
         if self.token_pooling is not None:
             return False
-        spatial = args[1] if len(args) > 1 else kwargs.get("spatial_indices")
-        ch_mask = args[3] if len(args) > 3 else kwargs.get("ch_mask")
+        spatial = self._call_arg(args, kwargs, "spatial_indices")
+        ch_mask = self._call_arg(args, kwargs, "ch_mask")
         return spatial is not None or (ch_mask is not None and self.spatial_emb is None)
 
     def _init_parameters(self) -> None:

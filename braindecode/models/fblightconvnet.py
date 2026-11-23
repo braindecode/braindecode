@@ -103,7 +103,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         https://github.com/Ma-Xinzhi/LightConvNet
     """
 
-    _time_axis = "free"
+    _time_axis = "fixed"  # fixed: attn_conv.weight is sized by n_times // win_len
     _channel_axis = "fixed"  # fixed: spatial_conv.0.weight
 
     def __init__(

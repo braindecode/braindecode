@@ -251,8 +251,6 @@ def _new_head_follows_model(reset_head):
         # Hold the old tensors until the end, so that their ids cannot be
         # reused by the new ones.
         old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
-        self._materialized_n_chans = None
-        self._materialized_n_times = None
         out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
@@ -651,6 +649,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if self._n_chans is None and self._chs_info is not None:
             return len(self._chs_info)
         elif self._n_chans is None:
+            if not torch.jit.is_scripting():
+                materialized = getattr(self, "_materialized_n_chans", None)
+                if materialized is not None:
+                    return materialized
             raise ValueError(
                 "n_chans could not be inferred. Either specify n_chans or chs_info."
             )
@@ -671,6 +673,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             return int(round(self._input_window_seconds * self._sfreq))
         elif self._n_times is None:
+            if not torch.jit.is_scripting():
+                materialized = getattr(self, "_materialized_n_times", None)
+                if materialized is not None:
+                    return materialized
             raise ValueError(
                 "n_times could not be inferred. "
                 "Either specify n_times or input_window_seconds and sfreq."
@@ -763,16 +769,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             return None
         raise KeyError(f"Unknown signal parameter {name!r}.")
 
+    def _call_arg(self, args: tuple, kwargs: dict, name: str, default=None) -> Any:
+        """Value of the ``forward`` argument ``name`` in this call."""
+        i = _forward_param_names(type(self)).index(name)
+        return args[i] if len(args) > i else kwargs.get(name, default)
+
     def _first_input(self, args: tuple, kwargs: dict) -> torch.Tensor | None:
-        """Extract the primary signal tensor from positional or keyword call args."""
-        if args:
-            first = args[0]
-            return first if isinstance(first, torch.Tensor) else None
+        """The primary signal tensor of this call, passed by position or keyword."""
         names = _forward_param_names(type(self))
-        if names and names[0] in kwargs:
-            first = kwargs[names[0]]
-            return first if isinstance(first, torch.Tensor) else None
-        return None
+        first = args[0] if args else (kwargs.get(names[0]) if names else None)
+        return first if isinstance(first, torch.Tensor) else None
 
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         """Whether this call accepts an input channel count other than ``n_chans``."""
@@ -784,67 +790,38 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     @staticmethod
     def _snap_to_length(x: torch.Tensor, target: int) -> torch.Tensor:
-        cur = x.shape[-1]
-        if cur == target:
-            return x
-        if cur > target:
-            return x[..., :target]
-        return F.pad(x, (0, target - cur))
+        return F.pad(x[..., :target], (0, max(0, target - x.shape[-1])))
+
+    def _grid(self) -> tuple[int, int]:
+        """First patch length and step of the length grid."""
+        step = getattr(self, "_n_times_step", 1)
+        offset = getattr(self, "_n_times_offset", 0)
+        return (offset, step) if offset > 0 else (step, 0)
 
     def _snap_grid_target(self, got_times: int) -> int:
-        step = getattr(self, "_n_times_step", 1)
-        offset = getattr(self, "_n_times_offset", 0)
-        patch = offset if offset > 0 else step
-        grid_step = step if offset > 0 else patch
-        n_patches = patch_count(
-            got_times,
-            patch,
-            getattr(self, "on_non_divisible", "crop"),
-            step=0 if offset == 0 else step,
-        )
-        return patch + (n_patches - 1) * grid_step
+        patch, step = self._grid()
+        on_non_divisible = getattr(self, "on_non_divisible", "crop")
+        n_patches = patch_count(got_times, patch, on_non_divisible, step=step)
+        return patch + (n_patches - 1) * (step or patch)
 
     def _snap_grid_tensor(self, name: str, x: torch.Tensor) -> torch.Tensor:
-        step = getattr(self, "_n_times_step", 1)
-        offset = getattr(self, "_n_times_offset", 0)
-        patch = offset if offset > 0 else step
-        grid_step = 0 if offset == 0 else step
-        return pad_or_crop_to_patches(
-            x,
-            patch,
-            getattr(self, "on_non_divisible", "crop"),
-            step=grid_step,
-        )
+        patch, step = self._grid()
+        on_non_divisible = getattr(self, "on_non_divisible", "crop")
+        return pad_or_crop_to_patches(x, patch, on_non_divisible, step=step)
 
     def _replace_time_inputs(
-        self,
-        args: tuple,
-        kwargs: dict,
-        fn: Callable[[str, torch.Tensor], torch.Tensor],
+        self, args: tuple, kwargs: dict, fn: Callable[[str, torch.Tensor], torch.Tensor]
     ) -> tuple[tuple, dict]:
-        time_inputs = getattr(self, "_time_inputs", ("x",))
         names = _forward_param_names(type(self))
-        new_args = list(args)
-        args_changed = False
-        for idx, val in enumerate(new_args):
-            if (
-                idx < len(names)
-                and names[idx] in time_inputs
-                and isinstance(val, torch.Tensor)
-            ):
-                snapped = fn(names[idx], val)
-                if snapped is not val:
-                    new_args[idx] = snapped
-                    args_changed = True
-        new_kwargs = kwargs
-        for key in time_inputs:
-            if key in kwargs and isinstance(kwargs[key], torch.Tensor):
-                snapped = fn(key, kwargs[key])
-                if snapped is not kwargs[key]:
-                    if new_kwargs is kwargs:
-                        new_kwargs = dict(kwargs)
-                    new_kwargs[key] = snapped
-        return (tuple(new_args) if args_changed else args), new_kwargs
+        # One time input: the first forward argument, whatever its name (X, eeg...).
+        time_inputs = self._time_inputs if len(self._time_inputs) > 1 else names[:1]
+
+        def snap(name, value):
+            is_time = name in time_inputs and isinstance(value, torch.Tensor)
+            return fn(name, value) if is_time else value
+
+        args = tuple(snap(n, a) for n, a in zip(names, args)) + args[len(names) :]
+        return args, {k: snap(k, v) for k, v in kwargs.items()}
 
     def _uses_ensure4d(self) -> bool:
         cached = getattr(self, "_has_ensure4d", None)
@@ -935,11 +912,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def _prepare_inputs(self, args: tuple, kwargs: dict) -> tuple[tuple, dict]:
         """Validate input axes and apply configured length snapping before forward."""
-        if (
-            getattr(self, "_time_axis", None) is None
-            and getattr(self, "_channel_axis", None) is None
-        ):
-            return args, kwargs
         x = self._first_input(args, kwargs)
         if x is None:
             return args, kwargs
@@ -953,7 +925,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             n_times = self._signal_param("n_times")
             assert n_times is not None
             args, kwargs = self._replace_time_inputs(
-                args, kwargs, lambda _k, t: self._snap_to_length(t, n_times)
+                args, kwargs, lambda _name, t: self._snap_to_length(t, n_times)
             )
             if not explicit_policy and not getattr(self, "_warned_length_snap", False):
                 self._warned_length_snap = True
@@ -968,15 +940,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         on_non_divisible = getattr(self, "on_non_divisible", "crop")
         snapped_len = self._snap_grid_target(got_times)
         snap_mode = getattr(self, "_snaps_in_prepare_inputs", True)
-        snap_here = (
-            snap_mode is True
-            or (snap_mode == "pad_only" and on_non_divisible == "pad")
-            or (snap_mode == "crop_only" and on_non_divisible == "crop")
+        snap_here = snap_mode is True or (
+            snap_mode == "pad_only" and on_non_divisible == "pad"
         )
-        snapped_anywhere = snap_here or snap_mode in (False, "crop_only")
+        snapped_anywhere = snap_here or snap_mode is False
         if snap_here:
             args, kwargs = self._replace_time_inputs(
-                args, kwargs, lambda key, t: self._snap_grid_tensor(key, t)
+                args, kwargs, self._snap_grid_tensor
             )
         if (
             snapped_anywhere
@@ -1035,17 +1005,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self.eval()
         with torch.inference_mode():
             try:
-                first_param = next(self.parameters(), None)
+                ref = next(self.parameters(), torch.empty(0))
                 probe = torch.zeros(
-                    self.input_shape,
-                    dtype=first_param.dtype
-                    if first_param is not None
-                    else torch.float32,
-                    device=first_param.device
-                    if first_param is not None
-                    else torch.device("cpu"),
+                    self.input_shape, dtype=ref.dtype, device=ref.device
                 )
-                self._check_input_shape(probe, (probe,), {})
+                (probe,), _ = self._prepare_inputs((probe,), {})
                 return tuple(
                     type(self)
                     .forward(  # the backbone, on its own channels
@@ -1386,10 +1350,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         torchinfo.ModelStatistics
             ModelStatistics generated by torchinfo.summary.
         """
-        known_chans = self._signal_param("n_chans")
-        n_chans = 1 if known_chans is None else known_chans
-        known_times = self._signal_param("n_times")
-        n_times = 200 if known_times is None else known_times
+        n_chans = self._signal_param("n_chans") or 1
+        n_times = self._signal_param("n_times") or 200
 
         statistics = summary(
             self,
@@ -1792,55 +1754,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             cls._fill_legacy_defaults(model_kwargs)
             resolve_type_kwargs(cls, model_kwargs)
 
-            # config.json gives n_outputs (to detect a head swap) and the saved
-            # time geometry, for local directories and Hub repo IDs alike.
+            # The Hub mixin read config.json (local or Hub) and passed it as
+            # ``config``: it gives n_outputs (to detect a head swap) and the
+            # saved time geometry.
             is_local = Path(model_id).is_dir()
-            saved_config: dict[str, Any] = dict(config) if config is not None else {}
-            if config is None:
-                config_file: Optional[Union[str, Path]] = None
-                if is_local:
-                    candidate = Path(model_id) / "config.json"
-                    if candidate.is_file():
-                        config_file = candidate
-                else:
-                    cached_cfg = (
-                        None
-                        if force_download
-                        else huggingface_hub.try_to_load_from_cache(
-                            model_id,
-                            "config.json",
-                            cache_dir=cache_dir,
-                            revision=revision,
-                        )
-                    )
-                    if isinstance(cached_cfg, str):
-                        config_file = cached_cfg
-                    elif (
-                        not local_files_only
-                        and not getattr(
-                            huggingface_hub.constants, "HF_HUB_OFFLINE", False
-                        )
-                        and huggingface_hub.file_exists(
-                            model_id,
-                            "config.json",
-                            revision=revision,
-                            token=token,
-                        )
-                    ):
-                        config_file = huggingface_hub.hf_hub_download(
-                            repo_id=model_id,
-                            filename="config.json",
-                            revision=revision,
-                            cache_dir=cache_dir,
-                            force_download=force_download,
-                            token=token,
-                            local_files_only=local_files_only,
-                        )
-                if config_file is not None:
-                    with open(config_file, "r") as f:
-                        loaded_cfg = json.load(f)
-                    if isinstance(loaded_cfg, dict):
-                        saved_config = loaded_cfg
+            saved_config = config or {}
 
             # A save spells its window with any two of these three quantities.
             # When only one is known, complete the pair from the save, preferring

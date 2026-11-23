@@ -28,15 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.CareSleepNet`,
-  :class:`~braindecode.models.EEGInceptionMI`, :class:`~braindecode.models.FBCNet`,
-  :class:`~braindecode.models.FBMSNet`, :class:`~braindecode.models.IFNet`,
-  :class:`~braindecode.models.Labram` (with ``neural_tokenizer=True``),
-  :class:`~braindecode.models.NeuroRVQTokenizer`,
-  :class:`~braindecode.models.SeizureTransformer` and :class:`~braindecode.models.PBT`
-  read the temporal window length from the input tensor in ``forward`` instead of
-  using the length stored at construction, accepting variable-length windows with
-  unchanged weights and build-shape outputs (by `Bruno Aristimunha`_).
+- ATCNet, CareSleepNet, EEGInceptionMI, FBCNet, FBMSNet, IFNet, Labram (``neural_tokenizer=True``), NeuroRVQTokenizer, PBT
+  and SeizureTransformer read the window length from the input instead of the length stored at build, so other lengths run
+  with unchanged weights, and outputs at the build length stay the same (by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DeepSOZ` (Shama et al., 2023), which detects seizures second by second and,
   with ``return_soz=True``, gives one seizure onset zone logit per channel; it reproduces the outputs of the
   DeepSOZ-HEM challenge model exactly (:gh:`1771` by `Raghav Rathi`_).
@@ -211,15 +205,9 @@ Enhancements
 API and behavior changes
 ========================
 
-- Every registered model declares ``_time_axis`` (``"fixed"``, ``"free"`` or
-  ``"dense"``), ``_channel_axis`` (``"fixed"`` or ``"free"``) and, on ``"free"``
-  and ``"dense"`` models, ``_min_n_times``; :class:`braindecode.models.EEGModuleMixin`
-  checks channel counts, minimum lengths and fixed window lengths before ``forward``
-  runs instead of catching and re-wording PyTorch ``RuntimeError``s. Off-by-one
-  window lengths within 1% of ``n_times`` (and at most one step) snap to
-  ``n_times`` with a one-time ``UserWarning`` unless ``on_non_divisible="error"``;
-  larger mismatches on fixed models raise ``ValueError`` before ``forward`` runs
-  (by `Bruno Aristimunha`_).
+- Registered models declare their time and channel axes, and :class:`braindecode.models.EEGModuleMixin` checks channel counts
+  and lengths before ``forward``: a length off by at most 1% of ``n_times`` and one step snaps to it with a one-time
+  ``UserWarning`` unless ``on_non_divisible="error"``; larger mismatches raise ``ValueError`` (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
   ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
   so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).
