@@ -20,7 +20,7 @@ from braindecode.functional import (
     sinusoidal_positional_encoding,
 )
 from braindecode.functional.patches import _check_on_non_divisible
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
 
@@ -254,6 +254,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         # Pool the patches into one trial vector: (batch, embed_dim)
         return self.temporal_pooling(contextual_tokens), contextual_tokens
 
+    @deprecated_forward_kwargs("2.3", channel_mask=("ch_mask", torch.logical_not))
     def forward(
         self,
         x: torch.Tensor,
@@ -552,6 +553,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         model.eval()
         return model
 
+    @deprecated_forward_kwargs("2.3", channel_mask=("ch_mask", torch.logical_not))
     def forward(
         self,
         x: torch.Tensor,

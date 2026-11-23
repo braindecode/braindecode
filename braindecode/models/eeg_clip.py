@@ -42,7 +42,7 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
@@ -234,6 +234,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             self.eeg_encoder, Deep4Net
         )
 
+    @deprecated_forward_kwargs("2.3", X="x")
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x, return_features: bool = False):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""

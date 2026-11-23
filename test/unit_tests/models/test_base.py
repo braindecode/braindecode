@@ -3,6 +3,7 @@
 # License: BSD-3
 
 
+import inspect
 import json
 import subprocess
 import sys
@@ -1158,3 +1159,48 @@ def test_attn_sleep_loads_a_v2_safetensors_file(tmp_path):
     state = _v2_layout("attn_sleep_v2.0.0_safetensors.txt")
     save_file(state, tmp_path / "model.safetensors")
     AttnSleep.from_pretrained(tmp_path, strict=True)
+
+
+# Old forward keywords of v2.0.0 keep working until their removal release
+# (deprecated_forward_kwargs); forward itself only takes the new names.
+_DEPRECATED_FORWARD = sorted(
+    name
+    for name, cls in models_dict.items()
+    if hasattr(cls.forward, "_deprecated_kwargs")
+)
+
+
+@pytest.mark.parametrize("name", _DEPRECATED_FORWARD)
+def test_deprecated_forward_keywords_rename_to_forward_parameters(name):
+    forward = models_dict[name].forward
+    params = inspect.signature(forward).parameters
+    for old, new in forward._deprecated_kwargs[1].items():
+        new = new[0] if isinstance(new, tuple) else new
+        assert new in params and old not in params
+
+
+def test_old_forward_keyword_warns_and_matches_the_new_one():
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+    x = torch.randn(2, 3, 128)
+    with torch.no_grad():
+        expected = model(x)
+        with pytest.warns(FutureWarning, match=r"EEGNet\.forward\(input=\.\.\.\)"):
+            assert torch.equal(model(input=x), expected)
+        with pytest.raises(TypeError, match="got both 'input'"):
+            model(input=x, x=x)
+    assert "input" not in str(torch.jit.script(model).forward.schema)
+
+
+def test_old_sleepfm_channel_mask_is_the_inverse_of_ch_mask():
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == "SleepFM"
+    )
+    signal = _get_signal_params(signal_params)
+    model = models_dict["SleepFM"](**_get_signal_params(signal_params, required))
+    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
+    missing = torch.zeros(2, x.shape[1], dtype=torch.bool)
+    missing[:, -1] = True  # channel_mask is True for missing channels
+    with torch.no_grad(), pytest.warns(FutureWarning, match="channel_mask"):
+        old = model.eval()(x, channel_mask=missing)
+    with torch.no_grad():
+        assert torch.equal(old, model(x, ch_mask=~missing))

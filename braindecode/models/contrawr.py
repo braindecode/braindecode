@@ -5,7 +5,7 @@ import torch.nn as nn
 from mne.utils import warn
 
 from braindecode.functional import _real_dft, spectral_input
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
@@ -129,6 +129,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(emb_size, self.n_outputs)
         self._min_n_times = self.n_fft // 2 + 1
 
+    @deprecated_forward_kwargs("2.3", X="x")
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

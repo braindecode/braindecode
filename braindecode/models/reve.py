@@ -23,7 +23,7 @@ from braindecode.functional import (
     scaled_dot_product_attention,
 )
 from braindecode.functional.patches import _check_on_non_divisible
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
 from braindecode.modules.channels import _reve_position_bank, resolve_channel_positions
 from braindecode.modules.layers import RMSNorm
 
@@ -483,6 +483,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         return self._position_bank.forward(channel_names)
 
+    @deprecated_forward_kwargs("2.3", eeg="x")
     def forward(
         self,
         x: torch.Tensor,
