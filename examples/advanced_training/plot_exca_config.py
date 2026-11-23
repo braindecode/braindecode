@@ -55,7 +55,11 @@ from moabb.datasets.utils import dataset_list
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing import create_windows_from_events
+from braindecode.preprocessing import (
+    Preprocessor,
+    create_windows_from_events,
+    preprocess,
+)
 
 warnings.simplefilter("ignore")
 
@@ -78,12 +82,14 @@ class WindowedMOABBDatasetConfig(pydantic.BaseModel):
 
     @infra.apply
     def create_instance(self) -> MOABBDataset:
-        # We don't apply any preprocessing here for simplicity, but in a real experiment,
-        # you would typically want to filter the data, resample it, etc.
-        # Instead, our config  directly extracts windows from the raw data.
+        # MOABB stores the signals in volts (about 1e-5). We only convert them
+        # to microvolts: left in volts, every model of this example predicted
+        # a single class (25% accuracy). In a real experiment, you would
+        # typically also filter the data, resample it, etc.
         dataset = MOABBDataset(
             dataset_name=self.dataset_name, subject_ids=self.subject_id
         )
+        preprocess(dataset, [Preprocessor(lambda x: x * 1e6, picks="data")])
         windows_dataset = create_windows_from_events(dataset, preload=True)
 
         return windows_dataset
@@ -432,7 +438,6 @@ for model_cfg in model_cfg_list:
             model=model_cfg,
             train_dataset=train_dataset_cfg,
             max_epochs=10,
-            lr=0.1,
             seed=seed,
         )
         eval_cfg = EvaluationConfig(trainer=train_cfg, test_dataset=test_dataset_cfg)
@@ -468,7 +473,6 @@ for model_cfg in model_cfg_list:
             model=model_cfg,
             train_dataset=train_dataset_cfg,
             max_epochs=10,
-            lr=0.1,
             seed=seed,
         )
         eval_cfg = EvaluationConfig(trainer=train_cfg, test_dataset=test_dataset_cfg)
@@ -498,3 +502,50 @@ agg_results_df = results_df.groupby("trainer.model.model_name_").agg(
     {"accuracy": ["mean", "std"]}
 )
 print(agg_results_df)
+
+##############################################################
+# We plot the test accuracy of each seed (dots) and its mean over seeds
+# (bar) for both models, against the 25% chance level of this four-class
+# task. Both means sit above chance, but with one subject, 10 epochs and
+# no filtering they stay far from a tuned pipeline, and a single seed can
+# land near chance. The ``seed`` field only sets the validation split:
+# the model weights are not seeded, so the accuracies change between runs.
+import matplotlib.pyplot as plt
+import numpy as np
+
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.grid": False,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+model_names = list(agg_results_df.index)
+fig, ax = plt.subplots(figsize=(6, 2.4))
+for row, name in enumerate(model_names):
+    accuracies = results_df.loc[
+        results_df["trainer.model.model_name_"] == name, "accuracy"
+    ]
+    ax.barh(row, accuracies.mean(), height=0.5, color=BLUE, alpha=0.25)
+    ax.plot(accuracies, np.full(len(accuracies), row), "o", color=BLUE, ms=6)
+ax.axvline(0.25, color=GREY, linestyle="--", linewidth=0.9)
+ax.text(0.255, len(model_names) - 0.55, "Chance (25%)", color=GREY, fontsize=8.5)
+ax.set_yticks(range(len(model_names)), model_names)
+ax.set_xlim(0, 1)
+ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+ax.set_xlabel("Test accuracy")
+ax.grid(axis="x", color="#EAEAEA", linewidth=0.7)
+ax.set_axisbelow(True)
+fig.tight_layout()

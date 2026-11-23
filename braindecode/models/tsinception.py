@@ -220,7 +220,7 @@ class TSception(EEGModuleMixin, nn.Module):
         s_out = self.batch_spatial_lay(s_out)
 
         # Flatten and apply final layers
-        s_out = s_out.view(s_out.size(0), -1)
+        s_out = s_out.reshape(s_out.size(0), -1)
         output = self.dense_layer(s_out)
         output = self.final_layer(output)
         return output

@@ -1562,6 +1562,7 @@ class _MultiHeadAttention(nn.Module):
             key=key,
             value=value,
             attn_mask=self.add_mask_axis(attn_mask),
+            need_weights=False,
         )
         # Un-merge (batch * time) back to (batch, time) while keeping the
         # singleton query axis the downstream conformer block expects.

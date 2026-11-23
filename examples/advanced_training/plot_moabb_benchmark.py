@@ -12,7 +12,6 @@ In this example, we use the architecture EEGNet.
 
 import matplotlib.pyplot as plt
 import mne
-import seaborn as sns
 import torch
 from moabb.datasets import BNCI2014_001
 from moabb.evaluations import CrossSessionEvaluation
@@ -141,8 +140,40 @@ print(results.head())
 ##############################################################################
 # Plot Results
 # ----------------
-plt.figure()
-sns.barplot(data=results, y="score", x="subject", palette="viridis")
+# For two classes, the ``MotorImagery`` paradigm scores each fold with the
+# ROC AUC. Each dot is one cross-session fold (train on one session, test on
+# the other), the bar is the subject mean, and the dashed line is chance.
+BLUE, GREY = "#0072B2", "#7F7F7F"
+plt.style.use("default")  # undo the seaborn style that moabb sets on import
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "font.family": "sans-serif",
+        "axes.facecolor": "white",
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+subject_ids = sorted(results["subject"].unique())
+fig, ax = plt.subplots(figsize=(5.5, 2.4))
+for row, subject in enumerate(subject_ids):
+    scores = results.loc[results["subject"] == subject, "score"].to_numpy()
+    ax.scatter(scores, [row] * len(scores), s=28, color=BLUE, alpha=0.6, lw=0)
+    ax.vlines(scores.mean(), row - 0.3, row + 0.3, color=BLUE, lw=2.2)
+ax.axvline(0.5, color=GREY, ls="--", lw=0.9)
+ax.text(0.505, len(subject_ids) - 0.6, "Chance (0.5)", color=GREY, fontsize=8.5)
+ax.set_yticks(range(len(subject_ids)), [str(subject) for subject in subject_ids])
+ax.set_ylim(-0.6, len(subject_ids) - 0.4)
+ax.set_xlim(0.3, 1.0)
+ax.set_xticks([0.3, 0.5, 0.75, 1.0])
+ax.grid(axis="x", color="#EAEAEA", lw=0.7)
+ax.set_axisbelow(True)
+ax.set_xlabel("ROC AUC")
+ax.set_ylabel("Subject")
+fig.tight_layout()
 plt.show()
 ##############################################################################
 # References

@@ -226,39 +226,84 @@ regressor.fit(train_set, y=None, epochs=n_epochs)
 ###################################################################################################
 # Model evaluation
 # -----------------
-# Plotting training and validation losses and negative root mean square error
+# Plotting training and validation losses and root mean square error
 import matplotlib.pyplot as plt
 
-fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-axes[0].set_title("Train and valid losses")
-axes[0].plot(regressor.history[:, "train_loss"])
-axes[0].plot(regressor.history[:, "valid_loss"])
-axes[0].set_xlabel("Epochs")
-axes[0].set_ylabel("Cropped MSE loss")
-axes[0].legend(["Train", "Valid"])
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
 
-axes[1].set_title("Train and valid errors")
-axes[1].plot(regressor.history[:, "train_neg_root_mean_squared_error"])
-axes[1].plot(regressor.history[:, "valid_neg_root_mean_squared_error"])
-axes[1].set_xlabel("Epochs")
-axes[1].set_ylabel("Negative RMSE")
-axes[1].legend(["Train", "Valid"])
+plt.rcdefaults()
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "legend.frameon": False,
+    }
+)
+
+epochs = regressor.history[:, "epoch"]
+fig, axes = plt.subplots(1, 2, figsize=(8, 3.2), sharex=True, layout="constrained")
+# skorch logs the negative RMSE (higher is better); we flip it back to RMSE
+for ax, (key, sign), letter, title in [
+    (axes[0], ("loss", 1), "A", "Cropped MSE loss"),
+    (axes[1], ("neg_root_mean_squared_error", -1), "B", "Root mean square error"),
+]:
+    for split, color in [("Train", GREY), ("Valid", BLUE)]:
+        values = sign * np.array(regressor.history[:, f"{split.lower()}_{key}"])
+        ax.plot(epochs, values, color=color, lw=1.8, marker="o", markersize=4)
+        ax.annotate(
+            split,
+            xy=(epochs[-1], values[-1]),
+            xytext=(6, 0),
+            textcoords="offset points",
+            color=color,
+            va="center",
+            fontweight="bold",
+        )
+    ax.set_title(f"{letter}  {title}", loc="left", fontweight="bold", color=INK)
+    ax.set_xlabel("Epoch")
+    ax.set_xticks(epochs)
+    ax.set_xlim(epochs[0] - 0.2, epochs[-1] + 0.6)
+    ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+axes[0].set_ylabel("MSE")
+axes[1].set_ylabel("RMSE")
 
 ###################################################################################################
 # Model testing
 # -----------------
-# Plotting a scatter plot of estimated versus target values and corresponding trend line.
-fig, axes = plt.subplots(1, 1, figsize=(5, 5))
+# Plotting a scatter plot of estimated versus target values, the trend line
+# and the identity line ``y = x`` on which perfect predictions would fall.
+fig, ax = plt.subplots(figsize=(4.5, 4.5), layout="constrained")
 y_estim = np.ravel(regressor.predict(test_set))
 y_gt = test_set.get_metadata()["target"].to_numpy()
 
-_ = axes.scatter(y_gt, y_estim)
-_ = axes.set_ylabel("Estimated targets.")
-_ = axes.set_xlabel("Ground truth targets.")
+ax.scatter(y_gt, y_estim, color=BLUE, s=12, alpha=0.6, linewidths=0)
+lims = [min(y_gt.min(), y_estim.min()), max(y_gt.max(), y_estim.max())]
+ax.plot(lims, lims, color=GREY, ls="--", lw=0.9)
+ax.text(lims[1], lims[1], "y = x ", color=GREY, ha="right", va="bottom", fontsize=8.5)
 
 z = np.polyfit(y_gt, y_estim, 1)
 p = np.poly1d(z)
-plt.plot(y_gt, p(y_gt), "r--")
+ax.plot(lims, p(lims), color=BLUE, lw=1.5)
+r = np.corrcoef(y_gt, y_estim)[0, 1]
+ax.text(
+    0.02, 0.98, f"Pearson r = {r:.2f}", transform=ax.transAxes, va="top", color=BLUE
+)
+ax.set_xlabel("Ground-truth target")
+ax.set_ylabel("Predicted target")
+ax.set_aspect("equal")
+ax.xaxis.set_major_locator(plt.MaxNLocator(4))
+ax.yaxis.set_major_locator(plt.MaxNLocator(4))
 plt.show()
 ###################################################################################################
 # References

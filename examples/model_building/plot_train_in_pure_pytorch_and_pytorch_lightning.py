@@ -204,9 +204,6 @@ test_set = splitted["1test"]  # Session evaluation
 ######################################################################
 # Option 1: Pure PyTorch training loop
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# .. image:: https://upload.wikimedia.org/wikipedia/commons/9/96/Pytorch_logo.png
-#    :alt: Pytorch logo
 
 
 ######################################################################
@@ -340,6 +337,7 @@ loss_fn = torch.nn.CrossEntropyLoss()
 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_set, batch_size=batch_size)
 
+history = []  # one row of metrics per epoch, plotted below
 for epoch in range(1, n_epochs + 1):
     print(f"Epoch {epoch}/{n_epochs}: ", end="")
 
@@ -361,12 +359,71 @@ for epoch in range(1, n_epochs + 1):
         f"Test Accuracy: {100 * test_accuracy:.1f}%, "
         f"Average Test Loss: {test_loss:.6f}\n"
     )
+    history.append((epoch, train_loss, test_loss, train_accuracy, test_accuracy))
+
+######################################################################
+# We plot the metrics collected at each epoch. With only ``n_epochs = 2``
+# for a fast build, the curves have two points; with more epochs, the same
+# code shows the full learning curves.
+
+import matplotlib.pyplot as plt
+
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+plt.rcdefaults()  # importing MOABB applies seaborn's "whitegrid" style globally
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+epochs_run, train_losses, test_losses, train_accs, test_accs = np.array(history).T
+fig, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(8, 3.2), layout="constrained")
+for ax, curves in [
+    (ax_loss, [("Train", train_losses, GREY), ("Test", test_losses, BLUE)]),
+    (ax_acc, [("Train", 100 * train_accs, GREY), ("Test", 100 * test_accs, BLUE)]),
+]:
+    for name, values, color in curves:
+        ax.plot(epochs_run, values, color=color, lw=1.8, marker="o", markersize=4)
+        ax.annotate(
+            name,
+            xy=(epochs_run[-1], values[-1]),
+            xytext=(6, 0),
+            textcoords="offset points",
+            color=color,
+            va="center",
+            fontweight="bold",
+        )
+    ax.set_xticks(epochs_run)
+    ax.set_xlim(epochs_run[0] - 0.2, epochs_run[-1] + 0.5)
+    ax.set_xlabel("Epoch")
+
+# Four balanced classes: a random guess is right 25 % of the time
+ax_acc.axhline(25, color=GREY, ls="--", lw=0.9)
+ax_acc.text(
+    epochs_run[-1], 23, "Chance (25%)", color=GREY, fontsize=8.5, ha="right", va="top"
+)
+ax_acc.set_ylim(0, 100)
+ax_acc.set_yticks([0, 25, 50, 75, 100])
+ax_loss.set_ylabel("Loss")
+ax_acc.set_ylabel("Accuracy (%)")
+ax_loss.set_title("A  Cross-entropy loss", loc="left", fontweight="bold", color=INK)
+ax_acc.set_title("B  Classification accuracy", loc="left", fontweight="bold", color=INK)
 
 ######################################################################
 # Option 2: Train it with PyTorch Lightning
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# .. image:: https://upload.wikimedia.org/wikipedia/commons/e/e6/Lightning_Logo_v2.png
-#    :alt: Pytorch Lightning logo
 
 ######################################################################
 # Alternatively, `<lightning_>`_ provides a nice interface around torch modules

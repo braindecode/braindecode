@@ -91,12 +91,14 @@ from braindecode.visualization import (
 # native decoder in ink and every control in muted slate.
 
 INK, ACCENT, SUBTLE, RED = "#14181f", "#3a6c97", "#5e6878", "#b5332e"
+GREY = "#7F7F7F"  # chance line
 MUTED = (0.37, 0.41, 0.47, 0.45)  # SUBTLE at 45% opacity
 BLUES = LinearSegmentedColormap.from_list("blues", ["white", "#dde7f0", ACCENT])
 DIVERGE = LinearSegmentedColormap.from_list("diverge", [RED, "white", ACCENT])
 # sphinx_gallery_start_ignore
 plt.rcParams.update(
     {
+        "font.family": "sans-serif",
         "font.size": 9,
         "axes.titlesize": 9.5,
         "figure.constrained_layout.use": True,
@@ -105,17 +107,20 @@ plt.rcParams.update(
         "axes.titlelocation": "left",
         "axes.spines.top": False,
         "axes.spines.right": False,
-        "axes.edgecolor": "#d6d9de",
+        "axes.edgecolor": INK,
+        "axes.linewidth": 0.8,
         "axes.labelcolor": SUBTLE,
         "axes.grid": True,
         "axes.grid.axis": "y",
         "axes.axisbelow": True,
-        "grid.color": "#e6e8eb",
-        "xtick.color": "#d6d9de",
-        "ytick.color": "#d6d9de",
+        "grid.color": "#EAEAEA",
+        "grid.linewidth": 0.7,
+        "xtick.color": INK,
+        "ytick.color": INK,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
         "xtick.labelcolor": SUBTLE,
         "ytick.labelcolor": SUBTLE,
-        "ytick.major.size": 0,
     }
 )
 # sphinx_gallery_end_ignore
@@ -438,8 +443,9 @@ for name, pred in predictions.items():
 # decoder (ink) uses the exact layer output. The trained SAE (blue) is
 # the result, and the two controls (slate) show what an uninformative
 # substitute costs. For the training-mean control, the FVU is the error of
-# predicting zero in the standardized coordinates. The dotted line is chance
-# (25%).
+# predicting zero in the standardized coordinates. The dashed grey line is
+# chance (25%). The line printed under the figure gives the share of test
+# decisions that the reconstruction and the two controls keep.
 
 fvu_mean = 1 - r2_score(
     test_scaled, torch.zeros_like(test_scaled), multioutput="variance_weighted"
@@ -456,7 +462,7 @@ for name, pred in predictions.items():
 
 panels = ("Reconstruction error (FVU)", "Balanced accuracy", "Agreement with native")
 fig, axes = plt.subplots(1, 3, figsize=(9, 3), sharey=True)
-for column, (ax, title) in enumerate(zip(axes, panels)):
+for column, (ax, letter, title) in enumerate(zip(axes, "ABC", panels)):
     values = [score[column] for score in scores.values()]
     top = max(1.0, *values)
     ax.barh(list(scores), values, height=0.6, color=[INK, ACCENT, MUTED, MUTED])
@@ -470,29 +476,27 @@ for column, (ax, title) in enumerate(zip(axes, panels)):
             color=INK if row < 2 else SUBTLE,
             weight="bold" if row == 1 else "normal",
         )
-    ax.set(title=title, xlim=(0, top * 1.3), xticks=[])
+    ax.set(title=f"{letter}  {title}", xlim=(0, top * 1.3), xticks=[])
     ax.spines[["left", "bottom"]].set_visible(False)
     ax.grid(False)
 axes[0].invert_yaxis()
 axes[0].get_yticklabels()[1].set(color=INK, weight="bold")
-axes[1].axvline(1 / len(LABELS), color=INK, lw=0.8, ls=":")
-axes[1].text(1 / len(LABELS), 3.5, " chance", color=SUBTLE, fontsize=8, va="top")
-control_agreement = max(scores["untrained SAE"][2], scores["layer := train mean"][2])
-fig.suptitle(
-    f"The SAE reconstruction keeps {scores['trained SAE'][2]:.0%} of test decisions; "
-    f"the controls keep at most {control_agreement:.0%}",
-    x=0.01,
-    ha="left",
-)
+axes[1].axvline(1 / len(LABELS), color=GREY, lw=0.9, ls="--")
+axes[1].text(1 / len(LABELS), 3.5, " Chance (25%)", color=GREY, fontsize=8, va="top")
 plt.show()
+control_agreement = max(scores["untrained SAE"][2], scores["layer := train mean"][2])
+print(
+    f"The SAE reconstruction keeps {scores['trained SAE'][2]:.0%} of test decisions; "
+    f"the controls keep at most {control_agreement:.0%}."
+)
 
 ######################################################################
 # The confusion matrices show which decisions change. On the left, the
 # native decoder against the true test labels. On the right, the native
 # predictions against the predictions with the trained SAE's reconstruction:
 # its diagonal holds the windows whose decision is unchanged, and their share
-# is the agreement above. The title counts the changed decisions and names
-# the most frequent change.
+# is the agreement above. The line printed under the figure counts the
+# changed decisions and names the most frequent change.
 
 fig, axes = plt.subplots(1, 2, figsize=(9.2, 4))
 displays = [
@@ -516,26 +520,24 @@ for display in displays:  # ink on light cells, white on dark ones
         text.set_color("white" if value > 0.8 * matrix.max() else INK)
 changes = displays[1].confusion_matrix * (1 - np.eye(len(LABELS), dtype=int))
 axes[0].set(
-    title=f"Native decoder: {baseline_accuracy:.1%} balanced accuracy",
+    title=f"A  Native decoder ({baseline_accuracy:.1%} bal. acc.)",
     xlabel="Predicted class",
     ylabel="True class",
 )
 axes[1].set(
-    title=f"Trained SAE substituted: {scores['trained SAE'][2]:.1%} unchanged",
+    title=f"B  SAE substituted ({scores['trained SAE'][2]:.1%} unchanged)",
     xlabel="Prediction with reconstruction",
     ylabel="Native prediction",
 )
 for ax in axes:
     ax.grid(False)
     ax.spines[:].set_visible(False)
-native_class, new_class = np.unravel_index(changes.argmax(), changes.shape)
-fig.suptitle(
-    f"{changes.sum()} of {len(y_test)} test decisions change with the SAE, most often "
-    f"{pretty[native_class]} to {pretty[new_class]} ({changes.max()} windows)",
-    x=0.01,
-    ha="left",
-)
 plt.show()
+native_class, new_class = np.unravel_index(changes.argmax(), changes.shape)
+print(
+    f"{changes.sum()} of {len(y_test)} test decisions change with the SAE, most often "
+    f"{pretty[native_class]} to {pretty[new_class]} ({changes.max()} windows)."
+)
 
 ######################################################################
 # Which features fire for which class?
@@ -587,7 +589,8 @@ for label, features in selected.items():
 # has a preference that survived a change of day. The outlined cell of each
 # row is the class the feature was picked for, so outlined cells holding
 # 1.00 are the hoped-for pattern. A maximum elsewhere in the row is an honest
-# failure, not noise to be explained away.
+# failure, not noise to be explained away. The line printed under the figure
+# counts the features that still peak on their class on the test session.
 
 selected_features = [f for features in selected.values() for f in features]
 picked_for = [LABELS.index(label) for label, fs in selected.items() for _ in fs]
@@ -629,22 +632,15 @@ ax.xaxis.tick_top()
 ax.tick_params(length=0)
 ax.spines[:].set_visible(False)
 ax.grid(False)
-ax.set_title(
-    "Mean test code per class, each row scaled to its maximum;\n"
-    "outline: the class it was picked for",
-    color=SUBTLE,
-    weight="normal",
-)
+ax.set_title("Mean test code per class (row-scaled)", loc="left")
+plt.show()
 kept = heat.argmax(1) == np.array(picked_for)
 lead = 1 - np.sort(heat, 1)[:, -2]  # distance from the peak to the runner-up class
 narrowest = f"; the narrowest lead is {lead[kept].min():.2f}" if kept.any() else ""
-fig.suptitle(
-    f"{kept.sum()} of {len(heat)} features picked on the training session still peak\n"
-    f"on their class on the test session{narrowest}",
-    x=0.01,
-    ha="left",
+print(
+    f"{kept.sum()} of {len(heat)} features picked on the training session still peak "
+    f"on their class on the test session{narrowest}."
 )
-plt.show()
 
 ######################################################################
 # A closer look at two features
@@ -654,7 +650,9 @@ plt.show()
 # have a time course within the trial, and each window can be traced back
 # to the EEG it summarizes. For the top feature selected for left-hand and
 # for right-hand imagery, a *feature card* shows four views of the test
-# session, with the class the feature was picked for in blue:
+# session, with the class the feature was picked for in blue. The line printed
+# under each card compares the feature's mean code on the trials of its class
+# with the other trials.
 #
 # * **Trial-mean code**: one dot per trial and the class mean as a bar.
 # * **Time course**: the mean code over the trial (± standard error), for
@@ -712,7 +710,7 @@ for label in ("left_hand", "right_hand"):
         ax["strip"].scatter(c + 0.4 * jitter, values, s=6, color=color, lw=0)
         ax["strip"].hlines(values.mean(), c - 0.3, c + 0.3, color=INK, lw=1.4)
     ax["strip"].set_xticks(range(len(LABELS)), [p.replace(" ", "\n") for p in pretty])
-    ax["strip"].set(title="Trial-mean code", ylabel="SAE code")
+    ax["strip"].set(title="A  Trial-mean code", ylabel="SAE code")
 
     for trials, color, name in (
         (codes[~is_target], SUBTLE, "other classes"),
@@ -734,7 +732,7 @@ for label in ("left_hand", "right_hand"):
         )
     ax["time"].axvline(0, color=SUBTLE, lw=0.8, ls=":")
     ax["time"].set(
-        title="Mean code over the trial (± s.e.m.)",
+        title="B  Mean code over the trial (± s.e.m.)",
         xlabel="Time from cue (s)",
         xlim=(time_axis[0], time_axis[-1] + 0.9),  # room for the labels
     )
@@ -760,7 +758,7 @@ for label in ("left_hand", "right_hand"):
             fontsize=8,
         )
     ax["trials"].set(
-        title="Most active test trials: EEG input, shaded by the code in each bin",
+        title="D  Most active test trials, shaded by the code in each bin",
         xlabel="Time from cue (s)",
         xlim=(eeg_time[0], eeg_time[-1]),
         ylim=(-12, 3),
@@ -786,14 +784,13 @@ for label in ("left_hand", "right_hand"):
     bar = fig.colorbar(image, ax=ax["topo"], orientation="horizontal", shrink=0.7)
     bar.set_ticks([-limit, 0, limit], labels=[f"{-limit:.2f}", "0", f"{limit:.2f}"])
     bar.outline.set_visible(False)
-    bar.set_label("r with post-cue log-power\n(association, not a source map)")
-    ax["topo"].set_title("Channel-power correlation")
+    bar.set_label("Pearson r with\npost-cue log-power")
+    ax["topo"].set_title("C  Channel-power correlation")
+    plt.show()
     ratio = trial_mean[is_target].mean() / max(trial_mean[~is_target].mean(), 1e-6)
-    fig.suptitle(
+    print(
         f"Feature #{feature}, picked for {pretty[target]} on the training session, is "
-        f"{ratio:.1f}× as active on {pretty[target]} test trials as on the others",
-        x=0.01,
-        ha="left",
+        f"{ratio:.1f}x as active on {pretty[target]} test trials as on the others."
     )
 
 ######################################################################

@@ -384,29 +384,71 @@ df = pd.DataFrame(clf.history.to_list())
 df["train_acc"] *= 100
 df["valid_acc"] *= 100
 
-ys1 = ["train_loss", "valid_loss"]
-ys2 = ["train_acc", "valid_acc"]
-styles = ["-", ":"]
-markers = [".", "."]
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
+# Importing MOABB applies a seaborn style; restore matplotlib defaults first.
+plt.rcdefaults()
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
 
-fig, ax1 = plt.subplots(figsize=(8, 3))
-ax2 = ax1.twinx()
-for y1, y2, style, marker in zip(ys1, ys2, styles, markers):
-    ax1.plot(df["epoch"], df[y1], ls=style, marker=marker, ms=7, c="tab:blue", label=y1)
-    ax2.plot(
-        df["epoch"], df[y2], ls=style, marker=marker, ms=7, c="tab:orange", label=y2
-    )
-
-ax1.tick_params(axis="y", labelcolor="tab:blue")
-ax1.set_ylabel("Loss", color="tab:blue")
-ax2.tick_params(axis="y", labelcolor="tab:orange")
-ax2.set_ylabel("Accuracy [%]", color="tab:orange")
-ax1.set_xlabel("Epoch")
-
-lines1, labels1 = ax1.get_legend_handles_labels()
-lines2, labels2 = ax2.get_legend_handles_labels()
-ax2.legend(lines1 + lines2, labels1 + labels2)
-
+fig, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(9, 3.4), sharex=True)
+panels = [
+    (ax_loss, "loss", "A  Binary cross-entropy loss", "Loss"),
+    (ax_acc, "acc", "B  Pretext accuracy", "Accuracy (%)"),
+]
+ax_acc.set_ylim(45, 100)
+for ax, metric, title, ylabel in panels:
+    ends = {}
+    for split, color in (("train", GREY), ("valid", BLUE)):
+        values = df[f"{split}_{metric}"]
+        ax.plot(df["epoch"], values, color=color, linewidth=1.8)
+        ends[split] = values.iloc[-1]
+    # Keep the two end labels at least 6% of the y-range apart
+    low, high = ax.get_ylim()
+    gap = 0.06 * (high - low) - abs(ends["train"] - ends["valid"])
+    if gap > 0:
+        upper = max(ends, key=ends.get)
+        lower = min(ends, key=ends.get)
+        ends[upper] += gap / 2
+        ends[lower] -= gap / 2
+    for split, color in (("train", GREY), ("valid", BLUE)):
+        ax.text(
+            df["epoch"].iloc[-1] + 0.4,
+            ends[split],
+            split.capitalize(),
+            color=color,
+            fontsize=9,
+            va="center",
+        )
+    ax.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+    ax.set_axisbelow(True)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title, loc="left", fontweight="bold", color=INK)
+ax_acc.axhline(50, color=GREY, linestyle="--", linewidth=0.9)
+ax_acc.text(
+    df["epoch"].iloc[-1],
+    49,
+    "Chance (50%)",
+    color=GREY,
+    fontsize=8.5,
+    ha="right",
+    va="top",
+)
 plt.tight_layout()
 
 ######################################################################
@@ -480,7 +522,6 @@ print(classification_report(data["test"][1], test_y_pred))
 # 5-class classification problem). Finally, we perform a quick 2D visualization
 # of the feature space using a PCA:
 
-from matplotlib import colormaps
 from sklearn.decomposition import PCA
 
 X = np.concatenate([v[0] for k, v in data.items()])
@@ -489,20 +530,41 @@ y = np.concatenate([v[1] for k, v in data.items()])
 pca = PCA(n_components=2)
 # tsne = TSNE(n_components=2)
 components = pca.fit_transform(X)
+variance = pca.explained_variance_ratio_ * 100
 
-fig, ax = plt.subplots()
-colors = colormaps["viridis"](np.linspace(0, 1, 5))
-for i, stage in enumerate(["W", "N1", "N2", "N3", "R"]):
+stage_colors = {
+    "Wake": "#E69F00",
+    "N1": "#56B4E9",
+    "N2": "#009E73",
+    "N3": "#0072B2",
+    "REM": "#D55E00",
+}
+fig, ax = plt.subplots(figsize=(5.6, 4.4))
+for i, color in enumerate(stage_colors.values()):
     mask = y == i
     ax.scatter(
         components[mask, 0],
         components[mask, 1],
-        s=10,
-        alpha=0.7,
-        color=colors[i],
-        label=stage,
+        s=8,
+        alpha=0.5,
+        color=color,
+        linewidths=0,
     )
-ax.legend()
+for i, (stage, color) in enumerate(stage_colors.items()):
+    centroid = components[y == i].mean(0)
+    ax.text(
+        *centroid,
+        stage,
+        color=color,
+        fontsize=11,
+        fontweight="bold",
+        ha="center",
+        va="center",
+        bbox={"facecolor": "white", "edgecolor": color, "boxstyle": "round,pad=0.2"},
+    )
+ax.set_xlabel(f"PC 1 ({variance[0]:.0f}% var.)")
+ax.set_ylabel(f"PC 2 ({variance[1]:.0f}% var.)")
+fig.tight_layout()
 
 ######################################################################
 # We see that there is sleep stage-related structure in the embedding. A
