@@ -30,6 +30,16 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
     :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
+    .. figure:: ../_static/model/geonirs_arch.png
+       :align: center
+       :alt: GeoNIRS framework
+       :width: 1000px
+
+       Overview of GeoNIRS: HbO and HbR temporal encoders, a geometry encoder, the
+       geometry-aware channel compressor and the bidirectional cross-chromophore
+       reconstruction used for pretraining. Reproduced from Fig. 1 of
+       :footcite:`li2026geonirs` (copyright of the authors).
+
     .. versionadded:: 2.1
 
     GeoNIRS is an fNIRS foundation model pretrained on unlabelled recordings

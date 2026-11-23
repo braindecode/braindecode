@@ -26,6 +26,15 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/axon_arch.png
+       :align: center
+       :alt: AXON token grid and AXON block
+       :width: 1000px
+
+       (a) The channel-time token grid with the temporal and spatial neighbourhoods
+       of a token; (b) an AXON block, which mixes the two paths with a token gate.
+       Reproduced from Fig. 1 of [axon2026]_ (CC BY-NC-ND 4.0).
+
     AXON (**AX**\ is-factorized **O**\ perator **N**\ etwork) is a transformer
     encoder pretrained with masked autoencoding on clinical and research EEG.
     Each recording window is cut into tokens, one per electrode per one-second

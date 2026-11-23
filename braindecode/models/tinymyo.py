@@ -28,6 +28,16 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
 
+    .. figure:: ../_static/model/tinymyo_arch.png
+       :align: center
+       :alt: TinyMyo architecture
+       :width: 1000px
+
+       Overview of TinyMyo: per-channel EMG patches with a shared projection and
+       channel embeddings, the transformer encoder layer, the self-supervised
+       reconstruction head and the downstream heads. Reproduced from Fig. 1 of
+       :footcite:`fasulo2026tinymyo` (© IEEE).
+
     .. versionadded:: 2.1
 
     TinyMyo is a 3.6M-parameter Transformer encoder for surface EMG (sEMG).
