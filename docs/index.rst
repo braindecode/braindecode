@@ -250,7 +250,7 @@
           <div class="hf-pillars">
             <a class="hf-pillar" href="models/categorization/lbm.html">
               <span class="hf-pillar-kicker bd-mono">MODELS · 48 FOUNDATION WEIGHTS</span>
-              <strong>EEGPT, LaBraM, REVE, CBraMod, SleepFM, DuIN &amp; MEGXL</strong>
+              <strong>LaBraM, EEGPT, CBraMod, REVE, SleepFM, DuIN &amp; MEGXL</strong>
               <span class="hf-pillar-sub">Readable JSON configs and parameter-level weight provenance, benchmarked under OpenEEG-Bench.</span>
             </a>
             <a class="hf-pillar" href="https://eegdash.org/dataset_summary.html" target="_blank" rel="noopener">
@@ -284,7 +284,7 @@
           <div class="output-pane output-pane-models">
             <div class="output-toolbar bd-mono">
               <span class="copy-wrap">
-                <button type="button" class="output-copy-btn" data-copy="from braindecode.models import EEGPT&#10;&#10;model = EEGPT.from_pretrained(&#10;    &quot;braindecode/eegpt-pretrained&quot;,&#10;    n_outputs=4,&#10;)&#10;probs = model(X_test).softmax(dim=-1)" aria-label="Copy EEGPT from_pretrained code">
+                <button type="button" class="output-copy-btn" data-copy="from braindecode.models import REVE&#10;&#10;model = REVE.from_pretrained(&#10;    &quot;brain-bzh/reve-base&quot;,&#10;    n_outputs=4,&#10;    n_times=800,&#10;    chs_info=raw.info[&quot;chs&quot;],&#10;)&#10;probs = model(X_test).softmax(dim=-1)" aria-label="Copy REVE from_pretrained code">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   <span>Copy Code</span>
                 </button>
@@ -293,7 +293,7 @@
               <span>Python · safetensors</span>
             </div>
             <div class="output-terminal">
-              <pre class="repl-code bd-mono" tabindex="0"><code><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> <span class="tok-kw">from</span> braindecode.models <span class="tok-kw">import</span> <span class="tok-cls">EEGPT</span></span><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> model = <span class="tok-cls">EEGPT</span>.<span class="tok-fn">from_pretrained</span>(</span><span class="cl">...     <span class="tok-str">"braindecode/eegpt-pretrained"</span>,</span><span class="cl">...     <span class="tok-attr">n_outputs</span>=<span class="tok-num">4</span>,</span><span class="cl">... )</span><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> model(X_test).<span class="tok-fn">softmax</span>(<span class="tok-attr">dim</span>=-<span class="tok-num">1</span>)[:<span class="tok-num">3</span>]</span><span class="cl">tensor([[<span class="tok-num">0.92</span>, <span class="tok-num">0.03</span>, <span class="tok-num">0.03</span>, <span class="tok-num">0.02</span>],</span><span class="cl">        [<span class="tok-num">0.04</span>, <span class="tok-num">0.89</span>, <span class="tok-num">0.05</span>, <span class="tok-num">0.02</span>],</span><span class="cl">        [<span class="tok-num">0.02</span>, <span class="tok-num">0.04</span>, <span class="tok-num">0.91</span>, <span class="tok-num">0.03</span>]])</span></code></pre>
+              <pre class="repl-code bd-mono" tabindex="0"><code><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> <span class="tok-kw">from</span> braindecode.models <span class="tok-kw">import</span> <span class="tok-cls">REVE</span></span><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> model = <span class="tok-cls">REVE</span>.<span class="tok-fn">from_pretrained</span>(</span><span class="cl">...     <span class="tok-str">"brain-bzh/reve-base"</span>,</span><span class="cl">...     <span class="tok-attr">n_outputs</span>=<span class="tok-num">4</span>,</span><span class="cl">...     <span class="tok-attr">n_times</span>=<span class="tok-num">800</span>,</span><span class="cl">...     <span class="tok-attr">chs_info</span>=raw.info[<span class="tok-str">"chs"</span>],</span><span class="cl">... )</span><span class="cl"><span class="tok-kw">&gt;&gt;&gt;</span> model(X_test).<span class="tok-fn">softmax</span>(<span class="tok-attr">dim</span>=-<span class="tok-num">1</span>)[:<span class="tok-num">3</span>]</span><span class="cl">tensor([[<span class="tok-num">0.92</span>, <span class="tok-num">0.03</span>, <span class="tok-num">0.03</span>, <span class="tok-num">0.02</span>],</span><span class="cl">        [<span class="tok-num">0.04</span>, <span class="tok-num">0.89</span>, <span class="tok-num">0.05</span>, <span class="tok-num">0.02</span>],</span><span class="cl">        [<span class="tok-num">0.02</span>, <span class="tok-num">0.04</span>, <span class="tok-num">0.91</span>, <span class="tok-num">0.03</span>]])</span></code></pre>
             </div>
           </div>
 
@@ -463,11 +463,11 @@
               </div>
               <p class="cap-stream bd-mono">19–128 ch @ 128–512 Hz · C3 Cz C4 Fpz-Cz Pz-Oz · MNE Raw / BIDS / EDF</p>
               <div class="cap-links bd-mono">
-                <a href="generated/braindecode.models.EEGPT.html">EEGPT</a>
                 <a href="generated/braindecode.models.Labram.html">LaBraM</a>
+                <a href="generated/braindecode.models.EEGPT.html">EEGPT</a>
                 <a href="generated/braindecode.models.REVE.html">REVE</a>
-                <a href="generated/braindecode.models.EEGNeX.html">EEGNeX</a>
                 <a href="generated/braindecode.models.SleepFM.html">SleepFM</a>
+                <a href="generated/braindecode.models.EEGNeX.html">EEGNeX</a>
               </div>
             </div>
 
@@ -478,11 +478,11 @@
               </div>
               <p class="cap-stream bd-mono">64–306 sensors @ 500–2048 Hz · 3D stereotactic shafts &amp; OPM/SQUID arrays</p>
               <div class="cap-links bd-mono">
-                <a href="generated/braindecode.models.DuIN.html">DuIN</a>
-                <a href="generated/braindecode.models.PopulationTransformer.html">PopT</a>
                 <a href="generated/braindecode.models.BrainBERT.html">BrainBERT</a>
-                <a href="generated/braindecode.models.MEGXL.html">MEGXL</a>
                 <a href="generated/braindecode.models.BrainOmni.html">BrainOmni</a>
+                <a href="generated/braindecode.models.PopulationTransformer.html">PopT</a>
+                <a href="generated/braindecode.models.DuIN.html">DuIN</a>
+                <a href="generated/braindecode.models.MEGXL.html">MEGXL</a>
               </div>
             </div>
 
@@ -493,11 +493,11 @@
               </div>
               <p class="cap-stream bd-mono">HbO/HbR optode pairs @ 10 Hz · 2 kHz motor-unit wrist arrays</p>
               <div class="cap-links bd-mono">
-                <a href="generated/braindecode.models.GeoNIRS.html">GeoNIRS</a>
-                <a href="generated/braindecode.models.MtReNIRS.html">MtReNIRS</a>
-                <a href="generated/braindecode.models.TinyMyo.html">TinyMyo</a>
                 <a href="generated/braindecode.models.MetaNeuromotorHand.html">MetaNeuromotor</a>
                 <a href="generated/braindecode.models.VEMG2Pose.html">VEMG2Pose</a>
+                <a href="generated/braindecode.models.TinyMyo.html">TinyMyo</a>
+                <a href="generated/braindecode.models.GeoNIRS.html">GeoNIRS</a>
+                <a href="generated/braindecode.models.MtReNIRS.html">MtReNIRS</a>
               </div>
             </div>
           </div>

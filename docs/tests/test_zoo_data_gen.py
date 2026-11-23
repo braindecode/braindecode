@@ -64,6 +64,16 @@ def test_generate_zoo_data_writes_static_html(tmp_path):
     assert len(re.findall(r'class="zoo-card"[^>]*data-api-code="', html)) == len(cards)
 
 
+def test_cards_follow_citation_count():
+    models = zoo_data_gen.parse_summary_csv(str(CSV_PATH))
+    assert set(zoo_data_gen.CITATIONS) == {m["name"] for m in models}
+    featured = [m["name"] for m in models if m["featured"]]
+    extra = [m["name"] for m in models if not m["featured"]]
+    for names in (featured, extra):
+        keys = [(-zoo_data_gen.CITATIONS[n], n) for n in names]
+        assert keys == sorted(keys)
+
+
 def test_cross_modal_and_links_match_api_reference():
     models = zoo_data_gen.parse_summary_csv(str(CSV_PATH))
     assert len(models) >= 100
