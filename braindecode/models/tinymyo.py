@@ -18,7 +18,7 @@ from typing import Literal, Optional
 import torch
 from torch import nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import check_n_chans, init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer, PreNormBlock, TimmAttention, TimmMlp
 
@@ -314,6 +314,14 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor or dict
             Logits of shape ``(batch, n_outputs)``, or the features.
         """
+        if torch.jit.is_scripting():
+            # The eager check lives in EEGModuleMixin.__call__ (scripting skips it).
+            check_n_chans(
+                x,
+                self.n_chans,
+                "TinyMyo",
+                "build the model with the n_chans of this input.",
+            )
         # A token per patch of each channel: (batch, C, n_times) -> (batch, C, P, D)
         x = self.patch_embed(x)
         n_patches = x.shape[2]

@@ -267,8 +267,6 @@ def _new_head_follows_model(reset_head):
         # Hold the old tensors until the end, so that their ids cannot be
         # reused by the new ones.
         old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
-        self._materialized_n_chans = None
-        self._materialized_n_times = None
         out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
@@ -781,6 +779,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if self._n_chans is None and self._chs_info is not None:
             return len(self._chs_info)
         elif self._n_chans is None:
+            if not torch.jit.is_scripting():
+                materialized = getattr(self, "_materialized_n_chans", None)
+                if materialized is not None:
+                    return materialized
             raise ValueError(
                 "n_chans could not be inferred. Either specify n_chans or chs_info."
             )
@@ -801,6 +803,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             return int(round(self._input_window_seconds * self._sfreq))
         elif self._n_times is None:
+            if not torch.jit.is_scripting():
+                materialized = getattr(self, "_materialized_n_times", None)
+                if materialized is not None:
+                    return materialized
             raise ValueError(
                 "n_times could not be inferred. "
                 "Either specify n_times or input_window_seconds and sfreq."
@@ -1141,7 +1147,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 probe = torch.zeros(
                     self.input_shape, dtype=ref.dtype, device=ref.device
                 )
-                self._check_input_shape(probe, (probe,), {})
+                (probe,), _ = self._prepare_inputs((probe,), {})
                 # the backbone, on its own channels
                 return tuple(self._backbone_forward(probe).shape)
             finally:

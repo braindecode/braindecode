@@ -378,12 +378,9 @@ class VEMG2Pose(
             in_features=head_in,
             out_features=self._head_multiplier * self.n_outputs,
         )
-        min_time = self.left_context + 1
-        while (
-            round((min_time - self.left_context) / self.sfreq * self.rollout_rate) < 1
-        ):
-            min_time += 1
-        self._min_n_times = min_time
+        # forward clamps n_steps with max(1, ...), so one sample past the
+        # left context is enough for a (single-step) prediction.
+        self._min_n_times = self.left_context + 1
         self._init_parameters()
 
     def _init_parameters(self) -> None:

@@ -18,6 +18,8 @@ from braindecode.models import (
     LUNA,
     BrainBERT,
     CBraMod,
+    CodeBrain,
+    DeepSOZ,
     EEGConformer,
     EEGNet,
     FBCNet,
@@ -152,6 +154,65 @@ def test_lazy_model_keeps_channel_count_of_first_call():
         model(torch.randn(2, 3, 400))
         with pytest.raises(ValueError, match="built for n_chans=3 and got 4"):
             model(torch.randn(2, 4, 400))
+
+
+def test_fixed_snap_reaches_signal_arg_not_named_x():
+    # CodeBrain's signal argument is `inputs`, not `x`: the within-cap length
+    # snap must still replace it instead of only warning about the snap.
+    model = CodeBrain(n_chans=4, n_outputs=2, n_times=2000, sfreq=200).eval()
+    with torch.no_grad(), pytest.warns(UserWarning, match="snapped"):
+        out = model(torch.randn(2, 4, 1990))
+    assert out.shape == (2, 2)
+
+
+def test_get_output_shape_snaps_probe_to_patch_grid():
+    model = DeepSOZ(n_chans=3, n_outputs=2, n_times=1000, patch_size=32, num_heads=4)
+    assert model.get_output_shape()[0] == 1
+
+
+def test_reset_head_keeps_materialized_geometry():
+    model = CBraMod(n_outputs=2, n_times=400).eval()  # no n_chans: lazy head
+    with torch.no_grad():
+        model(torch.randn(2, 3, 400))
+    model.reset_head(3)
+    assert model.n_chans == 3
+    with (
+        torch.no_grad(),
+        pytest.raises(ValueError, match="built for n_chans=3 and got 4"),
+    ):
+        model(torch.randn(2, 4, 400))
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    ["DeepSOZ", "Guetschel2026", "SAMBA", "STEEGFormer", "TinyMyo"],
+)
+def test_scripted_model_rejects_wrong_channel_count(model_name):
+    # TorchScript never reaches EEGModuleMixin.__call__, so these models
+    # repeat the channel check in forward under scripting; without it a
+    # wrong channel count silently broadcasts or reads the wrong token.
+    required, signal = next(
+        (rp, sp) for name, rp, sp in models_mandatory_parameters if name == model_name
+    )
+    model, x = _build_case(model_name, required, signal)
+    _materialize(model, x)
+    scripted = torch.jit.script(model.eval())
+    with torch.no_grad():
+        scripted(x)
+        with pytest.raises(Exception, match="channels"):
+            scripted(torch.randn(2, 1, x.shape[2]))
+
+
+def test_vemg2pose_accepts_one_sample_past_left_context():
+    required, signal = next(
+        (rp, sp) for name, rp, sp in models_mandatory_parameters if name == "VEMG2Pose"
+    )
+    model, x = _build_case("VEMG2Pose", required, signal)
+    _materialize(model, x)
+    assert model._min_n_times == model.left_context + 1
+    with torch.no_grad():
+        out = model(torch.randn(1, x.shape[1], model.left_context + 5))
+    assert out.shape[0] == 1
 
 
 def test_length_grid_snaps_within_cap_and_warns_once():
