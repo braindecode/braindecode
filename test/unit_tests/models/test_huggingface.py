@@ -810,6 +810,26 @@ def test_from_pretrained_offline_does_not_request_model_card(tmp_path, monkeypat
     assert queries == []  # and nothing asked the Hub for it
 
 
+def test_from_pretrained_card_download_failure_does_not_block_weights(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from .test_base import DummyModuleConfigRoundTrip
+
+    events, _, cache_dir = _fake_hub(tmp_path, monkeypatch, card="---\ndatasets:\n- PREST\n---\ncard\n")
+
+    def network_down(*args, **kwargs):
+        raise ConnectionError("network down")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", network_down)
+
+    with pytest.warns(UserWarning, match="model card"):
+        model = DummyModuleConfigRoundTrip.from_pretrained("org/repo", cache_dir=cache_dir)
+
+    assert isinstance(model, DummyModuleConfigRoundTrip)
+    assert model.card_data is None
+    assert events == ["config.json", "model.safetensors"]  # the weights still loaded
+
+
 def test_pretrained_provenance_in_repr(tmp_path):
     import copy
 

@@ -475,8 +475,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     """
 
     #: Hub model card metadata (:class:`huggingface_hub.ModelCardData`) of the
-    #: checkpoint, set by :meth:`from_pretrained` when the card is in the
-    #: checkpoint folder or the local Hub cache (no network request is made for it),
+    #: checkpoint, set by :meth:`from_pretrained` from the checkpoint folder,
+    #: the local Hub cache, or a download made with the weights (unless offline),
     #: e.g. ``model.card_data.datasets`` lists the data the weights saw.
     card_data = None
 
@@ -2428,22 +2428,33 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 ):
                     filename = "pytorch_model.bin"
 
-            # Bring the model card next to the weights, before them, so that a network
-            # failure stops loading at the first requests. A repo without README.md
-            # matches no file: nothing is downloaded and nothing is raised.
+            # Bring the model card next to the weights. A repo without README.md
+            # matches no file: nothing is downloaded and nothing is raised. The card
+            # is metadata only, so a failed download (network down, rate limit)
+            # warns and the weights load anyway; a missing repo or revision is
+            # raised again by the weight download right below.
             if (
                 not is_local
                 and not local_files_only
                 and not huggingface_hub.constants.HF_HUB_OFFLINE
             ):
-                huggingface_hub.snapshot_download(
-                    model_id,
-                    allow_patterns=["README.md"],
-                    revision=revision,
-                    cache_dir=cache_dir,
-                    token=token,
-                    force_download=force_download,
-                )
+                try:
+                    huggingface_hub.snapshot_download(
+                        model_id,
+                        allow_patterns=["README.md"],
+                        revision=revision,
+                        cache_dir=cache_dir,
+                        token=token,
+                        force_download=force_download,
+                    )
+                except OSError as exc:
+                    warnings.warn(
+                        f"Could not download the model card of {model_id} "
+                        f"({exc}); loading the weights without it, so "
+                        "model.card_data stays None.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
 
             if filename is None:
                 model = super()._from_pretrained(  # type: ignore
