@@ -226,6 +226,9 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://openreview.net/forum?id=5M1YOW3bRq
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         # braindecode signal parameters
@@ -318,6 +321,11 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.ln_f = nn.RMSNorm(d_model, eps=1e-5)
         head_in = d_model if pooling == "mean" else self.n_chans * d_model
         self.final_layer = nn.Linear(head_in, self.n_outputs, bias=False)
+        self.on_non_divisible = self.patch_tokenizer.on_non_divisible
+        self._n_times_step = self.segment_len
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.segment_len
+        if pooling != "mean":
+            self._channel_axis = "fixed"
 
         self._init_parameters()
 

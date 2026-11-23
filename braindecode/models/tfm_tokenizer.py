@@ -174,6 +174,9 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
        ICLR 2026. https://openreview.net/forum?id=2sPmWHZ8Ir
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     def __init__(
         self,
         n_outputs: int | None = None,
@@ -290,6 +293,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         self.register_buffer(
             "stft_window", torch.hann_window(self.window_size), persistent=False
         )
+        self._min_n_times = self.window_size
 
     def compute_spectrogram(self, x: torch.Tensor) -> torch.Tensor:
         """STFT magnitude of ``x`` ``(batch, channels, samples)``.

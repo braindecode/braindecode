@@ -52,5 +52,5 @@ def test_invalid_construction_raises(kwargs, match):
 
 def test_forward_rejects_another_number_of_channels():
     model = DeepSOZ(**_SMALL)
-    with pytest.raises(ValueError, match="built for 3 channels"):
+    with pytest.raises(ValueError, match="built for n_chans=3"):
         model(torch.randn(1, 4, 32))

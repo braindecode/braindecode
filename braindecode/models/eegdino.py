@@ -156,6 +156,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
        Intervention (MICCAI 2025).
     """
 
+    _time_axis = "free"
+    _channel_axis = "free"
+
     _channel_target = (
         "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
     )
@@ -257,6 +260,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.global_tokens = nn.Parameter(torch.zeros(1, n_global_tokens, self.emb_dim))
 
         self.final_layer = self._make_head()
+        self.on_non_divisible = self.tokenizer.on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else patch_size
 
         self._init_parameters()
 

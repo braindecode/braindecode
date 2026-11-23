@@ -77,6 +77,9 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         https://doi.org/10.48550/arXiv.2006.00622
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: eegnet_tc.depthwise_conv.weight
+
     def __init__(
         self,
         # Signal related parameters
@@ -162,6 +165,10 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             max_norm_val=self.max_norm_const,
         )
+        delta2 = 2 * (self.filter_2 // 2) - self.filter_2 + 1
+        n_pool1_min = max(1, self.filter_1 - delta2)
+        delta1 = 2 * (self.kern_length // 2) - self.kern_length + 1
+        self._min_n_times = max(1, n_pool1_min * 8 - delta1)
 
     @classmethod
     def _fill_legacy_defaults(cls, kwargs):

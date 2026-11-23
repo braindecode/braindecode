@@ -171,6 +171,9 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/Altaheri/TCFormer
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: conv_block.channel_dw_conv.0.weight
+
     def __init__(
         self,
         # Signal related parameters
@@ -275,6 +278,7 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = _ClassificationHead(
             d_fused, n_groups + 1, self.n_outputs, classifier_max_norm
         )
+        self._min_n_times = max(1, pool_length_1 * pool_length_2)
         self._init_parameters()
 
     def _init_parameters(self) -> None:

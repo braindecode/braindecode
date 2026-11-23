@@ -26,6 +26,15 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/dance_arch.png
+       :align: center
+       :alt: DANCE architecture
+       :width: 1000px
+
+       DANCE pipeline (CNN, Perceiver and event decoder, A) and its event- and
+       sample-based scoring (B), reproduced from [dance]_ (MIT, figure file of the
+       reference repository).
+
     DANCE frames EEG decoding as event *set prediction*: a long, unaligned
     window is mapped to a set of events ``(t_start, t_end, class)`` with
     normalized ``[0, 1]`` spans -- DETR [detr2020]_ for 1-D EEG.
@@ -170,6 +179,9 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
        transformers.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_positions
+
     def __init__(
         self,
         n_outputs=None,
@@ -290,14 +302,9 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
         self.apply(init_weights_)
 
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
-        if x.ndim != 3 or x.shape[-2] != self.n_chans:
+        if x.ndim != 3:
             raise ValueError(
                 f"expected (batch, {self.n_chans}, T) input; got {list(x.shape)}."
-            )
-        if x.shape[-1] < self._min_n_times:
-            raise ValueError(
-                f"n_times={x.shape[-1]} is shorter than the minimum input "
-                f"length ({self._min_n_times} samples = one conv kernel)."
             )
         x = self.input_drop(x)
         if self.conv.merger is not None:

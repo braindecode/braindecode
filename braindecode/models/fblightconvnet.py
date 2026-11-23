@@ -103,6 +103,9 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         https://github.com/Ma-Xinzhi/LightConvNet
     """
 
+    _time_axis = "fixed"  # fixed: attn_conv.weight is sized by n_times // win_len
+    _channel_axis = "fixed"  # fixed: spatial_conv.0.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -215,6 +218,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             in_features=self.n_filters_spat,
             out_features=self.n_outputs,
         )
+        self._min_n_times = self.n_times_truncated
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

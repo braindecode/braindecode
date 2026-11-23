@@ -281,6 +281,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     .. footbibliography::
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight is sized by n_times
+    _channel_axis = "fixed"  # fixed: default_geometry is sized by n_chans
+
     def __init__(
         self,
         # Braindecode parameters
@@ -475,6 +478,17 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         # Head: dropout and a linear layer
         self.head_dropout = nn.Dropout(head_drop_prob)
         self.final_layer = nn.Linear(n_features, self.n_outputs)
+        self._n_times_step = self.patch_size
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
+        if self.pool != "flatten":
+            self._time_axis = "free"
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        geom = self._call_arg(args, kwargs, "geometry")
+        return geom is not None or self.geometry_encoder is None
 
     def forward(
         self,

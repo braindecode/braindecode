@@ -79,17 +79,28 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
 
     if electrode_positions is None and chs_info is not None:
         # Try to infer positions from channel names via a standard montage
-        try:
+        valid_names = (
+            isinstance(chs_info, (list, tuple))
+            and len(chs_info) >= n_chans
+            and all(
+                isinstance(ch, dict) and isinstance(ch.get("ch_name"), str)
+                for ch in chs_info[:n_chans]
+            )
+        )
+        if valid_names:
             ch_names = [ch["ch_name"] for ch in chs_info[:n_chans]]
             montage = mne.channels.make_standard_montage(
                 resolve_montage_name("standard_1005")
             )
-            info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
-            info.set_montage(montage, on_missing="raise")
-            electrode_positions = extract_channel_locations_from_chs_info(
-                info["chs"], num_channels=n_chans
-            )
-        except Exception:
+            if len(set(ch_names)) == n_chans and set(ch_names).issubset(
+                montage.ch_names
+            ):
+                info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
+                info.set_montage(montage, on_missing="raise")
+                electrode_positions = extract_channel_locations_from_chs_info(
+                    info["chs"], num_channels=n_chans
+                )
+        if electrode_positions is None:
             raise ValueError(
                 "Could not extract valid 3-D channel locations from chs_info. "
                 "Please ensure that each entry in chs_info contains a 'loc' key "
@@ -348,6 +359,9 @@ class DGCNN(EEGModuleMixin, nn.Module):
         IEEE Transactions on Affective Computing, 11(3), 532-541.
         https://doi.org/10.1109/TAFFC.2018.2817622
     """
+
+    _time_axis = "fixed"  # fixed: graph_conv.projection.weight
+    _channel_axis = "fixed"  # fixed: classifier.0.weight
 
     def __init__(
         self,

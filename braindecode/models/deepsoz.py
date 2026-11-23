@@ -193,6 +193,9 @@ class DeepSOZ(EEGModuleMixin, nn.Module):
        Epilepsia, 66(S3), 14-24. https://doi.org/10.1111/epi.18113
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: channel_embedding.weight
+
     def __init__(
         self,
         # braindecode parameters
@@ -258,6 +261,8 @@ class DeepSOZ(EEGModuleMixin, nn.Module):
         )
         self.soz_layer = nn.Linear(patch_size, 1)
         self.final_layer = nn.Linear(2 * lstm_hidden_size, self.n_outputs)
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the detection head for a new number of outputs."""
@@ -286,11 +291,15 @@ class DeepSOZ(EEGModuleMixin, nn.Module):
             ``return_soz=True`` also the SOZ logits of shape
             ``(batch, n_chans)``.
         """
-        check_n_chans(
-            x, self.n_chans, "DeepSOZ", hint="build it with that many n_chans."
-        )
-        # x: (batch, n_chans, n_patches * patch_size), whole tokens
-        x = pad_or_crop_to_patches(x, self.patch_size, self.on_non_divisible)
+        if torch.jit.is_scripting():
+            # The eager check lives in EEGModuleMixin.__call__ (scripting skips
+            # it); without it embedding[n_chans] reads a channel row as the
+            # global token.
+            check_n_chans(
+                x, self.n_chans, "DeepSOZ", hint="build it with that many n_chans."
+            )
+            # x: (batch, n_chans, n_patches * patch_size), whole tokens
+            x = pad_or_crop_to_patches(x, self.patch_size, self.on_non_divisible)
         batch, n_chans, n_times = x.shape
         n_patches = n_times // self.patch_size
         # tokens: (batch, n_patches, n_chans, patch_size), one per channel and second

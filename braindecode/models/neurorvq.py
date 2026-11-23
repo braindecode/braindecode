@@ -357,6 +357,15 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/neurorvq_arch.png
+       :align: center
+       :alt: NeuroRVQ architecture
+       :width: 1000px
+
+       The NeuroRVQ foundation model: multi-scale temporal encoder, Transformer
+       encoder and the frozen RVQ codebooks whose tokens it predicts, reproduced
+       from [neurorvq]_ (CC BY 4.0).
+
     The model combines four temporal convolution scales with a shared
     Transformer encoder and learned channel/time embeddings; this class adapts
     the pretrained encoder to Braindecode's window classifier API.
@@ -489,6 +498,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        Tokenization for Generative Foundation Models. https://arxiv.org/abs/2510.13068
     .. [neurorvqcode] https://github.com/KonstantinosBarmpas/NeuroRVQ
     """
+
+    _time_axis = "fixed"  # fixed: fc_norm.bias
+    _channel_axis = "fixed"  # fixed: fc_norm.bias
 
     def __init__(
         self,
@@ -635,6 +647,11 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             head_dim *= len(slots) * self.num_patches
         self.fc_norm = nn.LayerNorm(head_dim)
         self.final_layer = nn.Linear(head_dim, self.n_outputs)
+        self._n_times_step = (
+            math.ceil(patch_size * int(in_sfreq) / preset["sfreq"])
+            if in_sfreq is not None and in_sfreq != preset["sfreq"]
+            else patch_size
+        )
         self._init_parameters()
 
     def _init_parameters(self):

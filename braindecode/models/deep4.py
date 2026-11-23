@@ -92,6 +92,9 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
        Online: http://dx.doi.org/10.1002/hbm.23730
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: conv_time_spat.conv_spat.weight
+
     def __init__(
         self,
         n_chans=None,
@@ -343,6 +346,16 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
+        min_time = self.final_conv_length
+        for filter_length in (
+            self.filter_length_4,
+            self.filter_length_3,
+            self.filter_length_2,
+            self.filter_time_length,
+        ):
+            min_time = (min_time - 1) * pool_stride + self.pool_time_length
+            min_time = (min_time - 1) * conv_stride + filter_length
+        self._min_n_times = min_time
 
         # Initialization, xavier is same as in our paper...
         self._init_parameters()
