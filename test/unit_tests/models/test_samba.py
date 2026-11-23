@@ -129,7 +129,7 @@ def test_positions_are_checked(kwargs, match):
 
 def test_window_shorter_than_the_pooling_is_refused():
     model = _samba(_chs_info(3))
-    with pytest.raises(ValueError, match="at least 8 samples"):
+    with pytest.raises(ValueError, match="needs at least 8 time samples"):
         model(torch.randn(2, 3, 7))
     assert model(torch.randn(2, 3, 8)).shape == (2, 3)
 
@@ -152,7 +152,7 @@ def test_sizes_follow_the_stack_parameters():
     assert shapes["encoder.encoder2.weight"] == (8, 8, 5)
     assert shapes["encoder.encoder3.weight"] == (8, 8, 5)
     assert shapes["encoder.encoder1_mamba.A_log"] == (2,)  # 8 * 8 channels, heads of 32
-    with pytest.raises(ValueError, match="at least 27 samples"):
+    with pytest.raises(ValueError, match="needs at least 27 time samples"):
         model(torch.randn(2, 3, 26))
     features = model(torch.randn(2, 3, 27), return_features=True)["features"]
     assert features.shape == (2, 16) and not features[:, 8:].any()

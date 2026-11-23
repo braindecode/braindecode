@@ -540,6 +540,11 @@ html[data-theme="light"] .bd-landing .only-dark {
   stroke: light-dark(#35638e, #7ab5e5);
 }
 
+.bd-landing .hero-cortex-outline {
+  fill: none;
+  stroke: light-dark(#2a527a, #7ab5e5);
+}
+
 .bd-landing .hero-wave {
   fill: none;
   stroke-width: 2.35;

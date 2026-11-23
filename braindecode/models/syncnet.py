@@ -80,6 +80,9 @@ class SyncNet(EEGModuleMixin, nn.Module):
 
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: amplitude
+
     def __init__(
         self,
         # braindecode convention

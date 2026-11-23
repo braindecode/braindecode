@@ -16,7 +16,6 @@ from einops.layers.torch import Rearrange, Reduce
 from torch import nn
 
 from braindecode.functional import (
-    check_n_chans,
     init_weights_,
     pad_or_crop_to_patches,
     patch_count,
@@ -170,6 +169,9 @@ class JungMAE(EEGModuleMixin, nn.Module):
     .. footbibliography::
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.weight
+    _channel_axis = "fixed"  # fixed: final_layer.weight
+
     def __init__(
         self,
         # Braindecode parameters
@@ -294,6 +296,17 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
         # Initialization of the reference
         self._init_parameters()
+        self._n_times_step = self.patch_size
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        return super()._accepts_any_n_chans(args, kwargs) or self._accepts_any_n_times(
+            args, kwargs
+        )
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        return bool(self._call_arg(args, kwargs, "return_features", False))
 
     def _init_parameters(self) -> None:
         """Xavier-uniform weights and zero biases of the Linear layers and the
@@ -327,13 +340,6 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # Shapes use the symbols of the class docstring: C pairs, P patches of
         # Q samples, tokens of width D.
 
-        if not return_features:
-            check_n_chans(
-                x,
-                self.n_chans,
-                "JungMAE",
-                "use return_features=True to encode another number of HbO/HbR pairs.",
-            )
         # A token per patch of each pair, zero where the patch is invalid:
         # (batch, 2C, n_times) -> (batch, C, P, D)
         x = self.encode(x)["foundation"]

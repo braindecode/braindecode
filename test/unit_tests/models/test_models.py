@@ -26,7 +26,6 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchaudio
-from einops import EinopsError
 from scipy.signal import stft
 from torch import nn
 
@@ -1005,8 +1004,10 @@ def test_caresleepnet_gives_one_prediction_per_epoch():
         n_chans=3, n_outputs=5, n_times=3 * 300, n_epochs=3, n_eog_chans=1
     ).eval()
     assert model(torch.randn(2, 3, 900)).shape == (2, 5, 3)
-    with pytest.raises(EinopsError, match="600 != 900"):
-        model(torch.randn(2, 3, 600))
+    assert model(torch.randn(2, 3, 600)).shape == (2, 5, 3)
+    assert model(torch.randn(2, 3, 1800)).shape == (2, 5, 3)
+    with pytest.raises(ValueError, match="needs at least 507 time samples"):
+        model(torch.randn(2, 3, 506))
 
 
 @pytest.mark.parametrize(
@@ -3044,6 +3045,14 @@ def test_fblightconvnet_default_build_is_not_deprecated():
     assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
 
 
+def test_fblightconvnet_rejects_a_longer_input():
+    # attn_conv's kernel is n_times // win_len, so a longer input is not
+    # silently cut to its first n_times samples.
+    model = FBLightConvNet(n_chans=8, n_outputs=3, n_times=1000, sfreq=250)
+    with pytest.raises(ValueError, match="built for n_times=1000 and got 2000"):
+        model(torch.randn(2, 8, 2000))
+
+
 @pytest.mark.parametrize("n_times", [200, 249])
 def test_fblightconvnet_window_shorter_than_win_len(n_times):
     # used to reach xavier_uniform_ with an empty kernel and die on a
@@ -4225,9 +4234,9 @@ def test_emg2qwerty_input_validation():
     m = _small_emg2qwerty(n_fft=64, hop_length=16, kernel_width=8,
                           block_channels=(12, 12))
     # Receptive field = 64 + 2 * 7 * 16 = 288.
-    with pytest.raises(ValueError, match="n_fft"):
+    with pytest.raises(ValueError, match="needs at least 288 time samples and got 50"):
         m(torch.randn(1, 32, 50))
-    with pytest.raises(ValueError, match="receptive field"):
+    with pytest.raises(ValueError, match="needs at least 288 time samples and got 200"):
         m(torch.randn(1, 32, 200))
     # Boundary: exactly the receptive-field length must be accepted and
     # produce a single output frame from each conv block.
@@ -4590,7 +4599,7 @@ def test_brant_band_power_matches_scipy_periodogram():
 
 def test_brant_input_length_must_match():
     model = Brant(n_chans=2, n_outputs=2, n_times=3000, patch_size=1500).eval()
-    with pytest.raises(ValueError, match="time samples"):
+    with pytest.raises(ValueError, match="built for n_times=3000 and got 1500 samples"):
         model(torch.randn(1, 2, 1500))
 
 
@@ -4725,7 +4734,9 @@ def test_brainbert_pads_a_short_window():
     with torch.no_grad():
         assert torch.equal(model(x), strict(x))
         assert torch.equal(model(short), strict(padded))
-        with pytest.raises(ValueError, match="spectrogram frames"):
+        with pytest.raises(
+            ValueError, match=rf"needs at least {strict._min_n_times} time samples"
+        ):
             strict(short)
     with pytest.warns(UserWarning, match="will be padded"):
         BrainBERT(n_chans=2, n_outputs=2, n_times=500)
@@ -4794,7 +4805,7 @@ def test_barista_forward_rejects_out_of_range_indices(bad):
 
 def test_barista_learned_pooling_needs_construction_grid():
     model = _barista_model("parcels", pooling="learned", spatial_indices=[1, 2, 3, 4])
-    with pytest.raises(ValueError, match="pooling='mean'"):
+    with pytest.raises(ValueError, match="built for n_chans=4 and got 6 channels"):
         model(torch.randn(1, 6, 128), spatial_indices=torch.tensor([1, 2, 3, 4, 5, 6]))
 
 
@@ -5207,10 +5218,11 @@ def test_seizure_transformer_predicts_every_input_sample(n_times, input_times):
     assert out.shape == (2, 2, input_times)
 
 
-def test_seizure_transformer_rejects_inputs_longer_than_n_times():
+def test_seizure_transformer_accepts_inputs_longer_than_n_times():
     model = _small_seizure_transformer(256)
-    with pytest.raises(ValueError, match="at most 256"):
-        model(torch.randn(1, 4, 512))
+    with torch.no_grad():
+        out = model(torch.randn(1, 4, 512))
+    assert out.shape == (1, 2, 512)
 
 
 def test_seizure_transformer_rejects_invalid_construction():
@@ -5574,7 +5586,7 @@ def test_eegclip_checks_channels_only_for_its_deep4net(custom_encoder):
     if custom_encoder:
         assert model(x).shape == (2, 2)
     else:
-        with pytest.raises(ValueError, match="built for 3 channels"):
+        with pytest.raises(ValueError, match="built for n_chans=3 and got 2 channels"):
             model(x)
 
 
@@ -7005,7 +7017,7 @@ def test_mtrenirs_needs_its_channel_positions():
         MtReNIRS(chs_info=no_loc, n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
     with pytest.raises(ValueError, match="needs HbO/HbR channels"):
         MtReNIRS(chs_info=[{"ch_name": "Cz", "loc": np.zeros(12)}], n_outputs=2, n_times=100)
-    with pytest.raises(ValueError, match="different channel counts"):
+    with pytest.raises(ValueError, match="built for n_chans=4 and got 2 channels"):
         MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
 
 
@@ -7192,7 +7204,7 @@ def test_only_the_flattened_head_is_tied_to_the_channel_count(
     if encoder_only:
         assert model(x).shape[1] == 2
         model.reset_head(2)
-    with pytest.raises(ValueError, match="built for 3 channels"):
+    with pytest.raises(ValueError, match="built for n_chans=3 and got 2 channels"):
         model(x)
 
 
@@ -7225,7 +7237,7 @@ def test_pbt_patches_stay_inside_their_channel(n_times):
     )
     patches, _ = model.patch_signal(x)  # past n_times, and a partial patch, are dropped
     torch.testing.assert_close(patches, expected)
-    with pytest.raises(ValueError, match="built for 3 channels"):
+    with pytest.raises(ValueError, match="built for n_chans=3 and got 2 channels"):
         model(x[:, :2])
 
 

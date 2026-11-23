@@ -268,6 +268,9 @@ class REVE(EEGModuleMixin, nn.Module):
     requiring matched layouts between pretraining and downstream tasks.
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_times
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight is sized by n_chans
+
     # Constant, so TorchScript compiles only the head in use (``cls_query_token``
     # exists only with attention pooling).
     __constants__ = ["use_attention_pooling"]
@@ -328,10 +331,7 @@ class REVE(EEGModuleMixin, nn.Module):
         mode = "crop" if on_non_divisible is None else on_non_divisible
         _check_on_non_divisible(mode)
         self.on_non_divisible = mode
-        try:
-            known_n_times = self.n_times
-        except ValueError:  # unknown length: nothing to check at construction
-            known_n_times = None
+        known_n_times = self._signal_param("n_times")
         if known_n_times is not None:
             step = patch_size - patch_overlap
             # Raises for "crop" below one patch and for "error" on an untiled window.
@@ -408,6 +408,23 @@ class REVE(EEGModuleMixin, nn.Module):
 
         if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
+        self._n_times_step = self.patch_size - self.patch_overlap
+        self._n_times_offset = self.patch_size
+        self._snaps_in_prepare_inputs = False
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
+        if self.use_attention_pooling:
+            self._time_axis = "free"
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        pos = self._call_arg(args, kwargs, "pos")
+        return pos is not None and self._accepts_any_n_times(args, kwargs)
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        ret_out = self._call_arg(args, kwargs, "return_output", False)
+        ret_feat = self._call_arg(args, kwargs, "return_features", False)
+        return bool(self.use_attention_pooling or ret_out or ret_feat)
 
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""

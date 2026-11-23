@@ -18,7 +18,7 @@ import pytest
 
 import braindecode.models
 
-_INFRA_STEMS = frozenset({"__init__", "base", "config", "util"})
+_INFRA_STEMS = frozenset({"__init__", "_summary", "base", "config", "util"})
 _SHORT_TUPLE = 8
 _MATH_ATOMS = frozenset({"pi", "e", "tau", "inf", "nan"})
 _MATH_MODULES = frozenset({"math", "np", "numpy", "torch"})

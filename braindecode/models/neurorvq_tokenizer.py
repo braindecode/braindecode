@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -256,6 +256,15 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/neurorvq_tokenizer_arch.png
+       :align: center
+       :alt: NeuroRVQTokenizer architecture
+       :width: 1000px
+
+       The NeuroRVQ tokenizer: multi-scale temporal encoder, Transformer encoder,
+       one RVQ codebook per temporal branch and the Fourier-based decoder,
+       reproduced from [neurorvq]_ (CC BY 4.0).
+
     The tokenizer encodes EEG, ECG, EMG or PPG patches through four temporal
     scales, quantizes each scale with a separate residual vector quantizer,
     and reconstructs the signal from amplitude and phase components. The
@@ -398,6 +407,9 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        Tokenization for Generative Foundation Models. https://arxiv.org/abs/2510.13068
     """
 
+    _time_axis = "dense"
+    _channel_axis = "fixed"  # fixed: spatial_embedding_ix
+
     def __init__(
         self,
         n_outputs: int | None = None,
@@ -461,6 +473,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.patch_tokenizer = PatchTokenizer(
             patch_size, self.n_times, on_non_divisible=on_non_divisible
         )
+        self._n_times_step = patch_size
         embed_dim = out_chans * (patch_size // 8)
         # LaBraM's attention would silently floor the head width otherwise.
         if embed_dim % num_heads:
@@ -485,6 +498,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         )
         self.patch_size = patch_size
         self.max_patches = max_patches
+        self._min_n_times = 1 if self.on_non_divisible == "pad" else self.patch_size
         self.code_dim = code_dim
         self.num_quantizers = num_quantizers
         self.register_buffer("spatial_embedding_ix", slots, persistent=False)
@@ -566,23 +580,27 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                     nn.init.trunc_normal_(module.weight, std=0.02)
                     nn.init.zeros_(module.bias)
 
-    def _embedding_indices(self, device: torch.device):
+    def _embedding_indices(self, device: torch.device, n_patches: Optional[int] = None):
+        num_patches = self.num_patches if n_patches is None else n_patches
+        if num_patches > self.max_patches:
+            raise ValueError(
+                f"Input produces {num_patches} patches, exceeding max_patches "
+                f"({self.max_patches})."
+            )
         time = torch.arange(
-            self.max_patches - self.num_patches,
+            self.max_patches - num_patches,
             self.max_patches,
             device=device,
         ).repeat(self.spatial_embedding_ix.numel())
-        spatial = self.spatial_embedding_ix.to(device).repeat_interleave(
-            self.num_patches
-        )
+        spatial = self.spatial_embedding_ix.to(device).repeat_interleave(num_patches)
         return time.unsqueeze(0), spatial.unsqueeze(0)
 
     def _patches(self, x: Tensor) -> Tensor:
-        """Validate ``(batch, n_chans, n_times)`` input and split it into patches."""
-        if x.ndim != 3 or x.shape[1] != self.n_chans or x.shape[2] != self.n_times:
+        """Validate ``(batch, n_chans, time)`` input and split it into patches."""
+        if x.ndim != 3 or x.shape[1] != self.n_chans:
             raise ValueError(
-                "Expected input shape (batch, {}, {}), got {}.".format(
-                    self.n_chans, self.n_times, list(x.shape)
+                "Expected input shape (batch, {}, time), got {}.".format(
+                    self.n_chans, list(x.shape)
                 )
             )
         if self._drops_channels:
@@ -632,7 +650,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         k-means; load pretrained weights first for pretrained codes.
         """
         patches = self._patches(x)
-        time, spatial = self._embedding_indices(x.device)
+        time, spatial = self._embedding_indices(x.device, patches.shape[2])
         scale_codes = []
         for i, latent in enumerate(
             self._branch_latents(patches, time, spatial), start=1
@@ -650,7 +668,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def forward(self, x: Tensor):
         """Return the per-window z-scored target and reconstruction."""
         patches = self._patches(x)
-        time, spatial = self._embedding_indices(x.device)
+        time, spatial = self._embedding_indices(x.device, patches.shape[2])
         spectrum = torch.fft.fft(spectral_input(patches), dim=-1)
         amplitude = torch.log1p(spectrum.abs()).to(patches)
         amplitude, amp_mean, amp_std = self._standardize(amplitude)
@@ -683,7 +701,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         reconstructed_std, _, _ = self._standardize(
             reconstructed.reshape(x.shape[0], -1, 1, self.patch_size).contiguous()
         )
-        n_tokens = patches.shape[1] * self.num_patches
+        n_tokens = patches.shape[1] * patches.shape[2]
         return (
             target_std.reshape(x.shape[0], n_tokens, -1),
             reconstructed_std.reshape(x.shape[0], n_tokens, -1),

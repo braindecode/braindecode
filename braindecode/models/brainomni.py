@@ -37,6 +37,15 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
+    .. figure:: ../_static/model/braintokenizer_arch.png
+       :align: center
+       :alt: BrainTokenizer architecture
+       :width: 1000px
+
+       BrainTokenizer training as an autoencoder, with its encoder,
+       reconstructor and sensor encoder, reproduced from [brainomni]_
+       (CC BY 4.0).
+
     .. rubric:: Architecture Overview
 
     A VQ-VAE over raw EEG/MEG conditioned on sensor geometry::
@@ -139,6 +148,9 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
        NeurIPS 2025. https://arxiv.org/abs/2505.18185
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: pos is sized by n_chans
+
     def __init__(
         self,
         n_outputs=None,
@@ -224,6 +236,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             last_kernel_size,
             drop_prob,
         )
+        self._min_n_times = 1
         self._init_parameters()
 
     def _init_parameters(self) -> None:
@@ -299,6 +312,15 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
     r"""BrainOmni from Xiao et al. (2025) [brainomni]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+
+    .. figure:: ../_static/model/brainomni_arch.png
+       :align: center
+       :alt: BrainOmni architecture
+       :width: 1000px
+
+       BrainOmni pretraining: masked BrainTokenizer tokens are predicted by
+       stacked criss-cross Transformer blocks, reproduced from [brainomni]_
+       (CC BY 4.0).
 
     .. rubric:: Architecture Overview
 
@@ -410,6 +432,9 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
        NeurIPS 2025. https://arxiv.org/abs/2505.18185
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: tokenizer.pos is sized by n_chans
+
     def __init__(
         self,
         n_outputs=None,
@@ -496,6 +521,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
         self.final_layer = self._make_head(self.n_outputs)  # default init, as released
         self.tokenizer.requires_grad_(False)
+        self._min_n_times = 1
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""

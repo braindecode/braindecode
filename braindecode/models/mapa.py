@@ -74,6 +74,14 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
     :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/mapa_arch.png
+       :align: center
+       :alt: MAPA architecture
+       :width: 1000px
+
+       Masked pretraining of MAPA over contacts, frequency bands and time, with
+       band and region embeddings, reproduced from [Tang2026]_ (CC BY 4.0).
+
     .. versionadded:: 2.0
 
     .. rubric:: Architecture Overview
@@ -224,6 +232,9 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        sample-efficient neural interfaces. https://arxiv.org/abs/2609.13507
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: default_sensor_indices is sized by n_chans
+
     # TorchScript reads no module globals, so forward reads these constants.
     __constants__ = ("_band_strides", "_n_bins", "_n_regions")
     _band_strides = _BAND_STRIDES
@@ -373,6 +384,33 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             else feature_dim * self.n_chans * self.k_full
         )
         self.final_layer = nn.Linear(n_features, self.n_outputs)
+        quantum = max(_BAND_STRIDES)
+        if normalization == "session":
+            self._min_n_times = quantum
+        else:
+            raw_min = (quantum - 1) * 64
+            if sfreq_known and float(self.sfreq) != 2048:
+                self._min_n_times = ((raw_min - 1) * int(self.sfreq)) // 2048 + 1
+            else:
+                self._min_n_times = raw_min
+        if pooling == "flatten":
+            self._time_axis = "fixed"
+
+    def _check_input_shape(
+        self, x: torch.Tensor, args: tuple, kwargs: dict
+    ) -> str | None:
+        spectrogram = self.normalization == "session"
+        if x.ndim != (4 if spectrogram else 3) or (
+            spectrogram and x.shape[2] != self._n_bins
+        ):
+            return None
+        return super()._check_input_shape(x, args, kwargs)
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        if super()._accepts_any_n_chans(args, kwargs):
+            return True
+        sensor_indices = self._call_arg(args, kwargs, "sensor_indices")
+        return sensor_indices is not None and self.pooling == "mean"
 
     @property
     @torch.jit.unused
