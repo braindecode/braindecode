@@ -873,6 +873,14 @@ def test_adapt_input_records_the_lazy_length_at_model_sfreq():
         model(torch.randn(2, 4, 1600))
 
 
+def test_lazy_length_is_recorded_on_the_length_grid():
+    model = CBraMod(n_chans=4, n_outputs=2, sfreq=200, on_non_divisible="crop")
+    with torch.no_grad():
+        model(torch.randn(2, 4, 850))  # weights are built from 800
+        assert model.n_times == 800
+        model(torch.randn(2, 4, 800))
+
+
 def test_adapt_input_refuses_intracranial_models():
     from braindecode.models._summary import _capabilities
 

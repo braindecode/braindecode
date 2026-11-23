@@ -1185,16 +1185,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     self._materialized_n_chans = x.shape[1]
                 if need_times and not self._accepts_any_n_times(args, kwargs):
                     n_times = x.shape[-1]
-                    if self._input_sfreq is not None:  # the length the weights saw:
-                        # at model.sfreq, then on the model's length grid
-                        n_times = self._snap_grid_target(
-                            -(
-                                -n_times
-                                * int(self._signal_param("sfreq"))
-                                // int(self._input_sfreq)
-                            )
+                    if self._input_sfreq is not None:  # the length at model.sfreq
+                        n_times = -(
+                            -n_times
+                            * int(self._signal_param("sfreq"))
+                            // int(self._input_sfreq)
                         )
-                    self._materialized_n_times = n_times
+                    # the length the weights saw: on the model's length grid
+                    self._materialized_n_times = self._snap_grid_target(n_times)
         return out
 
     def get_output_shape(self) -> tuple[int, ...]:
