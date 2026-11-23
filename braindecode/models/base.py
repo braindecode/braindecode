@@ -97,46 +97,30 @@ def _validate_weights_filename(filename):
 def _load_card_data(pretrained_model_name_or_path, **kwargs):
     """Metadata of a checkpoint's model card (``README.md``), or None.
 
-    Best effort: the card is informational, so a missing or unreadable card
-    (offline, no README, bad YAML) never blocks loading the weights.
+    The card is informational, so it is read only where it is already on disk,
+    with no network request: in the checkpoint folder, or in the local Hugging
+    Face cache (``cache_dir`` and ``revision`` as given to ``from_pretrained``).
+    When it is not there, the result is None and the weights load as usual.
+    ``from_pretrained`` itself downloads only ``config.json`` and the weights, so
+    a Hub checkpoint has its card in the cache only after something else
+    fetched it, such as ``huggingface_hub.snapshot_download``.
     """
-    keys = ("revision", "cache_dir", "force_download", "token", "local_files_only")
     local_dir = Path(pretrained_model_name_or_path)
     if local_dir.is_dir():
         card = local_dir / "README.md"
         if not card.is_file():
             return None
     else:
-        repo_id = str(pretrained_model_name_or_path)
-        cached = (
-            None
-            if kwargs.get("force_download")
-            else huggingface_hub.try_to_load_from_cache(
-                repo_id,
-                "README.md",
-                cache_dir=kwargs.get("cache_dir"),
-                revision=kwargs.get("revision"),
-            )
-        )
-        if isinstance(cached, str):
-            card = Path(cached)
-        elif kwargs.get("local_files_only") or getattr(
-            huggingface_hub.constants, "HF_HUB_OFFLINE", False
-        ):
-            return None
-        elif huggingface_hub.file_exists(
-            repo_id,
+        cached = huggingface_hub.try_to_load_from_cache(
+            str(pretrained_model_name_or_path),
             "README.md",
+            cache_dir=kwargs.get("cache_dir"),
             revision=kwargs.get("revision"),
-            token=kwargs.get("token"),
-        ):
-            card = huggingface_hub.hf_hub_download(
-                repo_id,
-                "README.md",
-                **{k: kwargs[k] for k in keys if k in kwargs},
-            )
-        else:
+        )
+        # A path when cached; None, or a marker for "known absent", otherwise.
+        if not isinstance(cached, str):
             return None
+        card = Path(cached)
     return huggingface_hub.ModelCard.load(card, ignore_metadata_errors=True).data
 
 
@@ -486,7 +470,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     """
 
     #: Hub model card metadata (:class:`huggingface_hub.ModelCardData`) of the
-    #: checkpoint, set by :meth:`from_pretrained` when the card can be read,
+    #: checkpoint, set by :meth:`from_pretrained` when the card is in the
+    #: checkpoint folder or the local Hub cache (no network request is made for it),
     #: e.g. ``model.card_data.datasets`` lists the data the weights saw.
     card_data = None
 
@@ -1442,10 +1427,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             x = self._first_input(args, kwargs)
             if x is not None and x.ndim >= 3:
+                n_chans, n_times, _ = self._input_chans_and_times(x)
                 if need_chans and not self._accepts_any_n_chans(args, kwargs):
-                    self._materialized_n_chans = x.shape[1]
+                    self._materialized_n_chans = n_chans
                 if need_times and not self._accepts_any_n_times(args, kwargs):
-                    n_times = x.shape[-1]
                     if self._input_sfreq is not None:  # the length at model.sfreq
                         n_times = -(
                             -n_times

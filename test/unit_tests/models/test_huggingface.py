@@ -682,17 +682,32 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
     assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None
 
 
-def test_model_card_offline_never_queries_hub(tmp_path, monkeypatch):
+def test_from_pretrained_never_uses_network_for_model_card(tmp_path, monkeypatch):
     import huggingface_hub
+    from huggingface_hub import hub_mixin
 
-    from braindecode.models.base import _load_card_data
+    from .test_base import DummyModuleConfigRoundTrip
 
-    def no_network(*args, **kwargs):
-        raise ConnectionError("network down")
+    saved = tmp_path / "saved"
+    DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2).save_pretrained(saved)
+    queries = []
 
-    monkeypatch.setattr(huggingface_hub, "file_exists", no_network)
-    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", True)
-    assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path) is None
+    def network_down(*args, **kwargs):
+        queries.append(args)
+        raise OSError("network down")
+
+    # config.json and the weights come from ``saved`` through the Hub mixin; the card
+    # code of base.py reaches the Hub only through these two names of huggingface_hub.
+    monkeypatch.setattr(hub_mixin, "hf_hub_download", lambda **kw: str(saved / kw["filename"]))
+    monkeypatch.setattr(huggingface_hub, "file_exists", network_down)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", network_down)
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", False)
+
+    model = DummyModuleConfigRoundTrip.from_pretrained("org/repo", cache_dir=tmp_path / "cache")
+
+    assert isinstance(model, DummyModuleConfigRoundTrip)
+    assert model.card_data is None  # the card is not in the cache
+    assert queries == []  # and nothing asked the Hub for it
 
 
 def test_pretrained_provenance_in_repr(tmp_path):

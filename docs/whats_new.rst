@@ -319,6 +319,9 @@ Requirements
 Bug fixes
 ==========
 
+- :meth:`braindecode.models.CodeBrain.reset_head` replaces only the output layer of its head and keeps the two hidden layers,
+  so ``reset_head(k)`` and ``from_pretrained(..., n_outputs=k)`` with a new ``k`` no longer raise :class:`NotImplementedError`
+  (:gh:`1802` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.REVE` keeps the ``on_missing="drop"`` channel index as a buffer, so ``.to()`` moves it
   instead of a copy at every forward, and :class:`braindecode.models.BaRISTA` range-checks ``spatial_indices`` before
   moving them, so CPU indices are read on the CPU (:gh:`1796` by `Bruno Aristimunha`_).
@@ -819,6 +822,13 @@ Code health
 - The cropped inference page is now the :ref:`cropped-inference` section of the cropped
   decoding tutorial and the docstrings of its functions; :ref:`channel-strategies` moves
   to the Models section, with tables (:gh:`1745` by `Bruno Aristimunha`_).
+
+Bugs
+====
+
+- :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` no longer requests the model card from the Hub, so a
+  network error cannot block loading the weights; ``model.card_data`` is ``None`` for a Hub checkpoint unless its
+  ``README.md`` is already cached, e.g. by ``huggingface_hub.snapshot_download`` (:gh:`1804` by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
