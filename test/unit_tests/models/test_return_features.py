@@ -8,6 +8,7 @@ import torch
 from torch import nn
 
 from braindecode.models import (
+    BDTCN,
     BENDR,
     BIOT,
     EEGPT,
@@ -326,3 +327,10 @@ def test_labram_reset_to_zero_reloads_as_identity(tmp_path, via_pretrained):
     assert isinstance(reloaded.final_layer, torch.nn.Identity)
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
 
+
+def test_bdtcn_features_cover_the_steps_its_classifier_reads():
+    model = BDTCN(n_chans=3, n_outputs=2, n_times=500).eval()
+    x = torch.randn(2, 3, 500)
+    with torch.no_grad():
+        n_steps = model.base_tcn(x).shape[-1]  # the steps the head averages
+        assert model(x, return_features=True)["features"].shape[-1] == n_steps
