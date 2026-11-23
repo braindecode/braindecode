@@ -541,6 +541,7 @@ sitemap_excludes = [
 ]
 
 html_redirects = {
+    "auto_examples/datasets_io/plot_hub_integration.html": "hub_integration.html",
     "user_guide/channel_strategies.html": "../models/channel_strategies.html",
     "user_guide/cropped_inference.html": (
         "../auto_examples/model_building/"

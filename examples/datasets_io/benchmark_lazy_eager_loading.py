@@ -37,10 +37,10 @@ have been instantiated with parameter `preload=False`.
 import time
 from itertools import product
 
+import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -377,17 +377,79 @@ results_df.to_csv(fname)
 print(f"Results saved under {fname}.")
 
 ###############################################################################
-# We can finally summarize this information into the following plot:
+# We can finally summarize this information into the following plot. Each
+# panel is one loading mode (and device, when CUDA is available); small dots
+# are single runs and large dots are their mean.
 
-sns.catplot(
-    data=results_df,
-    row="cuda",
-    x="model_kind",
-    y="model_training",
-    hue="num_workers",
-    col="preload",
-    kind="strip",
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
 )
+worker_colors = {0: "#0072B2", 8: "#D55E00"}  # keys follow NUM_WORKERS
+model_names = {"shallow": "ShallowFBCSPNet", "deep": "Deep4Net"}
+
+devices = sorted(results_df["cuda"].unique(), reverse=True)
+fig, axes = plt.subplots(
+    len(devices),
+    2,
+    figsize=(9, 2.6 * len(devices)),
+    sharex=True,
+    squeeze=False,
+)
+for i_row, cuda_used in enumerate(devices):
+    for i_col, preload in enumerate([True, False]):
+        ax = axes[i_row, i_col]
+        panel = results_df[
+            (results_df["cuda"] == cuda_used) & (results_df["preload"] == preload)
+        ]
+        for i_model, model_kind in enumerate(MODEL):
+            for i_w, num_workers in enumerate(NUM_WORKERS):
+                times = panel.loc[
+                    (panel["model_kind"] == model_kind)
+                    & (panel["num_workers"] == num_workers),
+                    "model_training",
+                ]
+                y = i_model + (i_w - 0.5) * 0.3  # one row per worker count
+                color = worker_colors[num_workers]
+                ax.scatter(times, np.full(len(times), y), color=color, s=14, alpha=0.4)
+                ax.scatter(times.mean(), y, color=color, s=60, zorder=3)
+                if i_row == 0 and i_col == 0 and i_model == 0:
+                    ax.annotate(
+                        f"{num_workers} workers",
+                        (times.max(), y),
+                        xytext=(8, 0),
+                        textcoords="offset points",
+                        color=color,
+                        va="center",
+                        fontsize=9,
+                    )
+        ax.set_yticks(range(len(MODEL)), [model_names[m] for m in MODEL])
+        ax.set_ylim(len(MODEL) - 0.4, -0.6)
+        ax.grid(axis="x", color="#EAEAEA", linewidth=0.7)
+        ax.set_axisbelow(True)
+        letter = "ABCD"[i_row * 2 + i_col]
+        title = "Eager loading" if preload else "Lazy loading"
+        if len(devices) > 1:
+            title += ", GPU" if cuda_used else ", CPU"
+        ax.set_title(f"{letter}  {title}", loc="left", fontweight="bold")
+for ax in axes[-1]:
+    ax.set_xlabel("Training time (s)")
+ax.set_xlim(left=0)
+fig.tight_layout()
+plt.show()
 
 ###############################################################################
 # .. warning::

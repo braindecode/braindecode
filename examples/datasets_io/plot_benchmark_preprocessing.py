@@ -319,15 +319,19 @@ for n_recs, n_jobs in product([all_n_recs], all_n_jobs):
 
 df = pd.DataFrame(results)
 
+# Importing braindecode.datasets imports MOABB, which applies a global seaborn
+# theme (grid, serif font, no tick marks): restore matplotlib's defaults first.
+plt.style.use("default")
+
 fig, ax = plt.subplots(figsize=(6.4, 4.0), facecolor="white")
 ax.set_facecolor("white")
 colors = {True: "#D55E00", False: "#0072B2"}
 markers = {1: "o", 2: "s"}
 labels = {
-    (False, 1): "Sequential, in-memory (save=False, n_jobs=1)",
-    (True, 1): "Sequential, serialized (save=True, n_jobs=1)",
-    (False, 2): "Parallel, in-memory (save=False, n_jobs=2)",
-    (True, 2): "Parallel, serialized (save=True, n_jobs=2)",
+    (False, 1): "Sequential, in memory",
+    (True, 1): "Sequential, saved to disk",
+    (False, 2): "2 jobs, in memory",
+    (True, 2): "2 jobs, saved to disk",
 }
 
 for (save, n_jobs), sub_df in df.groupby(["save", "n_jobs"], sort=False):
@@ -347,8 +351,17 @@ for (save, n_jobs), sub_df in df.groupby(["save", "n_jobs"], sort=False):
         s=90,
         edgecolor="white",
         linewidth=0.8,
-        label=labels[(save, n_jobs)],
         zorder=3,
+    )
+    # label each configuration mean directly instead of using a legend
+    ax.annotate(
+        labels[(save, n_jobs)],
+        (sub_df["time"].mean(), sub_df["max_mem"].mean()),
+        xytext=(9, 0),
+        textcoords="offset points",
+        color=colors[save],
+        va="center",
+        fontsize=8.5,
     )
 
 ax.spines["top"].set_visible(False)
@@ -358,7 +371,8 @@ ax.spines["bottom"].set_linewidth(0.8)
 ax.tick_params(direction="out", width=0.8)
 ax.grid(axis="y", color="#EAEAEA", linewidth=0.7)
 ax.set_axisbelow(True)
-ax.legend(frameon=False, fontsize=8.5)
+ax.margins(x=0.35)  # room for the labels right of the means
+ax.set_xlim(left=0)
 ax.set_xlabel("Execution time (s)")
 ax.set_ylabel("Peak memory overhead (MiB)")
 fig.tight_layout()
