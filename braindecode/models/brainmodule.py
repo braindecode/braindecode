@@ -24,6 +24,10 @@ from braindecode.modules.layers import SubjectLayers
 
 __all__ = ["BrainModule"]
 
+# braindecode 2.0 name of the plain ``nn.GLU`` used below; whole-model
+# pickles saved with 2.0 resolve it by this module path.
+_GLU = nn.GLU
+
 
 class BrainModule(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     r"""BrainModule from [brainmagick]_, also known as SimpleConv.

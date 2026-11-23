@@ -1040,7 +1040,10 @@ def test_load_state_dict_preserves_batch_norm_version():
 # ``v2_pickles.pth`` holds ``torch.save(model)`` after that forward pass, for the models
 # that can be pickled whole, and a bare ``tfm_tokenizer._GroupNorm(2, 4)`` with random
 # affine parameters. EEGNet, whose weights are parametrized, cannot be pickled: its
-# ``state_dict()`` is in ``v2_state_dicts.pth``.
+# ``state_dict()`` is in ``v2_state_dicts.pth``. The bare renamed blocks
+# (``brainomni._SpatialTemporalBlock``, ``brainmodule._GLU``) were appended the
+# same way; the BrainOmni SEANet blocks are weight-norm parametrized, so no
+# whole-model 2.0 pickle of them can exist.
 _V2_DATA = Path(__file__).parent / "data"
 _V2_MODELS = {
     "EEGNet": lambda: EEGNet(
@@ -1108,7 +1111,16 @@ def test_v2_checkpoints_load(name):
 
 
 @pytest.mark.parametrize(
-    "name", ["CBraMod", "EEGCLIP", "LUNA", "PBT", "tfm_tokenizer._GroupNorm"]
+    "name",
+    [
+        "CBraMod",
+        "EEGCLIP",
+        "LUNA",
+        "PBT",
+        "tfm_tokenizer._GroupNorm",
+        "brainomni._SpatialTemporalBlock",
+        "brainmodule._GLU",
+    ],
 )
 def test_v2_pickles_run(name):
     saved = _v2_pickle(name)

@@ -29,7 +29,23 @@ from braindecode.modules import (
     SpatialTemporalBlock,
 )
 from braindecode.modules.quantization import ResidualVectorQuantizer
-from braindecode.modules.spatial_temporal import _SELU, _attend
+from braindecode.modules.spatial_temporal import (
+    _SELU,
+    _attend,
+)
+from braindecode.modules.spatial_temporal import (
+    _MultiHeadAttentionRoPE as _MultiHeadAttentionRoPE,
+)
+from braindecode.modules.spatial_temporal import (
+    _RotaryPositionalEmbedding as _RotaryPositionalEmbedding,
+)
+
+# braindecode 2.0 defined this block in this module; pickles saved with 2.0
+# resolve it (and the RoPE blocks above) by this module path. The block now
+# lives in braindecode.modules with the same parameters and outputs, so keep
+# its 2.0 name importable here. The 2.0 SEANet blocks get no alias: their
+# weight-norm parametrizations cannot be pickled whole in the first place.
+_SpatialTemporalBlock = SpatialTemporalBlock
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):

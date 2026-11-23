@@ -319,6 +319,10 @@ Requirements
 Bug fixes
 ==========
 
+- Whole-model pickles saved with 2.0 (``torch.save(model)``) load again when they hold
+  blocks that moved to :mod:`braindecode.modules` (BrainOmni's spatial-temporal and RoPE
+  blocks, BrainModule's GLU): the 2.0 module paths are kept as aliases
+  (by `Bruno Aristimunha`_).
 - ``from_pretrained`` loads a checkpoint whose ``README.md`` has a YAML header that cannot be parsed,
   with ``card_data`` set to ``None`` (:gh:`1808` by `Bruno Aristimunha`_).
 - ``from_pretrained`` warns and loads the weights when downloading the model card fails
