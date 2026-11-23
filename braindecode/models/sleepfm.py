@@ -20,7 +20,11 @@ from braindecode.functional import (
     sinusoidal_positional_encoding,
 )
 from braindecode.functional.patches import _check_on_non_divisible
-from braindecode.models.base import EEGModuleMixin, deprecated_forward_kwargs
+from braindecode.models.base import (
+    EEGModuleMixin,
+    _warn_deprecated_argument,
+    deprecated_forward_kwargs,
+)
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
 
@@ -237,11 +241,12 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         """
         if channel_mask is not None:  # the 2.0 positional mask, True for missing
             if not torch.jit.is_scripting():
-                warnings.warn(
-                    "SleepFM.encode(x, channel_mask) is deprecated and will be "
-                    "removed in braindecode 2.3; pass ch_mask=~channel_mask instead.",
-                    FutureWarning,
-                    stacklevel=2,
+                _warn_deprecated_argument(
+                    "SleepFM.encode",
+                    "channel_mask",
+                    "ch_mask",
+                    torch.logical_not,
+                    note=" From 2.3 its second positional argument is ch_mask.",
                 )
             if ch_mask is not None:
                 raise TypeError(
