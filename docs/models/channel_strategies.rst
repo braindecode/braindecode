@@ -226,47 +226,47 @@ Mask and position arguments
 ``forward`` takes the signal as ``x``. The other per-sample inputs, passed by keyword:
 
 .. list-table::
-   :header-rows: 1
-   :widths: 18 30 52
+    :header-rows: 1
+    :widths: 18 30 52
 
-   * - Argument
-     - Shape
-     - Meaning and models
-   * - ``ch_mask``
-     - ``(batch, n_chans)`` bool
-     - ``True`` for real channels of a padded batch
-       (:func:`~braindecode.datasets.pad_channels_collate`). BBL, BIOT, BaRISTA,
-       BrainBERT, Brant, CBraMod, CORTEG, DIVER1, EpiNT, GeoNIRS, JungMAE, LUNA,
-       Labram, MAPA, MEGGPT, MVPFormer, MtReNIRS, PopulationTransformer, REVE,
-       SleepFM, SleepFMStager.
-   * - ``pos``
-     - ``(batch, n_chans, 3)`` float
-     - Electrode positions in metres; default those of ``chs_info``. CORTEG,
-       LUNA, REVE.
-   * - ``coordinates``
-     - ``(batch, n_chans, 4)`` float
-     - Standardized position and chromophore (0 HbO, 1 HbR). MtReNIRS.
-   * - ``geometry``
-     - ``(batch, n_pairs, 6)`` float
-     - Geometry vector of each optode pair. GeoNIRS.
-   * - ``coords``
-     - ``(batch, n_chans, 3)`` int
-     - Integer coordinates. PopulationTransformer.
-   * - ``mask``
-     - ``(batch, n_chans, n_patches)``
-     - ``1`` hides a patch (masked pretraining). CBraMod, CSBrain, CodeBrain.
-   * - ``mask``
-     - ``(batch, n_chans, n_times)`` bool
-     - ``True`` hides a sample; LUNA hides every patch holding one. LUNA, NICE.
-   * - ``token_mask``
-     - ``(batch, n_chans, n_times)`` bool
-     - ``True`` hides a token. MEGGPT.
-   * - ``temporal_mask``
-     - ``(batch, n_times)`` or ``(batch, n_patches)`` bool
-     - ``True`` hides a sample (BBL) or marks a padded patch (SleepFMStager).
-   * - ``spectrogram_mask``
-     - shape of ``compute_spectrogram``
-     - ``True`` bins are visible to the encoder. TFMTokenizer.
+    - - Argument
+      - Shape
+      - Meaning and models
+    - - ``ch_mask``
+      - ``(batch, n_chans)`` bool
+      - ``True`` for real channels of a padded batch
+        (:func:`~braindecode.datasets.pad_channels_collate`). BBL, BIOT, BaRISTA,
+        BrainBERT, Brant, CBraMod, CORTEG, DIVER1, EpiNT, GeoNIRS, JungMAE, LUNA,
+        Labram, MAPA, MEGGPT, MVPFormer, MtReNIRS, PopulationTransformer, REVE, SleepFM,
+        SleepFMStager.
+    - - ``pos``
+      - ``(batch, n_chans, 3)`` float
+      - Electrode positions in metres; default those of ``chs_info``. CORTEG, LUNA,
+        REVE.
+    - - ``coordinates``
+      - ``(batch, n_chans, 4)`` float
+      - Standardized position and chromophore (0 HbO, 1 HbR). MtReNIRS.
+    - - ``geometry``
+      - ``(batch, n_pairs, 6)`` float
+      - Geometry vector of each optode pair. GeoNIRS.
+    - - ``coords``
+      - ``(batch, n_chans, 3)`` int
+      - Integer coordinates. PopulationTransformer.
+    - - ``mask``
+      - ``(batch, n_chans, n_patches)``
+      - ``1`` hides a patch (masked pretraining). CBraMod, CSBrain, CodeBrain.
+    - - ``mask``
+      - ``(batch, n_chans, n_times)`` bool
+      - ``True`` hides a sample; LUNA hides every patch holding one. LUNA, NICE.
+    - - ``token_mask``
+      - ``(batch, n_chans, n_times)`` bool
+      - ``True`` hides a token. MEGGPT.
+    - - ``temporal_mask``
+      - ``(batch, n_times)`` or ``(batch, n_patches)`` bool
+      - ``True`` hides a sample (BBL) or marks a padded patch (SleepFMStager).
+    - - ``spectrogram_mask``
+      - shape of ``compute_spectrogram``
+      - ``True`` bins are visible to the encoder. TFMTokenizer.
 
 The old keywords ``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor``, LUNA's
 ``channel_locations`` and SleepFM's ``channel_mask`` are removed.
