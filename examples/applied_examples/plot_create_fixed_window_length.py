@@ -265,3 +265,118 @@ shifted_windows_dataset = create_fixed_length_windows(
 )
 
 print(f"Number of shifted windows: {len(shifted_windows_dataset)}")
+
+######################################################################
+# Visualizing the windows
+# -----------------------
+#
+# The figure draws, on the first 10 s of channel ``Cz`` in the first run:
+#
+# - **A**, the 2-s windows with 50 % overlap of Example 1. Consecutive windows
+#   overlap, so they alternate between two rows;
+# - **B**, the same windows started 0.5 s later, as in the shifted example.
+#
+# Panel **C** shows the peak-to-peak amplitude of every 2-s window of that
+# run, taken as the largest over channels, which is the test that ``reject``
+# applies. A window above the dashed 150 µV threshold would be dropped and
+# drawn in vermilion. For this subject no window reaches it, so the
+# rejection examples above keep every window.
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.transforms import blended_transform_factory
+
+BLUE, VERMILION, GREY, INK = "#0072B2", "#D55E00", "#7F7F7F", "#14181F"
+# MOABB, imported by ``braindecode.datasets``, sets a seaborn style when it is
+# imported, so we go back to the matplotlib defaults before our own settings.
+plt.rcdefaults()
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+raw = dataset.datasets[0].raw
+segment_s = 10.0
+n_segment = int(segment_s * sfreq)
+cz = raw.get_data(picks=["Cz"])[0, :n_segment]
+times = np.arange(n_segment) / sfreq
+window_s = window_size_samples / sfreq
+stride_s = window_stride_samples / sfreq
+
+fig, axes = plt.subplots(3, 1, figsize=(7.5, 6.6))
+for ax, (letter, name, offset_s) in zip(
+    axes[:2],
+    [
+        ("A", "2-s windows, 50 % overlap", 0.0),
+        ("B", "Shifted by 0.5 s", start_offset_seconds),
+    ],
+):
+    # The trace fills the top of the panel and the windows sit below it.
+    ax.plot(times, cz, color=INK, linewidth=0.6)
+    low, high = cz.min(), cz.max()
+    ax.set_ylim(low - 0.75 * (high - low), high)
+    ax.spines["left"].set_bounds(low, high)
+    ax.set_yticks([t for t in ax.get_yticks() if low <= t <= high])
+    to_axes_y = blended_transform_factory(ax.transData, ax.transAxes)
+    starts = np.arange(offset_s, segment_s - window_s + 1e-9, stride_s)
+    for i, start in enumerate(starts):
+        ax.broken_barh(
+            [(start, window_s)],
+            (0.04 + 0.14 * (i % 2), 0.1),
+            transform=to_axes_y,
+            facecolor=BLUE,
+            alpha=0.75,
+            edgecolor="white",
+        )
+    ax.set_xlim(0, segment_s)
+    ax.set_ylabel("Cz (µV)")
+    ax.set_title(f"{letter}  {name}", loc="left", fontweight="bold", color=INK)
+axes[1].set_xlabel("Time (s)")
+
+# Peak-to-peak amplitude of each 2-s window, the largest over channels.
+data = raw.get_data()
+win_starts = np.arange(
+    0, data.shape[1] - window_size_samples + 1, window_stride_samples
+)
+ptp = np.array(
+    [np.ptp(data[:, s : s + window_size_samples], axis=1).max() for s in win_starts]
+)
+rejected = ptp > reject_criteria["eeg"]
+ax = axes[2]
+ax.scatter(win_starts[~rejected] / sfreq, ptp[~rejected], s=8, color=GREY, linewidths=0)
+ax.scatter(win_starts[rejected] / sfreq, ptp[rejected], s=12, color=VERMILION)
+ax.axhline(reject_criteria["eeg"], color=GREY, linestyle="--", linewidth=0.9)
+ax.text(
+    win_starts[-1] / sfreq,
+    reject_criteria["eeg"] + 3,
+    f"Rejection threshold ({reject_criteria['eeg']:.0f} µV)",
+    color=GREY,
+    fontsize=8.5,
+    ha="right",
+    va="bottom",
+)
+ax.set_ylim(0, 1.2 * max(ptp.max(), reject_criteria["eeg"]))
+ax.set_xlim(0, data.shape[1] / sfreq)
+ax.set_xlabel("Window start (s)")
+ax.set_ylabel("Peak-to-peak (µV)")
+ax.set_title(
+    f"C  Peak-to-peak amplitude, {rejected.sum()} of {len(ptp)} windows rejected",
+    loc="left",
+    fontweight="bold",
+    color=INK,
+)
+fig.tight_layout()
+plt.show()

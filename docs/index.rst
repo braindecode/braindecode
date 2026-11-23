@@ -33,7 +33,7 @@
 
           <div class="hero-cta-row">
             <a class="btn btn-primary" href="install/install.html">Get started <span aria-hidden="true">→</span></a>
-            <a class="btn" href="auto_examples/index.html">
+            <a class="btn" href="tutorials.html">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
               <span>Tutorials</span>
             </a>
@@ -1405,7 +1405,7 @@
               <h3>Get started</h3>
               <ul>
                 <li><a href="install/install.html">Installation</a></li>
-                <li><a href="auto_examples/index.html">Tutorials</a></li>
+                <li><a href="tutorials.html">Tutorials</a></li>
                 <li><a href="models/channel_strategies.html">Channel strategies</a></li>
                 <li><a href="auto_examples/model_building/plot_bcic_iv_2a_moabb_cropped.html#cropped-inference">Cropped inference</a></li>
                 <li><a href="api.html">API reference</a></li>
@@ -1470,7 +1470,7 @@
     :caption: Get Started
 
     Install <install/install>
-    Tutorials <auto_examples/index>
+    Tutorials <tutorials>
     Models <models/models>
 
 .. toctree::

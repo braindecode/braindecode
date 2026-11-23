@@ -543,6 +543,12 @@ sitemap_excludes = [
 html_redirects = {
     "auto_examples/datasets_io/plot_hub_integration.html": "hub_integration.html",
     "user_guide/channel_strategies.html": "../models/channel_strategies.html",
+    "auto_examples/applied_examples/bcic_iv_4_ecog_trial.html": (
+        "plot_bcic_iv_4_ecog_trial.html"
+    ),
+    "auto_examples/applied_examples/tutorial_create_fixed_window_length.html": (
+        "plot_create_fixed_window_length.html"
+    ),
     "user_guide/cropped_inference.html": (
         "../auto_examples/model_building/"
         "plot_bcic_iv_2a_moabb_cropped.html#cropped-inference"
