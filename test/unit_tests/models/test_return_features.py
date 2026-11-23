@@ -270,7 +270,7 @@ def test_reset_head_model_reloads_after_saving(name, tmp_path):
 
 # A constrained last layer, or a head of several layers: the default swap would
 # drop the constraint or leave the other layers behind.
-@pytest.mark.parametrize("name", ["EEGNeX", "FBCNet", "USleep"])
+@pytest.mark.parametrize("name", ["EEGNeX", "FBCNet", "MSVTNet", "USleep"])
 def test_default_reset_head_refuses_heads_it_cannot_swap(name):
     model = _build_registered(name)
     state = {k: v.clone() for k, v in model.state_dict().items()}
