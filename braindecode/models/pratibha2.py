@@ -31,6 +31,16 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/pratibha2_arch.png
+       :align: center
+       :alt: MANAS-2 architecture
+       :width: 1000px
+
+       MANAS-2 architecture: patch and electrode-coordinate embeddings, a masked
+       transformer encoder with query attention pooling, and the waveform, spectral
+       and constrained-reconstruction (ConRec) decoders used for pretraining.
+       Reproduced from Fig. 1 of [manas2]_ (CC BY-NC-ND 4.0).
+
     .. versionadded:: 2.1
 
     .. rubric:: Architecture Overview

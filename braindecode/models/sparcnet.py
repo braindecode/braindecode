@@ -17,6 +17,15 @@ class SPARCNet(EEGModuleMixin, nn.Module):
 
     :bdg-success:`Convolution`
 
+    .. figure:: ../_static/model/sparcnet_arch.png
+       :align: center
+       :alt: SPaRCNet architecture
+       :width: 1000px
+
+       SPaRCNet, a DenseNet-style CNN: 7 dense blocks of 4 dense layers joined by
+       transition blocks, then a fully connected layer. Reproduced from eFigure 5 of
+       the supplement of [jing2023]_ (© 2023 American Academy of Neurology).
+
     This is a temporal CNN model for biosignal classification based on the DenseNet
     architecture.
 

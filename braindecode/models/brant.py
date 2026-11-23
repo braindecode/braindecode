@@ -41,6 +41,15 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
+    .. figure:: ../_static/model/brant_arch.png
+       :align: center
+       :alt: Brant pre-training framework
+       :width: 1000px
+
+       The pre-training framework of Brant: each channel goes through the temporal
+       encoder, then the spatial encoder mixes channels, and masked patches are
+       reconstructed. Reproduced from Fig. 2 of [Brant2023]_ (copyright of the authors).
+
     .. rubric:: Architecture Overview
 
     Brant models intracranial neural signals (sEEG/iEEG) in four stages
