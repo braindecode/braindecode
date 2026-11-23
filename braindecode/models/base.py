@@ -97,13 +97,13 @@ def _validate_weights_filename(filename):
 def _load_card_data(pretrained_model_name_or_path, **kwargs):
     """Metadata of a checkpoint's model card (``README.md``), or None.
 
-    The card is informational, so it is read only where it is already on disk,
-    with no network request: in the checkpoint folder, or in the local Hugging
-    Face cache (``cache_dir`` and ``revision`` as given to ``from_pretrained``).
-    When it is not there, the result is None and the weights load as usual.
-    ``from_pretrained`` itself downloads only ``config.json`` and the weights, so
-    a Hub checkpoint has its card in the cache only after something else
-    fetched it, such as ``huggingface_hub.snapshot_download``.
+    The card is read only where it is already on disk, with no network request
+    of its own: in the checkpoint folder, or in the local Hugging Face cache
+    (``cache_dir`` and ``revision`` as given to ``from_pretrained``). For a Hub
+    checkpoint, ``from_pretrained`` downloads ``README.md`` with the weights
+    (``huggingface_hub.snapshot_download``), unless ``local_files_only`` or
+    ``HF_HUB_OFFLINE`` is set. When the card is not there, the result is None and
+    the weights load as usual.
     """
     local_dir = Path(pretrained_model_name_or_path)
     if local_dir.is_dir():
@@ -2422,6 +2422,23 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     and (Path(model_id) / "pytorch_model.bin").is_file()
                 ):
                     filename = "pytorch_model.bin"
+
+            # Bring the model card next to the weights, before them, so that a network
+            # failure stops loading at the first requests. A repo without README.md
+            # matches no file: nothing is downloaded and nothing is raised.
+            if (
+                not is_local
+                and not local_files_only
+                and not huggingface_hub.constants.HF_HUB_OFFLINE
+            ):
+                huggingface_hub.snapshot_download(
+                    model_id,
+                    allow_patterns=["README.md"],
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    token=token,
+                    force_download=force_download,
+                )
 
             if filename is None:
                 model = super()._from_pretrained(  # type: ignore

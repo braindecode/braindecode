@@ -12,6 +12,7 @@ Hugging Face Hub when the optional huggingface_hub dependency is installed.
 
 import inspect
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -682,7 +683,101 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
     assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None
 
 
-def test_from_pretrained_never_uses_network_for_model_card(tmp_path, monkeypatch):
+def _fake_hub(tmp_path, monkeypatch, *, card):
+    """Hub whose config.json and weights come from a saved model, with a mocked API.
+
+    ``card`` is the text of the repo's README.md, or None for a repo without one.
+    Returns ``(events, hf_downloads, cache_dir)``: the ordered requests, the options of
+    each file download of ``snapshot_download``, and the cache folder.
+    """
+    import huggingface_hub
+    from huggingface_hub import _snapshot_download, hub_mixin
+    from huggingface_hub.hf_api import RepoFile
+
+    from .test_base import DummyModuleConfigRoundTrip
+
+    saved = tmp_path / "saved"
+    DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2).save_pretrained(saved)
+    events, hf_downloads = [], []
+    cache_dir, commit = tmp_path / "cache", "a" * 40
+    files = ["config.json", "model.safetensors"] + (["README.md"] if card else [])
+
+    def mixin_download(**kw):  # config.json and the weights, through the Hub mixin
+        events.append(kw["filename"])
+        return str(saved / kw["filename"])
+
+    def repo_info(self, repo_id, repo_type=None, revision=None, **kw):
+        events.append("repo_info")
+        hf_downloads.append({"repo_info_revision": revision, "token": self.token})
+        return type("Info", (), {"sha": commit})()
+
+    def list_repo_tree(self, *args, **kw):
+        events.append("list_repo_tree")
+        return [RepoFile(path=f, size=1, oid="x") for f in files]
+
+    def snapshot_file(repo_id, **kw):  # the file downloads inside snapshot_download
+        events.append(kw["filename"])
+        hf_downloads.append(
+            {k: kw[k] for k in ("filename", "revision", "cache_dir", "token", "force_download")}
+        )
+        folder = Path(kw["cache_dir"]) / "models--org--repo" / "snapshots" / commit
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / kw["filename"]).write_text(card)
+        return str(folder / kw["filename"])
+
+    monkeypatch.setattr(hub_mixin, "hf_hub_download", mixin_download)
+    monkeypatch.setattr(huggingface_hub.HfApi, "repo_info", repo_info)
+    monkeypatch.setattr(huggingface_hub.HfApi, "list_repo_tree", list_repo_tree)
+    monkeypatch.setattr(_snapshot_download, "hf_hub_download", snapshot_file)
+    # A call that ignores ``cache_dir`` would write here, not into the test's cache.
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_CACHE", str(tmp_path / "default"))
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", False)
+    return events, hf_downloads, cache_dir
+
+
+def test_from_pretrained_downloads_model_card_with_weights(tmp_path, monkeypatch):
+    from .test_base import DummyModuleConfigRoundTrip
+
+    card = "---\ndatasets:\n- PREST\n- SHHS\n---\ncard\n"
+    events, hf_downloads, cache_dir = _fake_hub(tmp_path, monkeypatch, card=card)
+
+    model = DummyModuleConfigRoundTrip.from_pretrained(
+        "org/repo", cache_dir=cache_dir, revision="v1", token="tok", force_download=True
+    )
+
+    assert model.card_data.datasets == ["PREST", "SHHS"]
+    # The README is requested after config.json and before the weights, so a network
+    # failure stops loading at the first requests, not after the weights came down.
+    assert events == ["config.json", "repo_info", "list_repo_tree", "README.md", "model.safetensors"]
+    # The card download uses the options of the weight download.
+    assert hf_downloads == [
+        {"repo_info_revision": "v1", "token": "tok"},
+        {
+            "filename": "README.md",
+            "revision": "a" * 40,  # the commit that "v1" resolved to
+            "cache_dir": str(cache_dir.resolve()),
+            "token": "tok",
+            "force_download": True,
+        },
+    ]
+
+
+def test_from_pretrained_repo_without_model_card(tmp_path, monkeypatch):
+    from .test_base import DummyModuleConfigRoundTrip
+
+    events, hf_downloads, cache_dir = _fake_hub(tmp_path, monkeypatch, card=None)
+
+    model = DummyModuleConfigRoundTrip.from_pretrained("org/repo", cache_dir=cache_dir)
+
+    assert isinstance(model, DummyModuleConfigRoundTrip)
+    assert model.card_data is None
+    # No file matched ``README.md``: the listing was read, nothing else was requested.
+    assert events == ["config.json", "repo_info", "list_repo_tree", "model.safetensors"]
+    assert hf_downloads == [{"repo_info_revision": "main", "token": None}]  # the default branch
+
+
+@pytest.mark.parametrize("offline", ["local_files_only", "HF_HUB_OFFLINE"])
+def test_from_pretrained_offline_does_not_request_model_card(tmp_path, monkeypatch, offline):
     import huggingface_hub
     from huggingface_hub import hub_mixin
 
@@ -697,16 +792,18 @@ def test_from_pretrained_never_uses_network_for_model_card(tmp_path, monkeypatch
         raise OSError("network down")
 
     # config.json and the weights come from ``saved`` through the Hub mixin; the card
-    # code of base.py reaches the Hub only through these two names of huggingface_hub.
+    # code of base.py reaches the Hub only through these names of huggingface_hub.
     monkeypatch.setattr(hub_mixin, "hf_hub_download", lambda **kw: str(saved / kw["filename"]))
-    monkeypatch.setattr(huggingface_hub, "file_exists", network_down)
-    monkeypatch.setattr(huggingface_hub, "hf_hub_download", network_down)
-    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", False)
+    for name in ("snapshot_download", "file_exists", "hf_hub_download"):
+        monkeypatch.setattr(huggingface_hub, name, network_down)
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", offline == "HF_HUB_OFFLINE")
 
-    model = DummyModuleConfigRoundTrip.from_pretrained("org/repo", cache_dir=tmp_path / "cache")
+    model = DummyModuleConfigRoundTrip.from_pretrained(
+        "org/repo", cache_dir=tmp_path / "cache", local_files_only=offline == "local_files_only"
+    )
 
     assert isinstance(model, DummyModuleConfigRoundTrip)
-    assert model.card_data is None  # the card is not in the cache
+    assert model.card_data is None  # no card in the cache
     assert queries == []  # and nothing asked the Hub for it
 
 
