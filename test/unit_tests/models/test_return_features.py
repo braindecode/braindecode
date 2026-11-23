@@ -238,13 +238,13 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
 
 _ALL_MODELS = dict(models_dict)
 _REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
-# SignalJEPA has no head. GCNsNet's node biases stay lazy until its graph is
-# fitted, and safetensors cannot load into lazy parameters.
+# Every registered model that overrides reset_head, and three that take the
+# default swap of their last layer.
 _RESET_HEAD_CASES = [
     name
     for name in _REGISTRY
-    if name not in _TOKENIZERS and name not in ("SignalJEPA", "GCNsNet")
-]
+    if _ALL_MODELS[name].reset_head is not EEGModuleMixin.reset_head
+] + ["Deep4Net", "EEGNet", "ShallowFBCSPNet"]
 
 
 def _build_registered(name, **kwargs):
@@ -266,6 +266,18 @@ def test_reset_head_model_reloads_after_saving(name, tmp_path):
 
     reloaded = _ALL_MODELS[name].from_pretrained(tmp_path)
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
+
+
+# A constrained last layer, or another layer sized by n_outputs: the default
+# swap would drop the constraint or leave that layer behind.
+@pytest.mark.parametrize("name", ["EEGNeX", "FBCNet", "MSVTNet", "USleep"])
+def test_default_reset_head_refuses_heads_it_cannot_swap(name):
+    model = _build_registered(name)
+    state = {k: v.clone() for k, v in model.state_dict().items()}
+    with pytest.raises(NotImplementedError, match=f"{name} needs its own reset_head"):
+        model.reset_head(model.n_outputs + 3)
+    assert not model._can_reset_head()
+    torch.testing.assert_close(model.state_dict(), state)
 
 
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")

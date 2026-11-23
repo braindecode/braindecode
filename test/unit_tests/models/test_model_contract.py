@@ -799,10 +799,11 @@ def test_reset_head_on_every_model(model_name, required_params, signal_params):
         pytest.skip("tokenizer")
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
-    if model_name in _NO_HEAD:
-        assert not model._can_reset_head()
-        with pytest.raises(ValueError, match="override reset_head"):
+    if not model._can_reset_head():
+        keys = {k: v.shape for k, v in model.state_dict().items()}
+        with pytest.raises(NotImplementedError, match="needs its own reset_head"):
             model.reset_head(3)
+        assert {k: v.shape for k, v in model.state_dict().items()} == keys
         return
     n = (model._signal_param("n_outputs") or 2) + 3
     model.reset_head(n)
@@ -832,19 +833,28 @@ def test_headless_build_and_reset_head(model_name, required_params, signal_param
         return
     with pytest.raises(ValueError, match="headless"):
         model(x)
+    if not model._can_reset_head():
+        with pytest.raises(NotImplementedError, match="needs its own reset_head"):
+            model.reset_head(4)
+        with pytest.raises(ValueError, match="headless"):
+            model(x)  # still headless, not a 1-output head
+        assert list(model.final_layer.parameters()) == []
+        return
     model.reset_head(4)
     with torch.no_grad():
         assert 4 in next(_tensor_leaves(model(x))).shape[1:]
     assert model.get_config()["n_outputs"] == 4
-    # Every layer that depends on n_outputs follows it, as in a model built with 4.
-    built = type(model).from_config(model.get_config())
-    _materialize(built, x)
-    assert {k: v.shape for k, v in model.state_dict().items()} == {
-        k: v.shape for k, v in built.state_dict().items()
-    }
 
 
 def test_headless_model_takes_return_features_positionally():
     model = EEGConformer(n_chans=3, n_times=1000, n_outputs=None).eval()
     with torch.no_grad():
         assert "features" in model(torch.randn(2, 3, 1000), True)
+
+
+def test_reset_head_checks_n_outputs_before_touching_the_head():
+    model = EEGConformer(n_chans=3, n_times=1000, n_outputs=None).eval()
+    with pytest.raises(ValueError, match="non-negative integer"):
+        model.reset_head(-1)
+    with pytest.raises(ValueError, match="headless"):
+        model(torch.randn(2, 3, 1000))

@@ -34,9 +34,9 @@ Enhancements
   :class:`~braindecode.models.CSBrain`, and :class:`~braindecode.models.GCNsNet`
   also build their classification heads at construction when input shapes are known
   (by `Bruno Aristimunha`_).
-- Models built with ``n_outputs=None`` have ``nn.Identity`` as ``final_layer`` and return features only, and
-  ``model.reset_head(n_outputs)`` attaches the head that ``n_outputs`` builds. Head layers outside ``final_layer`` (BDTCN,
-  DeepSOZ, DuIN, MSVTNet, SSTDPN, VEMG2Pose) stay and get no gradient (by `Bruno Aristimunha`_).
+- Models built with ``n_outputs=None`` have ``nn.Identity`` as ``final_layer`` (head layers elsewhere, as in BDTCN, DuIN
+  or SSTDPN, get no gradient). The default ``reset_head`` swaps the last Linear or Conv of a head that has no weight constraint
+  and no other layer sized by ``n_outputs``; EEGITNet, EEGNeX, EEGTCNet, FBCNet, FBMSNet, IFNet, MSVTNet and USleep raise as before (by `Bruno Aristimunha`_).
 - Add :func:`braindecode.training.info_nce`, the InfoNCE (NT-Xent) contrastive
   loss, and the example :ref:`contrastive-pretraining-eeg`, which pretrains a
   headless model and then probes and fine-tunes it (by `Bruno Aristimunha`_).
