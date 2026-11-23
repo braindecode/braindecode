@@ -649,7 +649,7 @@
             <span class="venue-subtag bd-mono">SELF-SUPERVISED</span>
           </div>
           <div class="venue-body">
-            <p class="venue-quote">Self-supervised pretraining on unlabeled sleep and clinical EEG, the origin of Braindecode's relative-positioning sampler and tutorial.</p>
+            <p class="venue-quote">Self-supervised pretraining on unlabeled sleep and clinical EEG, the origin of Braindecode's relative-positioning sampler, and dynamic spatial filtering that learns to ignore corrupted channels.</p>
             <p class="venue-cite">Banville, Chehab, Hyvärinen, Engemann &amp; Gramfort (J. Neural Eng., 2021) · Dynamic spatial filtering, Banville et al. (NeuroImage, 2022)</p>
             <span class="venue-cta bd-mono">Read SSL paper →</span>
           </div>
