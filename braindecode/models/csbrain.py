@@ -483,13 +483,15 @@ class CSBrain(EEGModuleMixin, nn.Module):
 
     def _init_parameters(self):
         # Same rule as the reference ``_weights_init`` (and CBraMod): only the
-        # Linear layers are re-initialised. The Conv2d layers keep PyTorch's
-        # default init; a fan-out Kaiming init on them makes the residual
-        # stream grow ~3x per layer (logits ~1e5 at 12 layers).
+        # backbone Linear layers are re-initialised. The Conv2d layers and the
+        # task head keep PyTorch's default init; a fan-out Kaiming init on
+        # Conv2d makes the residual stream grow ~3x per layer (logits ~1e5 at
+        # 12 layers).
         kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
-        self.apply(
-            partial(init_weights_, weights={nn.Linear: (kaiming, None)}, norms=())
-        )
+        fn = partial(init_weights_, weights={nn.Linear: (kaiming, None)}, norms=())
+        for name, child in self.named_children():
+            if name != "final_layer":
+                child.apply(fn)
 
     def forward(
         self,

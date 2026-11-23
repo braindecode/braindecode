@@ -294,13 +294,14 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
     def _init_parameters(self):
         kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
-        self.apply(
-            partial(
-                init_weights_,
-                weights={(nn.Linear, nn.Conv1d): (kaiming, None)},
-                norms=(nn.BatchNorm1d,),
-            )
+        fn = partial(
+            init_weights_,
+            weights={(nn.Linear, nn.Conv1d): (kaiming, None)},
+            norms=(nn.BatchNorm1d,),
         )
+        for name, child in self.named_children():
+            if name != "final_layer":
+                child.apply(fn)
 
     def forward(
         self,
