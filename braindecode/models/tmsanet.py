@@ -22,6 +22,16 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
+    .. figure:: ../_static/model/tmsanet_arch.jpg
+       :align: center
+       :alt: TMSA-Net architecture and attention mechanism
+       :width: 1000px
+
+       Left: the network, two temporal convolutions (kernels 15 and 31), a spatial
+       convolution, average pooling and N self-attention blocks. Right: the local and
+       global attention branches; the local keys come from a multi-scale Conv1D.
+       Reproduced from Fig. 1 of [tmsanet]_ (CC BY-NC 4.0).
+
     TMSA-Net combines multi-scale temporal convolutions, a spatial
     convolution across EEG channels, and a Transformer whose attention sums a
     global-key branch and a local-key branch (keys from multi-scale 1D

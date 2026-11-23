@@ -31,6 +31,15 @@ class JungMAE(EEGModuleMixin, nn.Module):
 
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
 
+    .. figure:: ../_static/model/jung_mae_arch.png
+       :align: center
+       :alt: JungMAE pre-training and fine-tuning
+       :width: 550px
+
+       Pre-training reconstructs randomly masked fNIRS patches with an encoder and a
+       decoder; fine-tuning transfers the encoder to a classifier. Reproduced from
+       Fig. 1 of :footcite:`jung2025mae` (© 2025 IEEE).
+
     .. versionadded:: 2.1
 
     Jung, Lee and An :footcite:`jung2025mae` pretrain a masked autoencoder on
