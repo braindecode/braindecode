@@ -312,6 +312,9 @@ Requirements
 Bug fixes
 ==========
 
+- :meth:`braindecode.models.CodeBrain.reset_head` replaces only the output layer of its head and keeps the two hidden layers,
+  so ``reset_head(k)`` and ``from_pretrained(..., n_outputs=k)`` with a new ``k`` no longer raise :class:`NotImplementedError`
+  (:gh:`1802` by `Bruno Aristimunha`_).
 - A refit or ``clone`` of a fitted :class:`braindecode.EEGClassifier` or :class:`braindecode.EEGRegressor` infers
   ``n_outputs``, ``n_chans``, ``n_times`` and ``chs_info`` from its own data instead of reusing the first fit's, which could
   predict classes the new data does not have; ``get_params`` no longer lists inferred values (:gh:`1770` by `Raghav Rathi`_).

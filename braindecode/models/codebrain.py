@@ -277,6 +277,20 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             remapped[new_key] = value
         return super().load_state_dict(remapped, *args, **kwargs)
 
+    def reset_head(self, n_outputs: int) -> None:
+        """Replace the last layer of ``final_layer`` by one with ``n_outputs`` outputs.
+
+        The two hidden layers of the head keep their weights.
+
+        Parameters
+        ----------
+        n_outputs : int
+            New number of outputs.
+        """
+        self._set_n_outputs(n_outputs)
+        # The hidden layers do not change, so the new layer keeps its input width
+        self.final_layer[-1] = nn.Linear(self.final_layer[-1].in_features, n_outputs)
+
     @deprecated_forward_kwargs(inputs="x")
     def forward(
         self,
