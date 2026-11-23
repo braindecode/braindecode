@@ -407,13 +407,19 @@ def _new_head_follows_model(reset_head):
         head = self.__dict__.pop("_head_spec", None)
         if head is not None:  # headless build: put back its head, then resize it
             self.final_layer = head[0]
+            for path, part in head[1].items():
+                self._swap_head_part(path, part)
         done = False
         try:
             out = reset_head(self, *args, **kwargs)
             done = True
         finally:
             if head is not None and not done:  # refused: the model stays headless
-                self._head_spec, self.final_layer = head, torch.nn.Identity()
+                parts = {
+                    p: self._swap_head_part(p, torch.nn.Identity()) for p in head[1]
+                }
+                self._head_spec = (head[0], parts)
+                self.final_layer = torch.nn.Identity()
         flag = self.__dict__.pop("_legacy_head_flag", None)
         if flag is not None:  # as in 2.0, a new head clears that flag (not a refusal)
             self._update_init_kwargs(**{flag: False})
@@ -575,6 +581,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     #: Head of a model built with ``n_outputs=None``, kept off the module tree
     #: until :meth:`reset_head` attaches it.
     _head_spec: Optional[tuple] = None
+    #: Dotted names of modules or parameters, besides ``final_layer``, that only
+    #: the head reads. A build with ``n_outputs=None`` replaces each by
+    #: ``nn.Identity`` and keeps it in ``_head_spec``, so that no parameter is left
+    #: without a gradient; :meth:`reset_head` puts them back.
+    _head_modules: ClassVar[tuple[str, ...]] = ()
 
     #: Attributes that :func:`torch.jit.script` must not introspect. The
     #: signal-related properties raise :class:`ValueError` when their value was
@@ -591,6 +602,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         "_feature_axis",
         "_native_features",
         "_head_spec",
+        "_head_modules",
         "_time_inputs",
         "_min_n_times",
         "_n_times_step",
@@ -1001,12 +1013,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def _drop_headless_head(self) -> None:
         """Replace the head of a model built with ``n_outputs=None`` by
-        ``nn.Identity``, so the model has no unused head parameters."""
+        ``nn.Identity``, so the model has no unused head parameters. The
+        modules named in ``_head_modules`` go the same way."""
         if self.__dict__.pop("_headless_build", None) and isinstance(
             getattr(self, "final_layer", None), torch.nn.Module
         ):
-            self._head_spec = (self.final_layer,)
+            parts = {
+                n: self._swap_head_part(n, torch.nn.Identity())
+                for n in self._head_modules
+            }
+            self._head_spec = (self.final_layer, parts)
             self.final_layer = torch.nn.Identity()
+
+    def _swap_head_part(self, path: str, new):
+        """Put ``new`` at the dotted ``path`` and return what was there."""
+        parent, _, name = path.rpartition(".")
+        owner = self.get_submodule(parent)  # "" is the model itself
+        old = getattr(owner, name)
+        delattr(owner, name)  # a parameter name takes no module
+        setattr(owner, name, new)
+        return old
 
     @property
     def n_chans(self) -> int:
@@ -1127,7 +1153,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 )
             if flag in identity_head and self._braindecode_init_kwargs.get(flag):
                 if self._head_spec is None:  # 2.0 built no head: like n_outputs=None
-                    self._head_spec = (self.final_layer,)
+                    self._head_spec = (self.final_layer, {})
                     self.final_layer = torch.nn.Identity()
                 self._legacy_head_flag = flag
         self._legacy_flag = self._true_legacy_flag()

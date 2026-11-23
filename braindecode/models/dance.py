@@ -182,6 +182,9 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: channel_positions
 
+    # Read only by the head: the DETR event decoder.
+    _head_modules = ("decoder",)
+
     def __init__(
         self,
         n_outputs=None,

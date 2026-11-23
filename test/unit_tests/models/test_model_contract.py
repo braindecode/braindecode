@@ -854,6 +854,56 @@ def test_headless_build_and_reset_head(model_name, required_params, signal_param
     with torch.no_grad():
         assert 4 in next(_tensor_leaves(model(x))).shape[1:]
     assert model.get_config()["n_outputs"] == 4
+    # Every head part is back, at the new width: a build with n_outputs=4 loads it.
+    rebuilt = type(model).from_config(model.get_config()).eval()
+    _materialize(rebuilt, x)
+    rebuilt.load_state_dict(model.state_dict(), strict=True)
+
+
+# Parameters that forward reads in no build: a headed model leaves exactly these
+# without a gradient too, so a headless build is not what leaves them unused.
+_UNUSED_IN_EVERY_BUILD = {
+    "AttnSleep": "the query convolution of each attention block is never run",
+    "BrainOmni": "the last transformer block is unused, as released",
+    "Brant": "proj_out, the pretraining reconstruction layer, is kept for checkpoints",
+    "CBraMod": "proj_out, the pretraining reconstruction layer, is kept for checkpoints",
+    "CSBrain": "proj_out, the pretraining reconstruction layer, is kept for checkpoints",
+    "CodeBrain": "the pretraining lm heads and the last residual block are never run",
+    "CORTEG": "patch_embed_hi only runs when a high-frequency stream is passed",
+    "PopulationTransformer": "spec_prediction_head is the pretraining head, never run",
+    "SignalJEPA": "the nn.Transformer decoder is never run",
+    "SignalJEPA_Contextual": "the nn.Transformer decoder is never run",
+}
+
+
+def _unused(model, loss):
+    """Names of the trainable parameters that get no gradient from ``loss``."""
+    loss.backward()
+    return {
+        n for n, p in model.named_parameters() if p.requires_grad and p.grad is None
+    }
+
+
+@PARAMS
+def test_headless_parameters_all_get_gradients(
+    model_name, required_params, signal_params
+):
+    # DistributedDataParallel fails on a parameter without a gradient (#1803).
+    if model_name in _TOKENIZERS:
+        pytest.skip("tokenizer")
+    model, x = _build_case(model_name, required_params, signal_params, headless=True)
+    _materialize(model, x, return_features=True)
+    model.train()
+    unused = _unused(model, model(x, return_features=True)["embedding"].square().mean())
+    if model_name not in _UNUSED_IN_EVERY_BUILD:
+        assert not unused
+        return
+    headed, x = _build_case(model_name, required_params, signal_params)
+    _materialize(headed, x)
+    headed.train()
+    out = headed(x)
+    loss = sum(t.square().mean() for t in _tensor_leaves(out))
+    assert unused and unused == _unused(headed, loss)
 
 
 def test_headless_model_takes_return_features_positionally():

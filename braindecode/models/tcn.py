@@ -48,6 +48,9 @@ class BDTCN(EEGModuleMixin, nn.Module):
     _channel_axis = "fixed"  # fixed: base_tcn.temporal_blocks.temporal_block_0.conv1.parametrizations.weight.original1
     _feature_axis = 1
 
+    # Read only by the head: the classifier Linear inside the TCN, outside final_layer.
+    _head_modules = ("base_tcn.final_layer.fc",)
+
     def __init__(
         self,
         # Braindecode parameters

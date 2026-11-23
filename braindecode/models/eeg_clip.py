@@ -143,6 +143,12 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: eeg_encoder.conv_time_spat.conv_spat.weight
 
+    # Read only by the head: the text side of the contrastive pair.
+    _head_modules = (
+        "text_projection",
+        "logit_scale",
+    )
+
     def __init__(
         self,
         n_outputs=None,

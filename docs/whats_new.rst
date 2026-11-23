@@ -34,8 +34,7 @@ Enhancements
   :class:`~braindecode.models.CSBrain`, and :class:`~braindecode.models.GCNsNet`
   also build their classification heads at construction when input shapes are known
   (by `Bruno Aristimunha`_).
-- Models built with ``n_outputs=None`` have ``nn.Identity`` as ``final_layer`` (head layers elsewhere, as in BDTCN, DuIN
-  or SSTDPN, get no gradient). The default ``reset_head`` swaps the last Linear or Conv of a head that has no weight constraint
+- Models built with ``n_outputs=None`` have ``nn.Identity`` as ``final_layer``. The default ``reset_head`` swaps the last Linear or Conv of a head that has no weight constraint
   and no other layer sized by ``n_outputs``; EEGITNet, EEGNeX, EEGTCNet, FBCNet, FBMSNet, IFNet, MSVTNet and USleep raise as before (by `Bruno Aristimunha`_).
 - Add :func:`braindecode.training.info_nce`, the InfoNCE (NT-Xent) contrastive
   loss, and the example :ref:`contrastive-pretraining-eeg`, which pretrains a
@@ -312,6 +311,9 @@ Requirements
 Bug fixes
 ==========
 
+- Models built with ``n_outputs=None`` also drop the head modules kept outside ``final_layer`` (BDTCN, DANCE, DeepSOZ, DuIN, EEGCLIP,
+  MSVTNet, SSTDPN, VEMG2Pose), so ``DistributedDataParallel`` needs no ``find_unused_parameters``;
+  ``reset_head`` puts them back (:gh:`1803` by `Bruno Aristimunha`_).
 - A refit or ``clone`` of a fitted :class:`braindecode.EEGClassifier` or :class:`braindecode.EEGRegressor` infers
   ``n_outputs``, ``n_chans``, ``n_times`` and ``chs_info`` from its own data instead of reusing the first fit's, which could
   predict classes the new data does not have; ``get_params`` no longer lists inferred values (:gh:`1770` by `Raghav Rathi`_).

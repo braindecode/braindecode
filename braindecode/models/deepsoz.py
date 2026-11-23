@@ -196,6 +196,9 @@ class DeepSOZ(EEGModuleMixin, nn.Module):
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: channel_embedding.weight
 
+    # Read only by the head: the seizure-onset-zone scorer.
+    _head_modules = ("soz_layer",)
+
     def __init__(
         self,
         # braindecode parameters

@@ -224,6 +224,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     _time_axis = "fixed"  # fixed: proto_sep is sized by n_times
     _channel_axis = "fixed"  # fixed: encoder.chan_conv.0.weight is sized by n_chans
 
+    # Read only by the head: the class prototypes.
+    _head_modules = (
+        "proto_sep",
+        "proto_cpt",
+    )
+
     def __init__(
         self,
         # Braindecode standard parameters
@@ -337,6 +343,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         """
 
         features = self.encoder(x)  # (b, feat_dim)
+        # Headless: the prototypes are dropped, so there is no readout.
+        if not torch.jit.is_scripting() and self._head_spec is not None:
+            return {"features": features, "cls_token": None}
         # Project each class prototype before computing its dot-product gradient.
         # ``proto_sep`` is (n_outputs, feat_dim): renorm along dim=0 bounds each
         # class row (``||s_i|| <= S``). The in-place copy into a detached alias

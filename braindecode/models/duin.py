@@ -198,6 +198,9 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
     _time_axis = "fixed"  # fixed: head_hidden.0.weight
     _channel_axis = "fixed"  # fixed: spatial_projection.weight
 
+    # Read only by the head: the hidden layer of the classifier.
+    _head_modules = ("head_hidden",)
+
     def __init__(
         self,
         # braindecode parameters

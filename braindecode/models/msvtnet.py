@@ -75,6 +75,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     _time_axis = "fixed"  # fixed: transformer.pos_embedding.pe is sized by n_times
     _channel_axis = "fixed"  # fixed: mstsconv.0.0.2.weight is sized by n_chans
 
+    # Read only by the head: the per-branch classifiers of the deep-supervision loss.
+    _head_modules = ("branch_head",)
+
     def __init__(
         self,
         # braindecode parameters
@@ -181,17 +184,20 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
         logits = self.final_layer(feat)
         if return_features:
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": feat,
+                "cls_token": feat,
+                "logits": logits,
+            }
+            # Headless: the branch heads are dropped.
+            if not torch.jit.is_scripting() and self._head_spec is not None:
+                return out
             # The branch logits feed the paper's joint deep-supervision loss
             # ``lambda * CE(main) + (1 - lambda) * sum_i CE(branch_i)``.
             branch_preds = [
                 branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
             ]
-            out: Dict[str, Optional[torch.Tensor]] = {
-                "features": feat,
-                "cls_token": feat,
-                "logits": logits,
-                "branch_logits": torch.stack(branch_preds),
-            }
+            out["branch_logits"] = torch.stack(branch_preds)
             return out
         return logits
 

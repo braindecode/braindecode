@@ -199,6 +199,9 @@ class VEMG2Pose(
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: encoder.0.conv.0.weight
 
+    # Read only by the head: the pose rollout decoder.
+    _head_modules = ("decoder",)
+
     def __init__(
         self,
         # braindecode parameters
