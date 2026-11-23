@@ -78,9 +78,6 @@ _OUTPUT_B_TIME_OUT: frozenset[str] = frozenset(
         "VEMG2Pose",
     }
 )
-_INITIAL_CROPPED_MODELS: frozenset[str] = frozenset(
-    {"Deep4Net", "EEGNet", "EMG2QwertyNet", "NeuroPose", "ShallowFBCSPNet"}
-)
 
 # Models whose __init__ (or lazy-head materialization) executes data-dependent
 # host ops (.item(), _unique2, CPU-only tensor copies) that cannot run on meta.
@@ -545,7 +542,7 @@ def _capabilities(name: str, cls: type[EEGModuleMixin], model: Any) -> dict[str,
     """The capability columns of a model, read from a built instance."""
     head = name not in _TOKENIZERS
     flags = {
-        "Cropped decoding": model._dense_refusal_reason() is None,
+        "Cropped decoding": model._dense_conversion,
         "adapt_input": hasattr(cls, "adapt_input"),
         "reset_head": head and model._can_reset_head(),
         # __call__ pools the final_layer input for models without a native path.

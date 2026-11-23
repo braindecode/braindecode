@@ -198,7 +198,6 @@ class VEMG2Pose(
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: encoder.0.conv.0.weight
-    _dense_conversion = False
 
     def __init__(
         self,

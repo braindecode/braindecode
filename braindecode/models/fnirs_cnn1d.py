@@ -124,7 +124,6 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: temporal_conv1.conv.weight
-    _dense_conversion = False
 
     def __init__(
         self,

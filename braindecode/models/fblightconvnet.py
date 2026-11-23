@@ -105,7 +105,6 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
     _time_axis = "fixed"  # fixed: attn_conv.weight is sized by n_times // win_len
     _channel_axis = "fixed"  # fixed: spatial_conv.0.weight
-    _dense_conversion = False
 
     def __init__(
         self,

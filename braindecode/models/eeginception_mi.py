@@ -74,7 +74,6 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: initial_inception_module.bottleneck.weight
-    _dense_conversion = False
 
     def __init__(
         self,

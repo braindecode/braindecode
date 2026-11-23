@@ -176,7 +176,6 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "free"
-    _dense_conversion = False
 
     def __init__(
         self,

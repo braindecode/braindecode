@@ -135,7 +135,6 @@ class BIOT(EEGModuleMixin, nn.Module):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: encoder.channel_tokens.weight is sized by n_chans
-    _dense_conversion = False
 
     _channel_target = BIOT_CHANNEL_ORDER
 

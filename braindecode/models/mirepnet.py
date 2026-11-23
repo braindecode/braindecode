@@ -156,7 +156,6 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
 
     _time_axis = "free"
     _channel_axis = "fixed"  # fixed: embedding.conv2.weight
-    _dense_conversion = False
 
     _channel_target = MIREPNET_CHANNEL_ORDER
 
