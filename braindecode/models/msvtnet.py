@@ -9,7 +9,6 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
@@ -51,8 +50,6 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         Number of transformer encoder layers, by default 2.
     activation : Type[nn.Module], optional
         Activation function class to use, by default nn.ELU.
-    return_features : bool, optional
-        Whether to return predictions from branch classifiers, by default False.
 
     Notes
     -----
@@ -94,7 +91,6 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         att_drop_prob: float = 0.5,
         num_layers: int = 2,
         activation: Type[nn.Module] = nn.ELU,
-        return_features: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -106,8 +102,6 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        _warn_constructor_feature_flag(self, "return_features", return_features)
-        self.return_features = return_features
         assert len(n_filters_list) == len(conv1_kernels_size), (
             "The length of n_filters_list and conv1_kernel_sizes should be equal."
         )
@@ -163,11 +157,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
-    ) -> Union[
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-        Dict[str, Optional[torch.Tensor]],
-    ]:
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         # x with shape: (batch, n_chans, n_times)
         x = self.ensure_dim(x)
         # x with shape: (batch, 1, n_chans, n_times)
@@ -180,6 +170,8 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
         logits = self.final_layer(feat)
         if return_features:
+            # The branch logits feed the paper's joint deep-supervision loss
+            # ``lambda * CE(main) + (1 - lambda) * sum_i CE(branch_i)``.
             branch_preds = [
                 branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
             ]
@@ -190,17 +182,6 @@ class MSVTNet(EEGModuleMixin, nn.Module):
                 "branch_logits": torch.stack(branch_preds),
             }
             return out
-        if self.return_features:
-            # Return BOTH the main-head logits and the stacked branch logits, as
-            # in the authors' implementation (``return x, bx``). This is required
-            # for the paper's joint deep-supervision loss
-            # ``lambda * CE(main) + (1 - lambda) * sum_i CE(branch_i)`` and lets
-            # callers score on the main head.
-            # logits: [batch_size, n_classes]; branches: [n_branches, batch_size, n_classes]
-            branch_preds = [
-                branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
-            ]
-            return logits, torch.stack(branch_preds)
         return logits
 
 

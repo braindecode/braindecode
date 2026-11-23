@@ -189,7 +189,7 @@ Enhancements
   different montages and channel counts; ``return_features`` also returns the
   per-channel ``"tokens"``, zero for padded channels (:gh:`1550` by
   `Julien Gadonneix`_).
-- :class:`braindecode.models.CBraMod` accepts ``ch_mask`` with the encoder output (``return_encoder_output=True``): padded channels are masked in the spatial attention and the GroupNorm statistics, and their tokens are zero. The flattened classification head is tied to the channels and refuses the mask (:gh:`1544` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.CBraMod` accepts ``ch_mask`` with the encoder output (``return_features=True``): padded channels are masked in the spatial attention and the GroupNorm statistics, and their tokens are zero. The flattened classification head is tied to the channels and refuses the mask (:gh:`1544` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are left out of the GroupNorm statistics, the location normalisation and the channel cross-attention, and each recording gets the output it gets alone. LUNA also scripts without a first eager forward (:gh:`1543` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BIOT` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are masked in the linear attention and in pooling, and each recording gets the output it gets alone (:gh:`1542` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.REVE` and :class:`~braindecode.models.Labram` accept a
@@ -229,7 +229,7 @@ API and behavior changes
   positions as ``pos``. The old keywords ``X``, ``input``, ``inputs``, ``eeg``, ``input_tensor`` and
   ``channel_locations`` are removed; pass the signal positionally (by `Bruno Aristimunha`_).
 - The constructor flags ``return_feats``, ``return_feature``, ``return_encoder_output`` and
-  ``return_features`` of 17 models emit a ``FutureWarning`` and go in 2.2; call
+  ``return_features`` of 17 models are removed, and saved configs drop them; call
   ``model(x, return_features=True)`` instead (by `Bruno Aristimunha`_).
 - ``to_dense_prediction_model`` also converts already dilated convolution stacks and raises
   ``ValueError`` with the reason on models it cannot convert, including EMG2QwertyNet and NeuroPose,
@@ -238,7 +238,7 @@ API and behavior changes
   ``"dense"``), ``_channel_axis`` (``"fixed"`` or ``"free"``) and, on ``"free"``
   and ``"dense"`` models, ``_min_n_times``; :class:`braindecode.models.EEGModuleMixin`
   checks channel counts, minimum lengths and fixed window lengths before ``forward``
-  runs instead of catching and re-wording PyTorch ``RuntimeError``s. Off-by-one
+  runs instead of catching and re-wording PyTorch ``RuntimeError``\ s. Off-by-one
   window lengths within 1% of ``n_times`` (and at most one step) snap to
   ``n_times`` with a one-time ``UserWarning`` unless ``on_non_divisible="error"``;
   larger mismatches on fixed models raise ``ValueError`` before ``forward`` runs

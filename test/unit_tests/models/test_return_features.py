@@ -9,8 +9,7 @@ from torch import nn
 
 from braindecode.models import (
     BENDR,
-    BIOT,
-    EEGPT,
+    EEGDINO,
     Labram,
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
@@ -197,20 +196,6 @@ def test_feature_fallback_refuses_repeated_heads():
 
 _LEGACY = [
     pytest.param(
-        EEGPT,
-        {"return_encoder_output": True},
-        {},
-        lambda out: isinstance(out, torch.Tensor) and out.ndim == 4,
-        id="EEGPT-encoder_output",
-    ),
-    pytest.param(
-        BIOT,
-        {"return_feature": True},
-        {},
-        lambda out: isinstance(out, tuple) and len(out) == 2,
-        id="BIOT-return_feature",
-    ),
-    pytest.param(
         Labram,
         {"patch_size": 200, "chs_info": _LABRAM_TARGET_CHS_INFO},
         {"return_all_tokens": True},
@@ -232,52 +217,6 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
     with torch.no_grad():
         out = model(torch.randn(BATCH, nc, N_TIMES), **fwd_kw)
     assert check(out)
-
-
-LEGACY_FLAGS: list[tuple[str, str]] = [
-    ("AttnSleep", "return_feats"),
-    ("DeepSleepNet", "return_feats"),
-    ("SleepStagerBlanco2020", "return_feats"),
-    ("SleepStagerChambon2018", "return_feats"),
-    ("BIOT", "return_feature"),
-    ("EEGSimpleConv", "return_feature"),
-    ("EMG2QwertyNet", "return_feature"),
-    ("CBraMod", "return_encoder_output"),
-    ("CSBrain", "return_encoder_output"),
-    ("EEGDINO", "return_encoder_output"),
-    ("EEGPT", "return_encoder_output"),
-    ("EEGConformer", "return_features"),
-    ("EEGDINO", "return_features"),
-    ("FBMSNet", "return_features"),
-    ("MEGGPT", "return_features"),
-    ("MIRepNet", "return_features"),
-    ("MSVTNet", "return_features"),
-    ("SSTDPN", "return_features"),
-]
-
-_MANDATORY_BY_NAME = {name: (req, sp) for name, req, sp in models_mandatory_parameters}
-
-
-@pytest.mark.parametrize(
-    "model_name,flag",
-    LEGACY_FLAGS,
-    ids=[f"{m}-{f}" for m, f in LEGACY_FLAGS],
-)
-def test_constructor_flag_warns_and_matches_forward_flag(model_name, flag):
-    req, sp = _MANDATORY_BY_NAME[model_name]
-    signal = _get_signal_params(sp)
-    kw = _get_signal_params(sp, req)
-    x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
-    with pytest.warns(FutureWarning, match=rf"{flag}=True\) is deprecated"):
-        legacy = models_dict[model_name](**kw, **{flag: True}).eval()
-    plain = models_dict[model_name](**kw).eval()
-    _materialize(legacy, x)
-    _materialize(plain, x)
-    plain.load_state_dict(legacy.state_dict())
-    with torch.no_grad():
-        old = list(_tensor_leaves(legacy(x)))
-        new = list(_tensor_leaves(plain(x, return_features=True)))
-    assert all(any(torch.equal(o, n) for n in new) for o in old)
 
 
 # -- reset_head must leave a model that can be saved and loaded back --
@@ -313,6 +252,13 @@ def test_reset_head_model_reloads_after_saving(name, tmp_path):
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
 
 
+def test_from_config_drops_removed_feature_flags():
+    # The released EEG-DINO config still holds both flags.
+    config = _build_registered("EEGDINO").get_config()
+    config.update(return_features=False, return_encoder_output=False)
+    assert "return_features" not in EEGDINO.from_config(config).get_config()
+
+
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
 @pytest.mark.parametrize("name", ["EEGDINO", "EEGPT", "LUNA"])  # heads with dropout
 def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
@@ -334,8 +280,8 @@ def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
     "name, kwargs",
     [
         pytest.param("BENDR", {"final_layer": False}, id="BENDR"),
-        pytest.param("CBraMod", {"return_encoder_output": True}, id="CBraMod"),
-        pytest.param("EEGDINO", {"return_encoder_output": True}, id="EEGDINO"),
+        pytest.param("CBraMod", {"n_outputs": None}, id="CBraMod"),
+        pytest.param("EEGDINO", {"n_outputs": None}, id="EEGDINO"),
         pytest.param("LUNA", {"n_outputs": 0}, id="LUNA"),
     ],
 )

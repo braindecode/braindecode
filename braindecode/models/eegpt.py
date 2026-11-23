@@ -12,7 +12,6 @@ from torch import nn
 
 from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
@@ -53,7 +52,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
     4. **Summary extraction**: keep only the summary tokens, apply ``norm`` if set, and reshape back
        to ``(batch, n_patches, embed_num, embed_dim)``.
     5. **Task head** (``final_layer``): flatten summary tokens across patches and map to
-       ``n_outputs``; if ``return_encoder_output=True``, return the encoder features instead.
+       ``n_outputs``; ``model(x, return_features=True)`` returns the encoder features instead.
 
     .. rubric:: Dual Self-Supervised Learning
 
@@ -172,8 +171,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    return_encoder_output : bool, default=False
-        Whether to return the encoder output or the classifier output.
     patch_size : int, default=64
         Size of the patches for the transformer.
     patch_stride : int, default=32
@@ -252,7 +249,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         patch_module: Optional[nn.Module] = None,
         norm_layer: Optional[nn.Module] = None,
         layer_norm_eps: float = 1e-6,
-        return_encoder_output: bool = False,
         # downstream finetuning parameters
         chan_proj_type: Literal[
             "conv1d_constraint", "linear", "none"
@@ -276,10 +272,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         # model parameters
-        _warn_constructor_feature_flag(
-            self, "return_encoder_output", return_encoder_output
-        )
-        self.return_encoder_output = return_encoder_output
         self.patch_size = patch_size
         self.patch_stride = patch_stride
         self.embed_num = embed_num
@@ -302,11 +294,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
             raise ValueError("patch_module must be a subclass of _PatchEmbed")
         else:
             self.patch_module = patch_module
-
-        if final_layer is not None and return_encoder_output:
-            raise ValueError(
-                "return_encoder_output is not compatible with providing a final_layer which will be nn.Identity"
-            )
 
         # Downstream finetuning config
         self.chan_proj_type = chan_proj_type
@@ -373,9 +360,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         )
 
         # Build final layer (classification head)
-        if return_encoder_output and self._signal_param("n_outputs") is None:
-            self.final_layer = nn.Identity()
-        elif final_layer is not None:
+        if final_layer is not None:
             # Use provided final_layer
             self.final_layer = nn.Sequential(
                 nn.Flatten(1),
@@ -441,7 +426,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Returns
         -------
         torch.Tensor or dict
-            Model output. Shape depends on `n_outputs` and `return_encoder_output`.
+            Logits ``(batch, n_outputs)``, or the feature dictionary.
         """
         # Channel projection (if configured)
         x = self.chan_proj(x)
@@ -456,9 +441,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
                 "tokens": z,
             }
             return out
-
-        if self.return_encoder_output:
-            return z
 
         # Pass to final_layer
         # _LinearConstraintProbe expects z in 4D (batch, n_patches, embed_num, embed_dim)

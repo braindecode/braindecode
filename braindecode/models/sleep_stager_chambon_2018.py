@@ -9,7 +9,6 @@ import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
@@ -41,10 +40,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
         layers.
-    return_feats : bool
-        If True, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If False, pass the features through
-        the final linear layer.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
@@ -74,7 +69,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         n_outputs=5,
         drop_prob=0.25,
         apply_batch_norm=False,
-        return_feats=False,
         chs_info=None,
         n_times=None,
     ):
@@ -116,9 +110,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             activation(),
             nn.MaxPool2d((1, max_pool_size)),
         )
-        _warn_constructor_feature_flag(self, "return_feats", return_feats)
-        self.return_feats = return_feats
-
         dim_conv_1 = (
             self.n_times + 2 * pad_size - (time_conv_size - 1)
         ) // max_pool_size
@@ -132,13 +123,10 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             1, min_after_pool1 * max_pool_size + time_conv_size - 1 - 2 * pad_size
         )
 
-        if return_feats and self._signal_param("n_outputs") is None:
-            self.final_layer = nn.Identity()
-        else:
-            self.final_layer = nn.Sequential(
-                nn.Dropout(p=drop_prob),
-                nn.Linear(in_features=self.len_last_layer, out_features=self.n_outputs),
-            )
+        self.final_layer = nn.Sequential(
+            nn.Dropout(p=drop_prob),
+            nn.Linear(in_features=self.len_last_layer, out_features=self.n_outputs),
+        )
 
     def _input_chans_and_times(self, x: torch.Tensor) -> tuple[int, int | None, bool]:
         if x.ndim == 4 and x.shape[1] == 1:
@@ -173,8 +161,5 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
                 "cls_token": None,
             }
             return out
-
-        if self.return_feats:
-            return feats
 
         return self.final_layer(feats)

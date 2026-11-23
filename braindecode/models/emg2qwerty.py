@@ -19,7 +19,6 @@ from torch import nn
 
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import TDSConvEncoder
 
 
@@ -179,16 +178,6 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
     spec_augment_prob : float
         Probability of running SpecAugment on a given training batch
         (Bernoulli gate before sampling mask counts). Defaults to ``1.0``.
-    return_feature : bool
-        If ``True``, ``forward`` returns a tuple
-        ``(emissions, features)`` instead of just ``emissions`` —
-        :class:`braindecode.models.BIOT`-style legacy feature path. Lets
-        configuration-driven downstream wrappers (e.g. neuroai's
-        ``DownstreamWrapperModel`` with ``model_output_key=1``) pick up
-        the encoder representation without passing a runtime kwarg.
-        Defaults to ``False``. Mutually compatible with the runtime
-        ``return_features`` (plural) flag, which still wins when set
-        to ``True``.
 
     Examples
     --------
@@ -269,7 +258,6 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         n_freq_masks: int = 2,
         freq_mask_param: int = 4,
         spec_augment_prob: float = 1.0,
-        return_feature: bool = False,
         # Standard braindecode args
         n_times: int | None = None,
         input_window_seconds: float | None = None,
@@ -312,8 +300,6 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         self.hop_length = hop_length
         self.kernel_width = kernel_width
         self.log_softmax = log_softmax
-        _warn_constructor_feature_flag(self, "return_feature", return_feature)
-        self.return_feature = return_feature
 
         n_freq_bins = n_fft // 2 + 1
         in_features = electrodes_per_band * n_freq_bins
@@ -375,11 +361,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
-    ) -> (
-        torch.Tensor
-        | dict[str, torch.Tensor | None]
-        | tuple[torch.Tensor, torch.Tensor]
-    ):
+    ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Run the full pipeline.
 
         Parameters
@@ -396,14 +378,12 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
             when they apply their own probe/aggregation. Matches the
             BIOT / signal-JEPA convention so the same neuroai
             ``DownstreamWrapperModel(model_output_key="features")``
-            can consume it. Wins over the constructor-time
-            ``return_feature`` flag when set.
+            can consume it.
 
         Returns
         -------
-        torch.Tensor or dict or tuple
-            Default (``return_features=False``, init
-            ``return_feature=False``): ``torch.Tensor`` of shape
+        torch.Tensor or dict
+            Default (``return_features=False``): ``torch.Tensor`` of shape
             ``(batch, T_out, n_outputs)``. Log-probabilities if
             ``log_softmax=True``, otherwise logits.
 
@@ -412,13 +392,6 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
             where ``num_features = num_bands * mlp_features[-1]``) and
             ``"cls_token"`` (always ``None`` — TDS-Conv has no
             ``[CLS]``).
-
-            If init ``return_feature=True`` and runtime
-            ``return_features=False``: tuple ``(emissions, features)``
-            where ``features`` has shape ``(batch, T_out,
-            num_features)``. Same layout BIOT exposes for
-            configuration-driven feature extraction (e.g. neuroai's
-            ``model_output_key=1``).
         """
         if x.ndim != 3:
             raise ValueError(
@@ -441,8 +414,6 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
                 "cls_token": None,
                 "logits": emissions,
             }
-        if self.return_feature:
-            return emissions, encoded.transpose(0, 1).contiguous()
         return emissions
 
     def reset_head(self, n_outputs: int) -> None:

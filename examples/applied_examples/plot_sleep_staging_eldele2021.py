@@ -223,8 +223,8 @@ feat_extractor = AttnSleep(
     n_outputs=n_classes,
     n_times=input_size_samples,
     drop_prob=0.3,
-    return_feats=True,
 )
+feat_extractor.final_layer = nn.Identity()  # keep the features
 
 model = nn.Sequential(
     TimeDistributed(feat_extractor),  # apply model on each 30-s window

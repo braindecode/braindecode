@@ -1785,7 +1785,7 @@ def test_reve_fourier_emb_4d_computes_in_float32():
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_cbramod_load_weights():
-    model = CBraMod(return_encoder_output=True)
+    model = CBraMod()  # headless: n_outputs=None
     state_dict = torch.hub.load_state_dict_from_url(
         "https://huggingface.co/braindecode/cbramod-pretrained/resolve/main/pytorch_model.bin",
         map_location="cpu",

@@ -21,7 +21,6 @@ from torch import Tensor, nn
 from braindecode.functional import init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
-from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import FeedForwardBlock
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -263,10 +262,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         ``n_chans * n_patch * d_model * head_hidden_dim`` weights, which grows
         quadratically with the window length by default (about 2.3e9 for 64
         channels and 30 s), so set a smaller width for long windows.
-    return_encoder_output : bool, default=False
-        If False (default), the projected encoder output is flattened and
-        passed through the task head to produce class logits of size
-        ``n_outputs``. If True, return the encoder output features.
     channel_strategy : str
         How another montage reaches the encoder; see
         :class:`~braindecode.models.base.EEGModuleMixin`. The encoder keeps the
@@ -322,7 +317,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         brain_regions: Sequence[int] | None = None,
         channel_order: Sequence[int] | None = None,
         head_hidden_dim: int | None = None,
-        return_encoder_output: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):
@@ -413,16 +407,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._d_model = d_model
         self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
-        _warn_constructor_feature_flag(
-            self, "return_encoder_output", return_encoder_output
-        )
-        self._encoder_output = return_encoder_output
         self._init_parameters()
-
-        if return_encoder_output and self._signal_param("n_outputs") is None:
-            self.final_layer = nn.Identity()
-        else:
-            self.final_layer = self._make_task_head()
+        self.final_layer = self._make_task_head()
         self.on_non_divisible = on_non_divisible
         self._n_times_step = patch_size
         self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
@@ -430,12 +416,11 @@ class CSBrain(EEGModuleMixin, nn.Module):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
-        return self.sorted_indices is None and bool(self._encoder_output or ret_feat)
+        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features")
+        return self.sorted_indices is None and bool(ret_feat)
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
-        return bool(self._encoder_output or ret_feat)
+        return bool(args[2] if len(args) > 2 else kwargs.get("return_features"))
 
     def _n_chans_or_none(self) -> int | None:
         return self._signal_param("n_chans")
@@ -481,16 +466,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
             nn.Linear(self._emb_dim, self.n_outputs),
         )
 
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        if "_encoder_output" not in state:
-            # Earlier pickles select encoder output with this identity head.
-            self._encoder_output = isinstance(self.final_layer, nn.Identity)
-
     def reset_head(self, n_outputs):
         self._set_n_outputs(n_outputs)
-        self._update_init_kwargs(return_encoder_output=False)
-        self._encoder_output = False
         self.final_layer = self._make_task_head()
 
     def _init_parameters(self):
@@ -525,14 +502,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         if return_features:
             features: Dict[str, Optional[Tensor]] = {"features": out, "cls_token": None}
             return features
-        if self._encoder_output:
-            if not torch.jit.is_scripting():
-                if any(
-                    isinstance(p, nn.UninitializedParameter)
-                    for p in self.final_layer.parameters()
-                ):
-                    self.final_layer(out)
-            return out
         return self.final_layer(out)
 
 

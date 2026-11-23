@@ -9,7 +9,6 @@ import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
@@ -42,10 +41,6 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
         layers.
-    return_feats : bool
-        If True, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If False, pass the features through
-        the final linear layer.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
@@ -71,7 +66,6 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         max_pool_size=2,
         drop_prob=0.5,
         apply_batch_norm=False,
-        return_feats=False,
         activation: type[nn.Module] = nn.ReLU,
         chs_info=None,
         n_times=None,
@@ -140,17 +134,12 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         self.len_last_layer = self._len_last_layer(
             n_conv_chans, self.n_times, max_pool_size
         )
-        _warn_constructor_feature_flag(self, "return_feats", return_feats)
-        self.return_feats = return_feats
 
-        if return_feats and self._signal_param("n_outputs") is None:
-            self.final_layer = nn.Identity()
-        else:
-            self.final_layer = nn.Sequential(
-                nn.Dropout(drop_prob),
-                nn.Linear(self.len_last_layer, self.n_outputs),
-                nn.Identity(),
-            )
+        self.final_layer = nn.Sequential(
+            nn.Dropout(drop_prob),
+            nn.Linear(self.len_last_layer, self.n_outputs),
+            nn.Identity(),
+        )
 
     def _len_last_layer(
         self, n_conv_chans: int, input_size: int, max_pool_size: int
@@ -187,6 +176,4 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
                 "cls_token": None,
             }
             return out
-        if self.return_feats:
-            return feats
         return self.final_layer(feats)

@@ -493,23 +493,75 @@ def test_eegpt_parametrized(
     """Comprehensive test for EEGPT model covering various configurations."""
     # Define channel names from the EEGPT channel list
     available_channels = [
-        'FP1', 'FPZ', 'FP2', 'AF7', 'AF3', 'AF4', 'AF8',
-        'F7', 'F5', 'F3', 'F1', 'FZ', 'F2', 'F4', 'F6', 'F8',
-        'FT7', 'FC5', 'FC3', 'FC1', 'FCZ', 'FC2', 'FC4', 'FC6', 'FT8',
-        'T7', 'C5', 'C3', 'C1', 'CZ', 'C2', 'C4', 'C6', 'T8',
-        'TP7', 'CP5', 'CP3', 'CP1', 'CPZ', 'CP2', 'CP4', 'CP6', 'TP8',
-        'P7', 'P5', 'P3', 'P1', 'PZ', 'P2', 'P4', 'P6', 'P8',
-        'PO7', 'PO5', 'PO3', 'POZ', 'PO4', 'PO6', 'PO8',
-        'O1', 'OZ', 'O2',
+        "FP1",
+        "FPZ",
+        "FP2",
+        "AF7",
+        "AF3",
+        "AF4",
+        "AF8",
+        "F7",
+        "F5",
+        "F3",
+        "F1",
+        "FZ",
+        "F2",
+        "F4",
+        "F6",
+        "F8",
+        "FT7",
+        "FC5",
+        "FC3",
+        "FC1",
+        "FCZ",
+        "FC2",
+        "FC4",
+        "FC6",
+        "FT8",
+        "T7",
+        "C5",
+        "C3",
+        "C1",
+        "CZ",
+        "C2",
+        "C4",
+        "C6",
+        "T8",
+        "TP7",
+        "CP5",
+        "CP3",
+        "CP1",
+        "CPZ",
+        "CP2",
+        "CP4",
+        "CP6",
+        "TP8",
+        "P7",
+        "P5",
+        "P3",
+        "P1",
+        "PZ",
+        "P2",
+        "P4",
+        "P6",
+        "P8",
+        "PO7",
+        "PO5",
+        "PO3",
+        "POZ",
+        "PO4",
+        "PO6",
+        "PO8",
+        "O1",
+        "OZ",
+        "O2",
     ]
     channel_names = available_channels[:n_chans]
 
     # Prepare chs_info if requested
     chs_info = None
     if use_chs_info:
-        chs_info = [
-            {"ch_name": ch, "kind": "eeg"} for ch in channel_names
-        ]
+        chs_info = [{"ch_name": ch, "kind": "eeg"} for ch in channel_names]
 
     # Create model
     model = EEGPT(
@@ -527,7 +579,6 @@ def test_eegpt_parametrized(
         drop_prob=drop_prob,
         attn_drop_rate=attn_drop_rate,
         drop_path_rate=drop_path_rate,
-        return_encoder_output=return_encoder_output,
     )
     model.eval()
 
@@ -539,21 +590,22 @@ def test_eegpt_parametrized(
 
     # Forward pass
     with torch.no_grad():
-        output = model(X)
+        output = model(X, return_features=return_encoder_output)
 
     # Verify output shape
     if return_encoder_output:
+        output = output["tokens"]
         # Encoder output has shape (batch, n_patches, embed_num, embed_dim)
         # Recalculate n_patches considering padding
         eff_stride = patch_size if patch_stride is None else patch_stride
         if patch_stride is None:
-             rem = n_times % patch_size
-             pad = patch_size - rem if rem != 0 else 0
-             n_patches = (n_times + pad) // patch_size
+            rem = n_times % patch_size
+            pad = patch_size - rem if rem != 0 else 0
+            n_patches = (n_times + pad) // patch_size
         else:
-             rem = (n_times - patch_size) % patch_stride
-             pad = patch_stride - rem if rem != 0 else 0
-             n_patches = (n_times + pad - patch_size) // patch_stride + 1
+            rem = (n_times - patch_size) % patch_stride
+            pad = patch_stride - rem if rem != 0 else 0
+            n_patches = (n_times + pad - patch_size) // patch_stride + 1
         expected_shape = (batch_size, n_patches, embed_num, embed_dim)
         assert output.shape == expected_shape, (
             f"Expected shape {expected_shape}, got {output.shape}"
@@ -1180,7 +1232,6 @@ def test_sleep_stager_return_feats():
         n_conv_chs=8,
         input_window_seconds=input_size_s,
         n_outputs=n_classes,
-        return_feats=True,
     )
     model.eval()
 
@@ -1188,13 +1239,12 @@ def test_sleep_stager_return_feats():
     X = rng.randn(10, n_channels, int(sfreq * input_size_s))
     X = torch.from_numpy(X.astype(np.float32))
 
-    out = model(X)
+    out = model(X, return_features=True)["features"]
     assert out.shape == (10, model.len_last_layer)
 
 
 @pytest.mark.parametrize(
-    "sfreq,n_classes,input_size_s,d_model",
-    [(100, 5, 30, 80), (125, 4, 30, 100)]
+    "sfreq,n_classes,input_size_s,d_model", [(100, 5, 30, 80), (125, 4, 30, 100)]
 )
 def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     # (100, 5, 30, 80) - Physionet Sleep
@@ -1208,12 +1258,10 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
         n_outputs=n_classes,
         input_window_seconds=input_size_s,
         d_model=d_model,
-        return_feats=False,
     )
     model.eval()
 
-    X = rng.randn(n_examples, n_channels,
-                  np.ceil(input_size_s * sfreq).astype(int))
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -1297,9 +1345,10 @@ def test_attn_sleep_supports_other_window_lengths(return_feats):
         n_times=2000,
         d_model=54,
         n_attn_heads=6,
-        return_feats=return_feats,
     )
-    output = model(torch.randn(2, 1, 2000))
+    output = model(torch.randn(2, 1, 2000), return_features=return_feats)
+    if return_feats:
+        output = output["features"]
     expected_width = model.len_last_layer if return_feats else 5
     assert output.shape == (2, expected_width)
 
@@ -1331,12 +1380,10 @@ def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
         n_groups=n_groups,
         input_window_seconds=input_size_s,
         n_outputs=n_classes,
-        return_feats=False,
     )
     model.eval()
 
-    X = rng.randn(n_examples, n_channels,
-                  np.ceil(input_size_s * sfreq).astype(int))
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -1360,7 +1407,6 @@ def test_blanco_2020_feats():
         sfreq,
         input_window_seconds=input_size_s,
         n_outputs=n_classes,
-        return_feats=True,
     )
     model.eval()
 
@@ -1368,7 +1414,7 @@ def test_blanco_2020_feats():
     X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
     X = torch.from_numpy(X.astype(np.float32))
 
-    out = model(X)
+    out = model(X, return_features=True)["features"]
     assert out.shape == (n_examples, model.len_last_layer)
 
 
@@ -1380,14 +1426,14 @@ def test_deepsleepnet(n_classes):
     n_examples = 10
 
     model = DeepSleepNet(
-        n_outputs=n_classes, return_feats=False,
-        n_chans=n_channels, n_times=int(np.ceil(input_size_s * sfreq)),
+        n_outputs=n_classes,
+        n_chans=n_channels,
+        n_times=int(np.ceil(input_size_s * sfreq)),
     )
     model.eval()
 
     rng = np.random.RandomState(42)
-    X = rng.randn(n_examples, n_channels,
-                  int(np.ceil(input_size_s * sfreq)))
+    X = rng.randn(n_examples, n_channels, int(np.ceil(input_size_s * sfreq)))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -1407,8 +1453,9 @@ def test_deepsleepnet_feats_with_hook():
     n_examples = 10
 
     model = DeepSleepNet(
-        n_outputs=n_classes, return_feats=False,
-        n_chans=n_channels, n_times=int(sfreq * input_size_s),
+        n_outputs=n_classes,
+        n_chans=n_channels,
+        n_times=int(sfreq * input_size_s),
     )
     model.eval()
 
@@ -1418,8 +1465,7 @@ def test_deepsleepnet_feats_with_hook():
 
     def get_intermediate_layers(intermediate_layers, layer_name):
         def hook(model, input, output):
-            intermediate_layers[layer_name] = output.flatten(
-                start_dim=1).detach()
+            intermediate_layers[layer_name] = output.flatten(start_dim=1).detach()
 
         return hook
 
@@ -1449,14 +1495,17 @@ def test_deepsleepnet_custom_params(
     bilstm_hidden_size, bilstm_num_layers, drop_prob, return_feats
 ):
     model = DeepSleepNet(
-        n_chans=1, n_outputs=5, n_times=3000,
+        n_chans=1,
+        n_outputs=5,
+        n_times=3000,
         bilstm_hidden_size=bilstm_hidden_size,
         bilstm_num_layers=bilstm_num_layers,
         drop_prob=drop_prob,
-        return_feats=return_feats,
     )
     model.eval()
-    out = model(torch.randn(2, 1, 3000))
+    out = model(torch.randn(2, 1, 3000), return_features=return_feats)
+    if return_feats:
+        out = out["features"]
     expected_feats = bilstm_hidden_size * 2
     assert model.len_last_layer == expected_feats
     if return_feats:
@@ -2217,29 +2266,26 @@ def test_eeg_simpleconv(param_eegsimple):
 def test_eeg_simpleconv_features(param_eegsimple):
     batch_size = 16
 
-    input = torch.rand(batch_size,
-                       param_eegsimple['n_chans'],
-                       param_eegsimple['n_times'])
+    input = torch.rand(
+        batch_size, param_eegsimple["n_chans"], param_eegsimple["n_times"]
+    )
 
     model = EEGSimpleConv(
-        n_outputs=param_eegsimple['n_classes'],
-        n_chans=param_eegsimple['n_chans'],
-        sfreq=param_eegsimple['sfreq'],
+        n_outputs=param_eegsimple["n_classes"],
+        n_chans=param_eegsimple["n_chans"],
+        sfreq=param_eegsimple["sfreq"],
         feature_maps=32,
         n_convs=1,
         resampling_freq=80,
         kernel_size=8,
-        return_feature=True
     )
 
-    output = model(input)
+    output = model(input, return_features=True)["features"]
     assert isinstance(output, torch.Tensor)
 
     feature = output
 
-
-    assert (feature.shape[0] == batch_size and
-            feature.shape[1] == 32)
+    assert feature.shape[0] == batch_size and feature.shape[1] == 32
 
 
 @pytest.fixture(scope="module")
@@ -2438,9 +2484,11 @@ def test_eegclip_batch_size_one_train_mode():
 
 @pytest.mark.parametrize("exported", [False, True], ids=["eager", "exported"])
 def test_sstdpn_proto_sep_constrains_class_rows(exported):
-    model = SSTDPN(n_outputs=4, n_chans=3, n_times=256, return_features=True).eval()
+    model = SSTDPN(n_outputs=4, n_chans=3, n_times=256).eval()
     x = torch.randn(2, 3, 256)
     maxnorm = model.proto_sep_maxnorm
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
     if exported:
         model = torch.export.export(model, (x,), strict=False).module()
 
@@ -2448,7 +2496,7 @@ def test_sstdpn_proto_sep_constrains_class_rows(exported):
         for prototype, length in zip(model.proto_sep, (0.0, 0.25, 2.0, 4.0)):
             prototype.mul_(length / prototype.norm())
     expected_norms = torch.tensor([0.0, 0.25, maxnorm, maxnorm])
-    features, logits = model(x)
+    logits = model(x)
     torch.testing.assert_close(model.proto_sep.norm(dim=1), expected_norms)
     torch.testing.assert_close(logits, features @ model.proto_sep.T)
     direction = torch.randn_like(logits)
@@ -2934,16 +2982,15 @@ def test_fbmsnet_return_features():
         n_outputs=n_outputs,
         n_times=n_times,
         sfreq=250,
-        return_features=True,
     )
     model.eval()
 
     with torch.no_grad():
-        logits, features = model(torch.randn(batch_size, n_chans, n_times))
+        out = model(torch.randn(batch_size, n_chans, n_times), return_features=True)
 
     expected_feature_dim = model.out_channels_spatial * model.stride_factor
-    assert logits.shape == (batch_size, n_outputs)
-    assert features.shape == (batch_size, expected_feature_dim)
+    assert out["logits"].shape == (batch_size, n_outputs)
+    assert out["features"].shape == (batch_size, expected_feature_dim)
     assert expected_feature_dim == (
         default_n_filters_spat * default_dilatability * default_stride_factor
     )
@@ -3126,9 +3173,8 @@ def test_fc_length_eegconformer():
         n_times=500,  # Length of the input sequence (e.g., 500 time steps)
         final_fc_length=120,
         input_window_seconds=1.0,
-        return_features=True,
         drop_prob=0.5,  # Dropout probability
-        sfreq=500.0  # Sampling frequency of the EEG data
+        sfreq=500.0,  # Sampling frequency of the EEG data
     )
 
     assert model is not None
@@ -4327,7 +4373,7 @@ def test_emg2qwerty_spec_augment_contract():
 
 
 def test_emg2qwerty_feature_flags():
-    """Three forward paths: default emissions tensor, runtime dict, init tuple."""
+    """Two forward paths: default emissions tensor and runtime dict."""
     mlp_features = (48,)
     num_features = 2 * mlp_features[-1]  # num_bands × mlp_features[-1]
     x = torch.randn(2, 32, 500)
@@ -4348,20 +4394,6 @@ def test_emg2qwerty_feature_flags():
     feats = bundle["features"]
     assert feats.shape == (2, emissions.shape[1], num_features)
     assert torch.allclose(m.final_layer(feats), emissions, atol=1e-5)
-
-    # Init ``return_feature=True`` → ``(emissions, features)`` tuple — the
-    # config-driven path neuroai's ``DownstreamWrapperModel`` uses with
-    # ``model_output_key=1``. Runtime dict flag still wins, ``get_config``
-    # round-trips, and ``get_output_shape`` keeps reporting the emissions
-    # shape regardless of the flag.
-    m_t = _small_emg2qwerty(mlp_features=mlp_features, return_feature=True).eval()
-    with torch.no_grad():
-        out_t = m_t(x)
-        bundle_t = m_t(x, return_features=True)
-    assert isinstance(out_t, tuple) and out_t[1].shape == feats.shape
-    assert isinstance(bundle_t, dict) and torch.equal(bundle_t["features"], out_t[1])
-    assert m_t.get_config()["return_feature"] is True
-    assert m_t.get_output_shape() == (1, emissions.shape[1], 99)
 
 
 @pytest.mark.parametrize("model_cls", [BDTCN, BENDR])
@@ -7191,13 +7223,15 @@ def test_only_the_flattened_head_is_tied_to_the_channel_count(
     model_class, kwargs, encoder_only
 ):
     model = model_class(
-        n_outputs=2, n_chans=3, n_times=400, n_layer=1,
-        return_encoder_output=encoder_only, **kwargs,
+        n_outputs=2,
+        n_chans=3,
+        n_times=400,
+        n_layer=1,
+        **kwargs,
     ).eval()
     x = torch.randn(2, 2, 400)
     if encoder_only:
-        assert model(x).shape[1] == 2
-        model.reset_head(2)
+        assert model(x, return_features=True)["features"].shape[1] == 2
     with pytest.raises(ValueError, match="built for n_chans=3 and got 2 channels"):
         model(x)
 

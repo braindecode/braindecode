@@ -9,7 +9,6 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.fbcnet import _valid_layers
-from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import (
     Conv2dWithConstraint,
     FilterBankLayer,
@@ -76,9 +75,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Maximum norm constraint for the convolutional layers.
     linear_max_norm : float, default=0.5
         Maximum norm constraint for the linear layers.
-    return_features : bool, default=False
-        If True, the forward method returns the class logits and the flattened
-        features before the final classification layer.
     filter_parameters : dict, default=None
         Dictionary of parameters to use for the FilterBankLayer.
         If None, a default Chebyshev Type II filter with transition bandwidth of
@@ -124,7 +120,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         linear_max_norm: float = 0.5,
         verbose: bool = False,
         filter_parameters: dict[Any, Any] | None = None,
-        return_features: bool = False,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -146,8 +141,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self.kernels_weights = kernels_weights
         self.filter_parameters = filter_parameters or {}
         self.out_channels_spatial = self.n_filters_spat * self.dilatability
-        _warn_constructor_feature_flag(self, "return_features", return_features)
-        self.return_features = return_features
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -242,10 +235,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         Returns
         -------
-        torch.Tensor or dict or tuple[torch.Tensor, torch.Tensor]
-            Output tensor with shape (batch_size, n_outputs), feature dict when
-            ``return_features=True`` in forward, or ``(logits, features)`` when
-            initialized with ``return_features=True``.
+        torch.Tensor or dict
+            Output tensor with shape (batch_size, n_outputs), or feature dict
+            when ``return_features=True``.
             In TorchScript mode, only the output tensor is returned.
         """
         batch, _, _ = x.shape
@@ -286,8 +278,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             return logits
         if return_features:
             return {"features": features, "cls_token": None, "logits": logits}
-        if self.return_features:
-            return logits, features
         return logits
 
 

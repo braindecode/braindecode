@@ -37,7 +37,6 @@ from torch import nn
 
 from braindecode.functional import scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import CausalConv1d
 
 
@@ -85,10 +84,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         Dropout rate in the PositionWiseFeedforward layer and the TCE layers.
     after_reduced_cnn_size : int
         Number of output channels produced by the convolution in the AFR module.
-    return_feats : bool
-        If True, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If False, pass the features through
-        the final linear layer.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply in the AFR block and the TCE
         feed-forward block. Should be a PyTorch activation
@@ -133,7 +128,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         n_outputs=None,
         after_reduced_cnn_size=30,
-        return_feats=False,
         chs_info=None,
         n_chans=None,
         n_times=None,
@@ -218,13 +212,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
 
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = feature_length * after_reduced_cnn_size
-        _warn_constructor_feature_flag(self, "return_feats", return_feats)
-        self.return_feats = return_feats
 
-        if return_feats and self._signal_param("n_outputs") is None:
-            self.final_layer = nn.Identity()
-        else:
-            self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
+        self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
     @classmethod
     def _fill_legacy_defaults(cls, kwargs):
@@ -272,9 +261,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
                 "cls_token": None,
             }
             return out
-
-        if self.return_feats:
-            return encoded_features
 
         # Classification head: (batch, n_outputs)
         return self.final_layer(encoded_features)

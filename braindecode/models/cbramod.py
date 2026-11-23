@@ -21,7 +21,6 @@ from braindecode.functional import (
     spectral_input,
 )
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _warn_constructor_feature_flag
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -88,7 +87,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
       to learn EEG representations
     - **Reconstruction Head**: Reconstructs masked EEG patches during pretraining
     - **Task head** (``final_layer``): flatten summary tokens across patches and map to
-       ``n_outputs``; if ``return_encoder_output=True``, return the encoder features instead.
+       ``n_outputs``; ``model(x, return_features=True)`` returns the encoder features instead.
 
     The model is highly efficient, requiring only ~318.9M FLOPs on a typical 16-channel, 10-second
     EEG recording (significantly lower than full attention baselines).
@@ -114,9 +113,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
            from braindecode.models import CBraMod
 
            # Load pre-trained model from Hugging Face Hub
-           model = CBraMod.from_pretrained(
-               "braindecode/cbramod-pretrained", return_encoder_output=True
-           )
+           model = CBraMod.from_pretrained("braindecode/cbramod-pretrained")
+           features = model(x, return_features=True)["features"]
 
        To push your own trained model to the Hub:
 
@@ -150,10 +148,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
         and head use the encoder output, of size ``d_model``.
     drop_prob : float, default=0.1
         Dropout probability.
-    return_encoder_output : bool, default=False
-        If false (default), the features are flattened and passed through a final linear layer
-        to produce class logits of size ``n_outputs``.
-        If True, the model returns the encoder output features.
 
     References
     ----------
@@ -188,7 +182,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
             (25, 3, 1, 1, (5, 25)),
         ),
         drop_prob: float = 0.1,
-        return_encoder_output: bool = False,
         on_non_divisible: str = "pad",
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
@@ -233,15 +226,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
         self._patch_size = patch_size
-        _warn_constructor_feature_flag(
-            self, "return_encoder_output", return_encoder_output
-        )
-        self._encoder_output = return_encoder_output
         self._init_parameters()
 
-        if return_encoder_output and self._signal_param("n_outputs") is None:
-            self.final_layer = nn.Identity()
-        elif self._knows_geometry():
+        if self._knows_geometry():
             n_patch = self._n_patch()
             flat_dim = self.n_chans * n_patch * d_model
             self.final_layer = nn.Sequential(
@@ -258,24 +245,13 @@ class CBraMod(EEGModuleMixin, nn.Module):
     def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
         if super()._accepts_any_n_chans(args, kwargs):
             return True
-        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
-        return bool(self._encoder_output or ret_feat)
+        return bool(args[2] if len(args) > 2 else kwargs.get("return_features"))
 
     def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
-        ret_feat = args[2] if len(args) > 2 else kwargs.get("return_features", False)
-        return bool(self._encoder_output or ret_feat)
-
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        if "_encoder_output" not in state:
-            # Earlier pickles select encoder output with this identity head.
-            self._encoder_output = isinstance(self.final_layer, nn.Identity)
+        return bool(args[2] if len(args) > 2 else kwargs.get("return_features"))
 
     def reset_head(self, n_outputs):
         self._set_n_outputs(n_outputs)
-        # A head implies a classifier, also when built with return_encoder_output.
-        self._update_init_kwargs(return_encoder_output=False)
-        self._encoder_output = False
         if self._knows_geometry():
             n_patch = self._n_patch()
             # proj_out reads the encoder output, whose size is d_model.
@@ -318,16 +294,16 @@ class CBraMod(EEGModuleMixin, nn.Module):
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         """``ch_mask``: optional ``(batch, n_chans)`` mask of real channels, see
         :func:`~braindecode.functional.check_ch_mask`. Needs
-        ``return_encoder_output=True`` or ``return_features=True``; the
+        ``return_features=True``; the
         tokens of padded channels are zero. Real channels come first, as
         :func:`~braindecode.datasets.pad_channels_collate` pads: the
         positional convolution reads neighbouring channels."""
         ch_mask = check_ch_mask(ch_mask, x)
         key_padding_mask: Optional[Tensor] = None
         if ch_mask is not None:
-            if not return_features and not self._encoder_output:
+            if not return_features:
                 raise ValueError(
-                    "ch_mask needs return_encoder_output=True: the flattened "
+                    "ch_mask needs return_features=True: the flattened "
                     "head is tied to the channels."
                 )
             # Padding may hold NaN, which the patch embedding would spread.
@@ -349,14 +325,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 "tokens": out,
             }
             return features
-        if self._encoder_output:
-            if not torch.jit.is_scripting():
-                if any(
-                    isinstance(p, nn.UninitializedParameter)
-                    for p in self.final_layer.parameters()
-                ):
-                    self.final_layer(out)
-            return out
         return self.final_layer(out)
 
 

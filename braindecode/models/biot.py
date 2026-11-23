@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Union
 from warnings import warn
 
 import torch
@@ -6,10 +6,7 @@ import torch.nn as nn
 
 from braindecode.functional import check_ch_mask, masked_mean, spectral_input
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import (
-    _warn_constructor_feature_flag,
-    warn_if_sfreq_differs,
-)
+from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import SinusoidalPositionalEncoding
 from braindecode.modules.linear_attention import LinearAttentionTransformer
 
@@ -118,10 +115,6 @@ class BIOT(EEGModuleMixin, nn.Module):
     activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
-    return_feature : bool, optional
-        Changing the output for the neural network. Default is single tensor
-        when return_feature is True, return embedding space too.
-        Default is False.
     hop_length : int, optional
         The hop length for the torch.stft transformation in the
         encoder. The default is 100.
@@ -153,7 +146,6 @@ class BIOT(EEGModuleMixin, nn.Module):
         num_layers=4,
         sfreq=None,
         hop_length=100,
-        return_feature=False,
         n_outputs=None,
         n_chans=None,
         chs_info=None,
@@ -185,8 +177,6 @@ class BIOT(EEGModuleMixin, nn.Module):
         self.hop_length = hop_length
         self.num_heads = num_heads
         self.num_layers = num_layers
-        _warn_constructor_feature_flag(self, "return_feature", return_feature)
-        self.return_feature = return_feature
         warn_if_sfreq_differs("BIOT", self.sfreq, 200)
         if self.n_chans > embed_dim:
             warn(
@@ -258,11 +248,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         x: torch.Tensor,
         return_features: bool = False,
         ch_mask: Optional[torch.Tensor] = None,
-    ) -> Union[
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-        Dict[str, Optional[torch.Tensor]],
-    ]:
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Pass the input through the BIOT encoder, and then through the
         classification head.
@@ -281,14 +267,12 @@ class BIOT(EEGModuleMixin, nn.Module):
 
         Returns
         -------
-        torch.Tensor or tuple or dict
+        torch.Tensor or dict
             Default: ``torch.Tensor`` of shape ``(batch_size, n_outputs)``.
             If ``return_features=True``: ``dict`` with ``"features"``
             ``(batch_size, emb_size)``, the mean of the tokens, ``"cls_token"``
             (``None``) and ``"tokens"`` ``(batch_size, n_channels, n_patches,
             emb_size)``, the transformer output, zero for padded channels.
-            If legacy ``return_feature=True`` (init param):
-            ``(out, emb)`` tuple (ignored when ``return_features=True``).
         """
         ch_mask = check_ch_mask(ch_mask, x)
         tokens, token_mask = self.encoder(x, ch_mask=ch_mask)
@@ -306,12 +290,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             }
             return out
 
-        x = self.final_layer(emb)
-
-        if self.return_feature:
-            return x, emb
-        else:
-            return x
+        return self.final_layer(emb)
 
 
 class _PatchFrequencyEmbedding(nn.Module):

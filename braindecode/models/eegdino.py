@@ -5,17 +5,14 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, Sequence, Union
 
 import torch
 from torch import nn
 
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import (
-    _warn_constructor_feature_flag,
-    warn_if_sfreq_differs,
-)
+from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer, PreNormBlock, TimmAttention
 
 
@@ -80,8 +77,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
     then over patches (with an intermediate projection), and a three-layer MLP
     (``final_layer``) maps them to ``n_outputs``
     (:class:`~braindecode.EEGClassifier` applies the softmax). With
-    ``return_encoder_output=True`` the mean-pooled encoder representation is
-    returned instead (linear probing).
+    ``model(x, return_features=True)`` the mean-pooled encoder representation
+    is returned as ``"embedding"`` instead (linear probing).
 
     .. warning::
        EEG-DINO was pre-trained on EEG in microvolts scaled by ``1 / 100``. The
@@ -145,11 +142,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         ``nn.GELU`` to match the released pretrained weights.
     drop_prob : float, default=0.1
         Dropout / stochastic-depth probability in the encoder.
-    return_features : bool, default=False
-        If True, ``forward`` returns ``{"features", "cls_token"}``.
-    return_encoder_output : bool, default=False
-        If True, ``final_layer`` is :class:`~torch.nn.Identity` and ``forward``
-        returns the pooled encoder representation (linear probing).
 
     References
     ----------
@@ -192,8 +184,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.GELU,
         patch_activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
-        return_features: bool = False,
-        return_encoder_output: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):
@@ -230,12 +220,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.n_global_tokens = n_global_tokens
         self.global_token_layer = global_token_layer
         self.activation = activation
-        _warn_constructor_feature_flag(self, "return_features", return_features)
-        _warn_constructor_feature_flag(
-            self, "return_encoder_output", return_encoder_output
-        )
-        self.return_features = return_features
-        self.return_encoder_output = return_encoder_output
 
         self.patch_embedding = _PatchEmbedding(
             patch_size=patch_size,
@@ -278,25 +262,16 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
     def _make_head(self):
-        if self.return_encoder_output and self._signal_param("n_outputs") is None:
-            return nn.Identity()  # ``n_outputs`` not needed for linear probing
         return _ClassificationHead(self.emb_dim, self.n_outputs, self.activation)
 
     def reset_head(self, n_outputs):
-        """Replace ``final_layer`` with a fresh classification head for ``n_outputs``.
-
-        Asking for a head implies a classification model, so this also clears
-        ``return_encoder_output`` (a linear-probe model thereby gains a real head),
-        mirroring :meth:`braindecode.models.CBraMod.reset_head`.
-        """
+        """Replace ``final_layer`` with a fresh classification head for ``n_outputs``."""
         self._n_outputs = n_outputs
         self._update_init_kwargs(n_outputs=n_outputs)
-        self.return_encoder_output = False
-        self._update_init_kwargs(return_encoder_output=False)
         self.final_layer = self._make_head()
 
     def forward(
-        self, x: torch.Tensor, return_features: Optional[bool] = None
+        self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
         """Forward pass.
 
@@ -305,8 +280,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``. The model does not
             rescale ``x`` (see the amplitude-scale warning in the class docstring).
-        return_features : bool, optional
-            Overrides ``self.return_features`` for this call.
+        return_features : bool, default=False
+            If True, return the feature dictionary instead of the logits.
 
         Returns
         -------
@@ -315,8 +290,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             ``{"features": (batch, n_chans * n_patches, emb_dim),
             "cls_token": (batch, emb_dim)}``.
         """
-        if return_features is None:
-            return_features = self.return_features
         x = self.tokenizer(x)  # (batch, n_chans, n_patches, patch_size)
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
@@ -339,8 +312,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
                 "cls_token": global_out.mean(dim=1),
             }
 
-        if self.return_encoder_output:
-            return patch_out.mean(dim=1)  # pooled encoder features (linear probing)
         return self.final_layer(patch_out, n_chans)
 
 

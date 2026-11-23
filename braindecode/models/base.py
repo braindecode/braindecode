@@ -1269,10 +1269,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         head and position tables keep their shapes; a new model defaults to
         ``"pad"``. A config saved while a model that reads its input natively
         still took ``channel_strategy`` (2.1 development builds) loses its
-        ``"native"`` strategy keys.
+        ``"native"`` strategy keys. Configs of released weights also lose the
+        removed constructor feature flags (``return_feats`` and the like).
         """
         params = inspect.signature(cls.__init__).parameters
         takes_any = any(p.kind is p.VAR_KEYWORD for p in params.values())
+        if not takes_any:
+            for flag in (
+                "return_feats",
+                "return_feature",
+                "return_encoder_output",
+                "return_features",
+            ):
+                if flag not in params:
+                    kwargs.pop(flag, None)
         if not takes_any and "channel_strategy" not in params:
             if kwargs.get("channel_strategy", "native") == "native" and not kwargs.get(
                 "channel_strategy_kwargs"

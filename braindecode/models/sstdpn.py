@@ -11,7 +11,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _warn_constructor_feature_flag
 
 
 class SSTDPN(EEGModuleMixin, nn.Module):
@@ -174,10 +173,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         Kernel sizes for Multi-scale Variance Pooling (MVP) module.
         Larger kernels capture long-term temporal dependencies .
 
-    return_features : bool, optional
-        If True, the forward pass returns (features, logits). If False, returns only logits.
-        Default is False.
-
     proto_sep_maxnorm : float, optional
         Maximum L2 norm constraint for Inter-class Separation Prototypes during forward pass.
         This constraint acts as an implicit force to push features away from the origin. Default is 1.0.
@@ -236,7 +231,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         n_fused_filters: int = 48,
         temporal_conv_kernel_size: int = 75,
         mvp_kernel_sizes: Optional[List[int]] = None,
-        return_features: bool = False,
         proto_sep_maxnorm: float = 1.0,
         proto_cpt_std: float = 1.0,
         spt_attn_global_context_kernel: int = 250,
@@ -265,8 +259,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self.mvp_kernel_sizes = (
             mvp_kernel_sizes if mvp_kernel_sizes is not None else [50, 100, 200]
         )
-        _warn_constructor_feature_flag(self, "return_features", return_features)
-        self.return_features = return_features
         self.proto_sep_maxnorm = proto_sep_maxnorm
         self.proto_cpt_std = proto_cpt_std
         self.spt_attn_global_context_kernel = spt_attn_global_context_kernel
@@ -314,11 +306,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
-    ) -> Union[
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-        Dict[str, Optional[torch.Tensor]],
-    ]:
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Classification is based on the dot product similarity with
         Inter-class Separation Prototypes (:attr:`SSTDPN.proto_sep`).
@@ -335,11 +323,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
         Returns
         -------
-        logits : torch.Tensor or dict or tuple
+        logits : torch.Tensor or dict
             If input was 3D: (batch, n_outputs)
             Or if ``return_features=True``: dict with encoder features and embedding.
-            Or if ``self.return_features`` is True:
-            (features, logits) where features shape is (batch, feat_dim)
         """
 
         features = self.encoder(x)  # (b, feat_dim)
@@ -359,9 +345,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
-
-        if self.return_features:
-            return features, logits
 
         return logits
 
