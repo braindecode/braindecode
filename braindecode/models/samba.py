@@ -23,6 +23,15 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
+    .. figure:: ../_static/model/samba_arch.png
+       :align: center
+       :alt: SAMBA architecture
+       :width: 1000px
+
+       SAMBA pre-training with the coordinate-driven spatial embedding, the
+       multi-head differential Mamba and the encoder-mediator-decoder, reproduced
+       from [samba]_ (CC BY 4.0).
+
     .. versionadded:: 2.1
 
     .. rubric:: Architecture Overview
@@ -224,6 +233,9 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        ICML. arXiv:2405.21060.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: encoder.cdse.target_positions
+
     def __init__(
         self,
         # Braindecode parameters
@@ -348,6 +360,7 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         # Head on the mean and the standard deviation of the encoder output
         self.final_layer = nn.Linear(2 * bottleneck_channels, self.n_outputs)
+        self._min_n_times = self.min_n_times
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
@@ -371,13 +384,15 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             None}`` with the ``(batch, 2 * bottleneck_channels)`` input of
             ``final_layer``.
         """
-        check_n_chans(x, self.n_chans, "SAMBA")
-        if x.shape[-1] < self.min_n_times:
-            raise ValueError(
-                f"SAMBA needs at least {self.min_n_times} samples, one for each "
-                f"step it keeps after its max-poolings; got {x.shape[-1]}."
-            )
-
+        if torch.jit.is_scripting():
+            # The eager checks live in EEGModuleMixin.__call__ (scripting skips it).
+            check_n_chans(x, self.n_chans, "SAMBA")
+            if x.shape[-1] < self.min_n_times:
+                raise ValueError(
+                    f"SAMBA needs at least {self.min_n_times} samples, one for "
+                    f"each step it keeps after its max-poolings; got "
+                    f"{x.shape[-1]}."
+                )
         # Encoder: n_steps = n_times // pool_size ** 3 steps of bottleneck_channels
         # features
         # (batch, n_chans, n_times) -> (batch, n_steps, bottleneck_channels)

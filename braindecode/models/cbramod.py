@@ -15,7 +15,6 @@ from torch import Tensor, nn
 
 from braindecode.functional import (
     check_ch_mask,
-    check_n_chans,
     init_weights_,
     masked_group_norm,
     spectral_input,
@@ -162,6 +161,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
        https://arxiv.org/abs/2412.07236
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.1.weight
+    _channel_axis = "fixed"  # fixed: final_layer.1.weight
+
     def __init__(
         self,
         n_outputs=None,
@@ -202,10 +204,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
         # padding/cropping a non-divisible time axis at forward time.
-        try:
-            tokenizer_n_times = self.n_times
-        except ValueError:  # unknown length: nothing to check at construction
-            tokenizer_n_times = patch_size
+        tokenizer_n_times = self._signal_param("n_times") or patch_size
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
             n_times=tokenizer_n_times,
@@ -246,6 +245,18 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.LazyLinear(self.n_outputs)
             )
+        self.on_non_divisible = on_non_divisible
+        self._n_times_step = patch_size
+        self._min_n_times = 1 if on_non_divisible == "pad" else patch_size
+
+    def _accepts_any_n_chans(self, args: tuple, kwargs: dict) -> bool:
+        return super()._accepts_any_n_chans(args, kwargs) or self._accepts_any_n_times(
+            args, kwargs
+        )
+
+    def _accepts_any_n_times(self, args: tuple, kwargs: dict) -> bool:
+        ret_feat = self._call_arg(args, kwargs, "return_features", False)
+        return bool(self._encoder_output or ret_feat)
 
     def __setstate__(self, state):
         super().__setstate__(state)
@@ -273,11 +284,10 @@ class CBraMod(EEGModuleMixin, nn.Module):
         """True when n_chans and n_times are known (given or derivable), so the
         head can be a real Linear instead of a LazyLinear that cannot be saved
         or loaded before a forward pass."""
-        try:
-            self.n_chans, self.n_times
-        except ValueError:
-            return False
-        return True
+        return (
+            self._signal_param("n_chans") is not None
+            and self._signal_param("n_times") is not None
+        )
 
     def _n_patch(self):
         if self._on_non_divisible == "pad":
@@ -308,11 +318,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
         :func:`~braindecode.datasets.pad_channels_collate` pads: the
         positional convolution reads neighbouring channels."""
         ch_mask = check_ch_mask(ch_mask, x)
-        # The encoder takes any number of channels, the flattened head does not.
-        if self._n_chans_for_jit is not None and not (
-            return_features or self._encoder_output
-        ):
-            check_n_chans(x, self._n_chans_for_jit, "CBraMod")
         key_padding_mask: Optional[Tensor] = None
         if ch_mask is not None:
             if not return_features and not self._encoder_output:

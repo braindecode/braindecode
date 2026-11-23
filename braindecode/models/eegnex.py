@@ -169,6 +169,9 @@ class EEGNeX(EEGModuleMixin, nn.Module):
        study to EEGNeX. https://github.com/chenxiachan/EEGNeX
     """
 
+    _time_axis = "fixed"  # fixed: final_layer.parametrizations.weight.original
+    _channel_axis = "fixed"  # fixed: block_3.0.parametrizations.weight.original
+
     def __init__(
         self,
         # Signal related parameters

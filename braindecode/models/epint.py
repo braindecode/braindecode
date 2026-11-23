@@ -131,6 +131,9 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
        Code: https://github.com/RunKZhang/EpiNT
     """
 
+    _time_axis = "fixed"  # fixed: encoder.0.norm1.bias
+    _channel_axis = "free"
+
     def __init__(
         self,
         patch_size: int = 256,
@@ -264,11 +267,6 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         torch.Tensor or dict
             Logits of shape ``(batch, n_outputs)``, or the feature dict.
         """
-        if x.shape[2] != self.n_times:
-            raise ValueError(
-                f"EpiNT was built for n_times={self.n_times} and got "
-                f"{x.shape[2]}; its LayerNorms fix the number of patches."
-            )
         mask = check_ch_mask(ch_mask, x)
         n_chans = x.shape[1]
         # Each real channel is its own sequence; padding is dropped here.

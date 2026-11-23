@@ -13,7 +13,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.functional import (
-    check_n_chans,
     init_weights_,
     scaled_dot_product_attention,
 )
@@ -207,6 +206,9 @@ class PBT(EEGModuleMixin, nn.Module):
         impacting performance. arXiv preprint arXiv:2107.02027.
     """
 
+    _time_axis = "free"
+    _channel_axis = "fixed"  # fixed: pos_embedding.weight
+
     def __init__(
         self,
         # Signal related parameters
@@ -295,6 +297,7 @@ class PBT(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=embed_dim, out_features=self.n_outputs, bias=True
         )
+        self._min_n_times = self.d_input
 
         # initialize weights
         self._init_parameters()
@@ -317,7 +320,6 @@ class PBT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
-        check_n_chans(X, self.n_chans, "PBT")
         X, int_pos = self.patch_signal(X)
 
         tokens = self.patching_projection(X)
@@ -663,7 +665,7 @@ class _Patcher(nn.Module):
         # Old pickles store floor(C*T/D) in num_tokens. Integer division by C
         # gives floor(T/D) for both that count and the current C*floor(T/D).
         n_chans = X.size(1)
-        n_patches = self.num_tokens // n_chans
+        n_patches = min(X.size(-1) // self.d_input, self.num_tokens // n_chans)
         if n_patches == 0:
             raise ValueError("PBT requires at least one complete patch per channel.")
         x_patched = X[..., : n_patches * self.d_input].reshape(
