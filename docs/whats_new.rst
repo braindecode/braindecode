@@ -820,6 +820,13 @@ Code health
   decoding tutorial and the docstrings of its functions; :ref:`channel-strategies` moves
   to the Models section, with tables (:gh:`1745` by `Bruno Aristimunha`_).
 
+Bugs
+====
+
+- :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` no longer requests the model card from the Hub, so a
+  network error cannot block loading the weights; ``model.card_data`` is ``None`` for a Hub checkpoint unless its
+  ``README.md`` is already cached, e.g. by ``huggingface_hub.snapshot_download`` (:gh:`1804` by `Bruno Aristimunha`_).
+
 
 Current 2.0.0 (2026-11-02)
 ===============================
