@@ -45,7 +45,7 @@ Bug fixes
 
 - :class:`braindecode.datasets.MOABBDataset` no longer shifts the trials of recordings whose ``first_samp`` is not 0 (for
   example cropped ones) by ``first_samp`` samples: their windows change, and trials that fell past the end come back
-  (:gh:`XXXX` by `Axel Coiffard-Donaty`_).
+  (:gh:`1827` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
