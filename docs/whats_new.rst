@@ -885,6 +885,10 @@ Bugs
   so ``model.card_data`` is set for Hub checkpoints again; with ``local_files_only`` or ``HF_HUB_OFFLINE`` it reads only
   the cache, with no network request (:gh:`1804`, :gh:`1807` by `Bruno Aristimunha`_).
 
+- :meth:`braindecode.models.SignalJEPA_Contextual.from_pretrained`, :class:`~braindecode.models.SignalJEPA_PostLocal` and
+  :class:`~braindecode.models.SignalJEPA_PreLocal` take ``n_chans`` from ``chs_info``, so a transfer to fewer channels runs.
+  A ``'scratch'`` channel embedding raises a ``ValueError`` for a different count (:gh:`1830` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
+
 
 Current 2.0.0 (2026-11-02)
 ===============================

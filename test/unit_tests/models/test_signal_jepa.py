@@ -10,6 +10,8 @@ from braindecode.models.signal_jepa import (
     _PRETRAIN_CHS_INFO,
     SignalJEPA,
     SignalJEPA_Contextual,
+    SignalJEPA_PostLocal,
+    SignalJEPA_PreLocal,
     _ConvFeatureEncoder,
     _pos_encode_contineous,
     _pos_encode_time,
@@ -576,6 +578,59 @@ class TestContextualFromPretrainedTransfer:
         )
         # The channel_embedding mode is preserved on the new model.
         assert new_model._channel_embedding == "pretrain_aligned"
+
+
+def _pretrain_aligned_chs_info(n_chans):
+    return [
+        {"ch_name": ch["ch_name"], "loc": ch["loc"]}
+        for ch in _PRETRAIN_CHS_INFO[:n_chans]
+    ]
+
+
+_DOWNSTREAM = (SignalJEPA_Contextual, SignalJEPA_PostLocal, SignalJEPA_PreLocal)
+
+
+class TestFromPretrainedChannelSubset:
+    @pytest.mark.parametrize("downstream", _DOWNSTREAM)
+    def test_transfer_to_fewer_channels_runs(self, downstream):
+        src_chs_info = _pretrain_aligned_chs_info(19)
+        src = SignalJEPA(
+            chs_info=src_chs_info,
+            n_times=256,
+            sfreq=128,
+            channel_embedding="pretrain_aligned",
+        )
+        model = downstream.from_pretrained(
+            src, n_outputs=2, chs_info=src_chs_info[:8]
+        )
+        assert model.n_chans == 8
+
+        y = model(torch.randn(3, 8, 256))
+        y.sum().backward()
+        assert y.shape == (3, 2)
+        assert all(p.grad is not None for p in model.feature_encoder.parameters())
+
+    def test_pre_local_transfer_keeps_channel_count(self):
+        src_chs_info = _pretrain_aligned_chs_info(4)
+        src = SignalJEPA(
+            chs_info=src_chs_info,
+            n_times=256,
+            sfreq=128,
+            channel_embedding="pretrain_aligned",
+        )
+        model = SignalJEPA_PreLocal.from_pretrained(src, n_outputs=2)
+        assert model(torch.randn(3, 4, 256)).shape == (3, 2)
+
+    def test_scratch_embedding_rejects_a_different_channel_count(self):
+        src_chs_info = [
+            {"ch_name": str(i), "loc": [0.01 * (i + 1), 0.02 * (i + 1), 0.03 * (i + 1)]}
+            for i in range(4)
+        ]
+        src = SignalJEPA(chs_info=src_chs_info, n_times=256, sfreq=128)
+        with pytest.raises(ValueError, match="'scratch' channel embedding with 4"):
+            SignalJEPA_Contextual.from_pretrained(
+                src, n_outputs=2, chs_info=src_chs_info[:2]
+            )
 
 
 try:
