@@ -179,7 +179,7 @@ def test_lazy_metadata_keeps_default_path(lazy_windows):
         BaseConcatDataset([RawDataset(lazy_windows.datasets[0].raw, {"subject": 1})]),
         window_size_samples=150,
         window_stride_samples=25,
-        drop_last_window=True,
+        on_last_window="drop",
         lazy_metadata=True,
     )
     windows.coalesce_reads = True

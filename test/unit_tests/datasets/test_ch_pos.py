@@ -54,7 +54,7 @@ def _windows(datasets, use_mne_epochs=False):
         concat,
         window_size_samples=200,
         window_stride_samples=200,
-        drop_last_window=True,
+        on_last_window="drop",
         preload=True,
         use_mne_epochs=use_mne_epochs,
     )

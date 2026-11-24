@@ -188,7 +188,7 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
 
     assert all([not ds.raw.preload for ds in windows.datasets])
@@ -207,7 +207,7 @@ def test_windows_from_events_n_jobs(lazy_loadable_dataset):
             trial_stop_offset_samples=0,
             window_size_samples=100,
             window_stride_samples=100,
-            drop_last_window=False,
+            on_last_window="overlap",
             preload=True,
             n_jobs=n_jobs,
         )
@@ -235,7 +235,7 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
         mapping={"T1": 0},
     )
     ys = [y for X, y, i in windows]
@@ -287,7 +287,7 @@ def test_windows_from_events_different_events(tmpdir_factory):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     ys = [y for X, y, i in windows]
     crop_start_inds = [i[1] for X, y, i in windows]
@@ -312,7 +312,7 @@ def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
         stop_offset_samples=100,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
         preload=False,
     )
 
@@ -340,7 +340,7 @@ def test_one_window_per_original_trial(concat_ds_targets):
         trial_stop_offset_samples=0,
         window_size_samples=1000,
         window_stride_samples=1,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     ys = [y for X, y, i in windows]
     assert len(ys) == len(targets)
@@ -355,7 +355,7 @@ def test_stride_has_no_effect(concat_ds_targets):
         trial_stop_offset_samples=0,
         window_size_samples=1000,
         window_stride_samples=1000,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     ys = [y for X, y, i in windows]
     assert len(ys) == len(targets)
@@ -370,7 +370,7 @@ def test_trial_start_offset(concat_ds_targets):
         trial_stop_offset_samples=-750,
         window_size_samples=250,
         window_stride_samples=250,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     ys = [y for X, y, i in windows]
     assert len(ys) == len(targets) * 2
@@ -386,7 +386,7 @@ def test_shifting_last_window_back_in(concat_ds_targets):
         trial_stop_offset_samples=-750,
         window_size_samples=250,
         window_stride_samples=300,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     ys = [y for X, y, i in windows]
     assert len(ys) == len(targets) * 2
@@ -402,7 +402,7 @@ def test_dropping_last_incomplete_window(concat_ds_targets):
         trial_stop_offset_samples=-750,
         window_size_samples=250,
         window_stride_samples=300,
-        drop_last_window=True,
+        on_last_window="drop",
     )
     ys = [y for X, y, i in windows]
     assert len(ys) == len(targets)
@@ -417,7 +417,7 @@ def test_maximally_overlapping_windows(concat_ds_targets):
         trial_stop_offset_samples=0,
         window_size_samples=1000,
         window_stride_samples=1,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     ys = [y for X, y, i in windows]
     assert len(ys) == len(targets) * 3
@@ -441,7 +441,7 @@ def test_single_sample_size_windows(concat_ds_targets):
         trial_stop_offset_samples=0,
         window_size_samples=1,
         window_stride_samples=1,
-        drop_last_window=False,
+        on_last_window="overlap",
         mapping=dict(tongue=3, left_hand=1, right_hand=2, feet=4),
     )
     ys = [y for X, y, i in windows]
@@ -506,7 +506,7 @@ def test_drop_bad_windows(concat_ds_targets, preload):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
         preload=preload,
         drop_bad_windows=True,
     )
@@ -527,27 +527,27 @@ def test_windows_from_events_(lazy_loadable_dataset):
             trial_stop_offset_samples=250,
             window_size_samples=100,
             window_stride_samples=100,
-            drop_last_window=False,
+            on_last_window="overlap",
         )
 
 
 @pytest.mark.parametrize(
-    "start_offset_samples,window_size_samples,window_stride_samples,drop_last_window,mapping",
+    "start_offset_samples,window_size_samples,window_stride_samples,on_last_window,mapping",
     [
-        (0, 100, 90, True, None),
-        (0, 100, 50, True, {48: 0}),
-        (0, 50, 50, True, None),
-        (0, 50, 50, False, None),
-        (0, None, 50, True, None),
-        (5, 10, 20, True, None),
-        (5, 10, 39, False, None),
+        (0, 100, 90, "drop", None),
+        (0, 100, 50, "drop", {48: 0}),
+        (0, 50, 50, "drop", None),
+        (0, 50, 50, "overlap", None),
+        (0, None, 50, "drop", None),
+        (5, 10, 20, "drop", None),
+        (5, 10, 39, "overlap", None),
     ],
 )
 def test_fixed_length_windower(
     start_offset_samples,
     window_size_samples,
     window_stride_samples,
-    drop_last_window,
+    on_last_window,
     mapping,
 ):
     rng = np.random.RandomState(42)
@@ -567,7 +567,7 @@ def test_fixed_length_windower(
         stop_offset_samples=stop_offset_samples,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        drop_last_window=drop_last_window,
+        on_last_window=on_last_window,
         mapping=mapping,
     )
 
@@ -583,7 +583,7 @@ def test_fixed_length_windower(
         stop_offset_samples - window_size_samples + 1,
         window_stride_samples,
     )
-    if not drop_last_window and idxs[-1] != stop_offset_samples - window_size_samples:
+    if on_last_window == "overlap" and idxs[-1] != stop_offset_samples - window_size_samples:
         idxs = np.append(idxs, stop_offset_samples - window_size_samples)
 
     assert len(idxs) == epochs_data.shape[0], "Number of epochs different than expected"
@@ -599,20 +599,20 @@ def test_fixed_length_windower(
 
 
 @pytest.mark.parametrize(
-    "start_offset_samples,window_size_samples,window_stride_samples,drop_last_window,mapping",
+    "start_offset_samples,window_size_samples,window_stride_samples,on_last_window,mapping",
     [
-        (0, 100, 90, True, None),
-        (0, 100, 50, True, {48: 0}),
-        (0, 50, 50, True, None),
-        (0, None, 50, True, None),
-        (5, 10, 20, True, None),
+        (0, 100, 90, "drop", None),
+        (0, 100, 50, "drop", {48: 0}),
+        (0, 50, 50, "drop", None),
+        (0, None, 50, "drop", None),
+        (5, 10, 20, "drop", None),
     ],
 )
 def test_fixed_length_windower_lazy(
     start_offset_samples,
     window_size_samples,
     window_stride_samples,
-    drop_last_window,
+    on_last_window,
     mapping,
 ):
     rng = np.random.RandomState(42)
@@ -632,7 +632,7 @@ def test_fixed_length_windower_lazy(
         stop_offset_samples=stop_offset_samples,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        drop_last_window=drop_last_window,
+        on_last_window=on_last_window,
         mapping=mapping,
     )
     epochs_ds_lazy = create_fixed_length_windows(
@@ -641,7 +641,7 @@ def test_fixed_length_windower_lazy(
         stop_offset_samples=stop_offset_samples,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        drop_last_window=drop_last_window,
+        on_last_window=on_last_window,
         mapping=mapping,
         lazy_metadata=True,
     )
@@ -720,7 +720,7 @@ def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
         use_mne_epochs=use_mne_epochs,
     )
 
@@ -818,7 +818,7 @@ def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
             stop_offset_samples=None,
             window_size_samples=100,
             window_stride_samples=100,
-            drop_last_window=True,
+            on_last_window="drop",
             preload=True,
             n_jobs=n_jobs,
         )
@@ -857,7 +857,7 @@ def test_windows_from_events_cropped(lazy_loadable_dataset):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     windows2 = create_windows_from_events(
         concat_ds=crop_ds,
@@ -865,7 +865,7 @@ def test_windows_from_events_cropped(lazy_loadable_dataset):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     assert (windows1[0][0] == windows2[0][0]).all()
 
@@ -877,7 +877,7 @@ def test_windows_from_events_cropped(lazy_loadable_dataset):
             trial_stop_offset_samples=10000,
             window_size_samples=100,
             window_stride_samples=100,
-            drop_last_window=False,
+            on_last_window="overlap",
         )
     with pytest.raises(ValueError, match='"trial_stop_offset_samples" too large'):
         create_windows_from_events(
@@ -886,7 +886,7 @@ def test_windows_from_events_cropped(lazy_loadable_dataset):
             trial_stop_offset_samples=2001,
             window_size_samples=100,
             window_stride_samples=100,
-            drop_last_window=False,
+            on_last_window="overlap",
         )
 
 
@@ -915,7 +915,7 @@ def test_windows_fixed_length_cropped(lazy_loadable_dataset):
         stop_offset_samples=tmax_samples,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=True,
+        on_last_window="drop",
     )
     windows2 = create_fixed_length_windows(
         concat_ds=crop_ds,
@@ -923,7 +923,7 @@ def test_windows_fixed_length_cropped(lazy_loadable_dataset):
         stop_offset_samples=None,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=True,
+        on_last_window="drop",
     )
     assert (windows1[0][0] == windows2[0][0]).all()
 
@@ -937,7 +937,7 @@ def test_fixed_length_windows_use_mne_epochs(lazy_loadable_dataset, use_mne_epoc
         stop_offset_samples=100,
         window_size_samples=50,
         window_stride_samples=50,
-        drop_last_window=True,
+        on_last_window="drop",
         use_mne_epochs=use_mne_epochs,
     )
     if use_mne_epochs:
@@ -957,7 +957,7 @@ def test_fixed_length_windows_use_mne_epochs_data_equivalent(lazy_loadable_datas
         stop_offset_samples=100,
         window_size_samples=50,
         window_stride_samples=50,
-        drop_last_window=True,
+        on_last_window="drop",
     )
     windows_eeg = create_fixed_length_windows(**kwargs, use_mne_epochs=False)
     windows_mne = create_fixed_length_windows(**kwargs, use_mne_epochs=True)
@@ -1012,7 +1012,7 @@ def test_fixed_length_auto_use_mne_epochs(
             stop_offset_samples=100,
             window_size_samples=50,
             window_stride_samples=50,
-            drop_last_window=True,
+            on_last_window="drop",
             drop_bad_windows=drop_bad_windows,
             picks=picks,
             flat=flat,
@@ -1030,7 +1030,7 @@ def test_fixed_length_lazy_metadata_use_mne_epochs_error(lazy_loadable_dataset):
             lazy_loadable_dataset,
             window_size_samples=50,
             window_stride_samples=50,
-            drop_last_window=True,
+            on_last_window="drop",
             lazy_metadata=True,
             use_mne_epochs=True,
         )
@@ -1051,7 +1051,7 @@ def test_fixed_length_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
             stop_offset_samples=100,
             window_size_samples=50,
             window_stride_samples=50,
-            drop_last_window=True,
+            on_last_window="drop",
             drop_bad_windows=False,
             picks=None,
             flat=None,
@@ -1073,7 +1073,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
         picks=picks,
         on_missing=on_missing,
         flat=flat,
@@ -1120,7 +1120,7 @@ def test_window_sizes_from_events(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -1133,7 +1133,7 @@ def test_window_sizes_from_events(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=1,
         trial_stop_offset_samples=0,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -1146,7 +1146,7 @@ def test_window_sizes_from_events(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=-1,
         trial_stop_offset_samples=0,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -1159,7 +1159,7 @@ def test_window_sizes_from_events(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=0,
         trial_stop_offset_samples=1,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -1172,7 +1172,7 @@ def test_window_sizes_from_events(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=0,
         trial_stop_offset_samples=-1,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -1187,7 +1187,7 @@ def test_window_sizes_from_events(concat_ds_targets):
         trial_stop_offset_samples=8,
         window_size_samples=250,
         window_stride_samples=250,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -1205,7 +1205,7 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=1,
         trial_stop_offset_samples=0,
-        drop_last_window=False,
+        on_last_window="overlap",
         verbose=True,
     )
     assert "Used Annotations descriptions:" in caplog.text
@@ -1217,7 +1217,7 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=1,
         trial_stop_offset_samples=0,
-        drop_last_window=False,
+        on_last_window="overlap",
         verbose=False,
     )
 
@@ -1230,7 +1230,7 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=1,
         trial_stop_offset_samples=0,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
 
     assert "Used Annotations descriptions:" not in caplog.text
@@ -1252,7 +1252,7 @@ def test_window_sizes_too_large(concat_ds_targets):
             window_stride_samples=window_size,
             trial_start_offset_samples=0,
             trial_stop_offset_samples=0,
-            drop_last_window=False,
+            on_last_window="overlap",
         )
 
     with pytest.raises(
@@ -1262,7 +1262,7 @@ def test_window_sizes_too_large(concat_ds_targets):
             concat_ds=concat_ds,
             window_size_samples=window_size,
             window_stride_samples=window_size,
-            drop_last_window=False,
+            on_last_window="overlap",
         )
 
     # Window size larger than one single trial
@@ -1288,7 +1288,7 @@ def test_window_sizes_too_large(concat_ds_targets):
             window_stride_samples=window_size,
             trial_start_offset_samples=0,
             trial_stop_offset_samples=0,
-            drop_last_window=False,
+            on_last_window="overlap",
             accepted_bads_ratio=0.5,
             on_missing="ignore",
         )
@@ -1466,7 +1466,7 @@ def concat_ds_two_event_types():
                 trial_stop_offset_samples=0,
                 window_size_samples=50,
                 window_stride_samples=50,
-                drop_last_window=True,
+                on_last_window="drop",
             ),
             "mapping must be provided",
             id="require_mapping",
@@ -1486,7 +1486,7 @@ def concat_ds_two_event_types():
                 trial_stop_offset_samples=0,
                 window_size_samples=50,
                 window_stride_samples=50,
-                drop_last_window=True,
+                on_last_window="drop",
                 mapping={"T0": 0, "T1": 1},
             ),
             "Keys of trial_start_offset_samples",
@@ -1507,7 +1507,7 @@ def test_dict_params_uniform_values_match_int(concat_ds_two_event_types):
         concat_ds=concat_ds_two_event_types,
         window_size_samples=50,
         window_stride_samples=50,
-        drop_last_window=True,
+        on_last_window="drop",
         mapping=mapping,
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
@@ -1518,7 +1518,7 @@ def test_dict_params_uniform_values_match_int(concat_ds_two_event_types):
         concat_ds=concat_ds_two_event_types,
         window_size_samples=50,
         window_stride_samples=50,
-        drop_last_window=True,
+        on_last_window="drop",
         mapping=mapping,
         trial_start_offset_samples={"T0": 0, "T1": 0},
         trial_stop_offset_samples={"T0": 0, "T1": 0},
@@ -1579,7 +1579,7 @@ def test_dict_params_per_event_type(
         trial_stop_offset_samples=trial_stop_offset_samples,
         window_size_samples=50,
         window_stride_samples=window_stride_samples,
-        drop_last_window=True,
+        on_last_window="drop",
         mapping=mapping,
         use_mne_epochs=use_mne_epochs,
     )
@@ -1640,7 +1640,7 @@ def test_dict_params_bad_trial_dropped_extras_not_misassigned():
             trial_stop_offset_samples={"T0": 0, "T1": 0},
             window_size_samples=60,
             window_stride_samples=60,
-            drop_last_window=True,
+            on_last_window="drop",
             mapping=mapping,
             accepted_bads_ratio=0.6,
         )
@@ -1969,7 +1969,7 @@ def _make_small_eeg_windows_dataset(lazy_loadable_dataset):
         stop_offset_samples=200,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=True,
+        on_last_window="drop",
         use_mne_epochs=False,
     )
     return windows.datasets[0]
@@ -2088,64 +2088,11 @@ def test_on_last_window_overlap_drop(
     assert all(dataset[index][0].shape[-1] == 40 for index in range(len(dataset)))
 
 
-@pytest.mark.parametrize(
-    "legacy, strategy",
-    [
-        pytest.param(False, "overlap", id="false-to-overlap"),
-        pytest.param(True, "drop", id="true-to-drop"),
-    ],
-)
-def test_drop_last_window_keyword_deprecation(
-    trailing_window_policy_case, legacy, strategy
-):
-    function, kwargs = trailing_window_policy_case
-    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.1"):
-        deprecated = function(**kwargs, drop_last_window=legacy)
-    replacement = function(**kwargs, on_last_window=strategy)
-    pd.testing.assert_frame_equal(
-        deprecated.datasets[0].metadata,
-        replacement.datasets[0].metadata,
-    )
-    assert deprecated.datasets[0].window_kwargs == replacement.datasets[0].window_kwargs
-
-
-@pytest.mark.parametrize(
-    "legacy, strategy",
-    [
-        pytest.param(False, "overlap", id="false-to-overlap"),
-        pytest.param(True, "drop", id="true-to-drop"),
-    ],
-)
-def test_drop_last_window_positional_compatibility(
-    trailing_window_policy_case, legacy, strategy
-):
-    function, kwargs = trailing_window_policy_case
-    concat_ds = kwargs["concat_ds"]
-    if function is create_windows_from_events:
-        positional_args = (concat_ds, 0, 0, 40, 40, legacy)
-    else:
-        positional_args = (concat_ds, 0, None, 40, 40, legacy)
-    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.1"):
-        deprecated = function(*positional_args, use_mne_epochs=False)
-    replacement = function(**kwargs, on_last_window=strategy)
-    pd.testing.assert_frame_equal(
-        deprecated.datasets[0].metadata,
-        replacement.datasets[0].metadata,
-    )
-    assert deprecated.datasets[0].window_kwargs == replacement.datasets[0].window_kwargs
-
-
 @pytest.mark.parametrize("legacy", [False, True])
-def test_on_last_window_rejects_legacy_collision(
-    trailing_window_policy_case, legacy
-):
+def test_drop_last_window_was_removed(trailing_window_policy_case, legacy):
     function, kwargs = trailing_window_policy_case
-    with pytest.raises(ValueError, match="Cannot specify both"):
-        function(
-            **kwargs,
-            drop_last_window=legacy,
-            on_last_window="drop",
-        )
+    with pytest.raises(TypeError, match="on_last_window"):
+        function(**kwargs, drop_last_window=legacy)
 
 
 @pytest.mark.parametrize("invalid", ["keep", "invalid", True])
@@ -2196,35 +2143,6 @@ def test_overlap_remains_incompatible_with_lazy_metadata(lazy_loadable_dataset):
             on_last_window="overlap",
             lazy_metadata=True,
         )
-
-
-@pytest.mark.parametrize(
-    "legacy, strategy",
-    [
-        pytest.param(False, "overlap", id="false-to-overlap"),
-        pytest.param(True, "drop", id="true-to-drop-formerly-invalid"),
-    ],
-)
-def test_fixed_length_no_size_policy_is_moot(
-    lazy_loadable_dataset, legacy, strategy
-):
-    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.1"):
-        deprecated = create_fixed_length_windows(
-            concat_ds=lazy_loadable_dataset,
-            drop_last_window=legacy,
-        )
-    replacement = create_fixed_length_windows(
-        concat_ds=lazy_loadable_dataset,
-        on_last_window=strategy,
-    )
-    deprecated_dataset = deprecated.datasets[0]
-    replacement_dataset = replacement.datasets[0]
-    assert len(deprecated_dataset) == len(replacement_dataset) == 1
-    pd.testing.assert_frame_equal(
-        deprecated_dataset.metadata,
-        replacement_dataset.metadata,
-    )
-    assert deprecated_dataset.window_kwargs == replacement_dataset.window_kwargs
 
 
 @pytest.mark.parametrize(
@@ -2336,7 +2254,7 @@ def test_windows_from_events_window_before_recording_start():
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
     concat_ds = _annotated_concat_ds([0.1, 5.0], [1.0, 1.0], ["a", "a"])
     with pytest.raises(ValueError, match='"trial_start_offset_samples" too small'):
@@ -2358,7 +2276,7 @@ def test_windows_from_events_checks_stop_of_every_trial():
             trial_stop_offset_samples=50,
             window_size_samples=100,
             window_stride_samples=100,
-            drop_last_window=False,
+            on_last_window="overlap",
             on_overlapping_events="ignore",
         )
 
@@ -2373,7 +2291,7 @@ def test_windows_from_events_dict_stop_offset_uses_own_event_type():
         trial_stop_offset_samples={"a": 200, "b": 0},
         window_size_samples=100,
         window_stride_samples={"a": 100, "b": 100},
-        drop_last_window=False,
+        on_last_window="overlap",
         mapping={"a": 0, "b": 1},
     )
     assert [y for _, y, _ in windows] == [0, 0, 0, 1]
@@ -2384,7 +2302,7 @@ def test_windows_from_events_dict_stop_offset_uses_own_event_type():
             trial_stop_offset_samples={"a": 200, "b": 0},
             window_size_samples=100,
             window_stride_samples={"a": 100, "b": 100},
-            drop_last_window=False,
+            on_last_window="overlap",
             mapping={"a": 0, "b": 1},
         )
 

@@ -201,16 +201,16 @@ _VALID_LAST_WINDOW_STRATEGIES = ("overlap", "drop")
 
 
 def _resolve_on_last_window(
-    drop_last_window: bool | None,
+    drop_last_window: object,
     on_last_window: _LastWindowStrategy | None,
     *,
     default: _LastWindowStrategy | None,
 ) -> _LastWindowStrategy | None:
-    """Resolve the replacement spelling without changing placement semantics."""
-    if drop_last_window is not None and on_last_window is not None:
-        raise ValueError(
-            "Cannot specify both `drop_last_window` and `on_last_window`. "
-            "Use `on_last_window` only, as `drop_last_window` is deprecated."
+    """Validate ``on_last_window`` and reject the removed ``drop_last_window``."""
+    if drop_last_window is not None:
+        raise TypeError(
+            "`drop_last_window` was removed. Use `on_last_window='drop'` if it "
+            "was True or `on_last_window='overlap'` if it was False."
         )
     if (
         on_last_window is not None
@@ -220,16 +220,6 @@ def _resolve_on_last_window(
             "on_last_window must be one of 'overlap' or 'drop', "
             f"got {on_last_window!r}."
         )
-    if drop_last_window is not None:
-        warnings.warn(
-            "`drop_last_window` is deprecated and will be removed in version 2.1. "
-            "Use `on_last_window='drop'` if True or "
-            "`on_last_window='overlap'` if False. "
-            "See https://github.com/braindecode/braindecode/pull/1058 for feedback.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-        return "drop" if drop_last_window else "overlap"
     return default if on_last_window is None else on_last_window
 
 
@@ -240,7 +230,6 @@ def create_windows_from_events(
     trial_stop_offset_samples: int | dict[str, int] = 0,
     window_size_samples: int | None = None,
     window_stride_samples: int | dict[str, int] | None = None,
-    drop_last_window: bool | None = None,
     mapping: dict[str, int] | None = None,
     preload: bool = False,
     drop_bad_windows: bool | None = None,
@@ -255,6 +244,7 @@ def create_windows_from_events(
     verbose: bool | str | int | None = "error",
     *,
     on_last_window: _LastWindowStrategy | None = None,
+    drop_last_window: None = None,
 ) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
     """Create windows based on events in mne.Raw.
 
@@ -263,7 +253,7 @@ def create_windows_from_events(
     trial_stop_offset_samples] around each trial, with a separation of
     window_stride_samples between consecutive windows. If the last window
     around an event does not end at trial_stop_offset_samples and
-    drop_last_window is set to False, an additional overlapping window that
+    ``on_last_window`` is ``'overlap'``, an additional overlapping window that
     ends at trial_stop_offset_samples is created.
 
     Windows are extracted from the interval defined by the following::
@@ -297,11 +287,6 @@ def create_windows_from_events(
         trial_start_offset_samples and trial_stop_offset_samples.
         If a dict, keys must match the keys of ``mapping`` and different
         strides are applied per event type.
-    drop_last_window: bool | None
-        Deprecated; use ``on_last_window`` instead. Explicit ``False`` maps to
-        ``'overlap'`` and explicit ``True`` maps to ``'drop'``. Either value
-        emits a ``DeprecationWarning`` and this parameter will be removed in
-        version 3.0.
     mapping: dict(str: int)
         Mapping from event description to numerical target value. If None, the
         event descriptions of all datasets are numbered from 0 in dataset
@@ -354,8 +339,7 @@ def create_windows_from_events(
     on_last_window: {'overlap', 'drop'} | None
         Behavior when the final regular window does not end exactly at the
         trial boundary. ``'overlap'`` adds a final overlapping window ending
-        at the boundary; ``'drop'`` does not. Defaults to ``'overlap'`` when
-        neither this parameter nor ``drop_last_window`` is supplied.
+        at the boundary; ``'drop'`` does not. Defaults to ``'overlap'``.
 
     Returns
     -------
@@ -483,7 +467,6 @@ def create_fixed_length_windows(
     stop_offset_samples: int | None = None,
     window_size_samples: int | None = None,
     window_stride_samples: int | None = None,
-    drop_last_window: bool | None = None,
     mapping: dict[str, int] | None = None,
     preload: bool = False,
     drop_bad_windows: bool | None = None,
@@ -499,6 +482,7 @@ def create_fixed_length_windows(
     verbose: bool | str | int | None = "error",
     *,
     on_last_window: _LastWindowStrategy | None = None,
+    drop_last_window: None = None,
 ) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
     """Windower that creates sliding windows.
 
@@ -517,11 +501,6 @@ def create_fixed_length_windows(
     window_stride_samples: int | None
         Stride between windows in samples. If None, set to be equal to winddow_size_samples, so
         windows will not overlap.
-    drop_last_window: bool | None
-        Deprecated; use ``on_last_window`` instead. Explicit ``False`` maps to
-        ``'overlap'`` and explicit ``True`` maps to ``'drop'``. Either value
-        emits a ``DeprecationWarning`` and this parameter will be removed in
-        version 3.0.
     mapping: dict(str: int)
         Mapping from event description to target value.
     preload: bool

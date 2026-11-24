@@ -74,7 +74,7 @@ Fixed-Length Windows Extraction
 #     - Stride between windows in samples. If None, set to be equal to winddow_size_samples, so windows will not overlap.
 #
 # **on_last_window** : 'overlap', 'drop' or None (keyword-only)
-#     - What to do with the last window when windows do not equally divide the continuous signal: 'overlap' adds a last window that overlaps the previous one, 'drop' leaves the incomplete end out. Must be set if window size and stride are not None. It replaces the deprecated ``drop_last_window`` (True is 'drop', False is 'overlap').
+#     - What to do with the last window when windows do not equally divide the continuous signal: 'overlap' adds a last window that overlaps the previous one, 'drop' leaves the incomplete end out. Must be set if window size and stride are not None.
 #
 # **mapping** : dict(str: int) or None
 #     - Mapping from event description to target value.

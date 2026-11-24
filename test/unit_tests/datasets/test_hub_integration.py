@@ -1626,7 +1626,7 @@ def test_lazy_zarr_positions_survive_pickling(tmp_path, use_mne_epochs):
         source,
         window_size_samples=5,
         window_stride_samples=5,
-        drop_last_window=True,
+        on_last_window="drop",
         use_mne_epochs=use_mne_epochs,
     )
     path = convert_to_zarr(windows, tmp_path / "windows.zarr")
