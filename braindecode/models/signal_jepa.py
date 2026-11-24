@@ -822,9 +822,18 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         assert pos_encoder is not None
         assert transformer is not None
 
+        n_chans = model.n_chans if chs_info is None else len(chs_info)
+        if model._channel_embedding == "scratch" and n_chans != model.n_chans:
+            raise ValueError(
+                f"The source model has a 'scratch' channel embedding with "
+                f"{model.n_chans} rows, so it cannot be transferred to "
+                f"{n_chans} channels. Pre-train with "
+                "channel_embedding='pretrain_aligned' to transfer to a "
+                "channel subset."
+            )
         new_model = cls(
             n_outputs=n_outputs,
-            n_chans=model.n_chans,
+            n_chans=n_chans,
             n_times=model.n_times,
             chs_info=chs_info,
             n_spat_filters=n_spat_filters,
@@ -832,7 +841,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             _init_feature_encoder=False,
             _init_transformer=False,
         )
-        new_model.feature_encoder = deepcopy(feature_encoder)
+        new_model.feature_encoder = feature_encoder.with_channels(n_chans)
         new_model.pos_encoder = deepcopy(pos_encoder)
         new_model.transformer = deepcopy(transformer)
 
@@ -1011,6 +1020,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         model: SignalJEPA | str | Path = None,  # type: ignore
         n_outputs: int = None,  # type: ignore
         n_spat_filters: int = 4,
+        chs_info: Optional[list[dict[str, Any]]] = None,  # type: ignore
         **kwargs,
     ):
         """Instantiate a new model from a pre-trained :class:`SignalJEPA` model or from Hub.
@@ -1025,6 +1035,10 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
             optional when loading from Hub (will be read from config).
         n_spat_filters: int
             Number of spatial filters.
+        chs_info: list of dict | None
+            Information about each individual EEG channel. This should be filled with
+            ``info["chs"]``. Refer to :class:`mne.Info` for more details. If given,
+            the new model takes ``len(chs_info)`` channels instead of the source's.
         **kwargs
             Additional keyword arguments passed to the parent class for Hub loading.
         """
@@ -1033,6 +1047,8 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
             # Forward named params that would otherwise be dropped
             if n_outputs is not None:
                 kwargs["n_outputs"] = n_outputs
+            if chs_info is not None:
+                kwargs["chs_info"] = chs_info
             # This is a Hub load, delegate to parent class
             if isinstance(model, (str, Path)):
                 # model is actually the repo_id or directory path
@@ -1053,15 +1069,17 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
         feature_encoder = model.feature_encoder
         assert feature_encoder is not None
+        n_chans = model.n_chans if chs_info is None else len(chs_info)
         new_model = cls(
             n_outputs=n_outputs,
-            n_chans=model.n_chans,
+            n_chans=n_chans,
             n_times=model.n_times,
+            chs_info=chs_info,
             n_spat_filters=n_spat_filters,
             feature_encoder__conv_layers_spec=feature_encoder.conv_layers_spec,
             _init_feature_encoder=False,
         )
-        new_model.feature_encoder = deepcopy(feature_encoder)
+        new_model.feature_encoder = feature_encoder.with_channels(n_chans)
         return new_model
 
     @deprecated_forward_kwargs(X="x")
@@ -1256,6 +1274,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         model: SignalJEPA | str | Path = None,  # type: ignore
         n_outputs: int = None,  # type: ignore
         n_spat_filters: int = 4,
+        chs_info: Optional[list[dict[str, Any]]] = None,  # type: ignore
         **kwargs,
     ):
         """Instantiate a new model from a pre-trained :class:`SignalJEPA` model or from Hub.
@@ -1270,6 +1289,10 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
             optional when loading from Hub (will be read from config).
         n_spat_filters: int
             Number of spatial filters.
+        chs_info: list of dict | None
+            Information about each individual EEG channel. This should be filled with
+            ``info["chs"]``. Refer to :class:`mne.Info` for more details. If given,
+            the new model takes ``len(chs_info)`` channels instead of the source's.
         **kwargs
             Additional keyword arguments passed to the parent class for Hub loading.
         """
@@ -1278,6 +1301,8 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
             # Forward named params that would otherwise be dropped
             if n_outputs is not None:
                 kwargs["n_outputs"] = n_outputs
+            if chs_info is not None:
+                kwargs["chs_info"] = chs_info
             # This is a Hub load, delegate to parent class
             if isinstance(model, (str, Path)):
                 # model is actually the repo_id or directory path
@@ -1300,13 +1325,15 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         assert feature_encoder is not None
         new_model = cls(
             n_outputs=n_outputs,
-            n_chans=model.n_chans,
+            n_chans=model.n_chans if chs_info is None else len(chs_info),
             n_times=model.n_times,
+            chs_info=chs_info,
             n_spat_filters=n_spat_filters,
             feature_encoder__conv_layers_spec=feature_encoder.conv_layers_spec,
             _init_feature_encoder=False,
         )
-        new_model.feature_encoder = deepcopy(feature_encoder)
+        # It runs on the n_spat_filters outputs of the spatial convolution.
+        new_model.feature_encoder = feature_encoder.with_channels(n_spat_filters)
         return new_model
 
     @deprecated_forward_kwargs(X="x")
@@ -1395,6 +1422,17 @@ class _ConvFeatureEncoder(nn.Sequential):
             output_channels  # last output dimension becomes the embedding dimension
         )
         self.conv_layers_spec = conv_layers_spec
+
+    def with_channels(self, channels: int) -> "_ConvFeatureEncoder":
+        """Copy of this encoder for ``channels`` EEG channels.
+
+        The convolutions do not depend on the channel count, but the two
+        parameter-free ``Rearrange`` layers at both ends do.
+        """
+        new = deepcopy(self)
+        for i in (0, len(new) - 1):
+            new[i] = Rearrange(new[i].pattern, channels=channels)
+        return new
 
     def reset_parameters(self) -> None:
         """Initialize this block's weights (Kaiming-normal convolutions; the
