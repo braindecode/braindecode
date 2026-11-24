@@ -234,13 +234,14 @@ class FilterBankLayer(nn.Module):
             if iir_params is None:
                 iir_params = dict(output="ba")
             else:
-                if "output" in iir_params:
-                    if iir_params["output"] == "sos":
-                        warn(
-                            "It is not possible to use second-order section filtering with Torch. Changing to filter ba",
-                            UserWarning,
-                        )
-                        iir_params["output"] = "ba"
+                # MNE defaults to "sos"; the copy keeps the caller's dict unchanged.
+                iir_params = {"output": "ba", **iir_params}
+                if iir_params["output"] == "sos":
+                    warn(
+                        "It is not possible to use second-order section filtering with Torch. Changing to filter ba",
+                        UserWarning,
+                    )
+                    iir_params["output"] = "ba"
 
         filter_phase = phase
         if phase == "causal" and self.method_iir:
