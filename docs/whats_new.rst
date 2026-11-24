@@ -43,7 +43,9 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- :func:`braindecode.preprocessing.filterbank` marks the bands of a bad channel as bad. Only recordings with bad channels
+  are affected: after it, ``pick(exclude="bads")`` drops these bands and an average reference leaves them out
+  (:gh:`1825` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
