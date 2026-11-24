@@ -148,11 +148,10 @@ class NMT(BaseConcatDataset):
         description = pd.read_csv(
             os.path.join(path, "Labels.csv"), index_col="recordname"
         )
-        if recording_ids is not None:
-            # Match metadata by record name instead of position to fix alignment bug
-            # when CSV order differs from sorted file order
-            selected_recordnames = [os.path.basename(fp) for fp in file_paths]
-            description = description.loc[selected_recordnames]
+        # Match metadata by record name instead of position to fix alignment bug
+        # when CSV order differs from sorted file order
+        selected_recordnames = [os.path.basename(fp) for fp in file_paths]
+        description = description.loc[selected_recordnames]
         description.replace(
             {
                 "not specified": "X",

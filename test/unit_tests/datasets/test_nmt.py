@@ -5,10 +5,12 @@ import os
 import platform
 from unittest import mock
 
+import mne
+import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.nmt import NMT_archive_name, _NMTMock
+from braindecode.datasets.nmt import NMT, NMT_archive_name, _NMTMock
 from braindecode.datasets.utils import _correct_dataset_path
 
 
@@ -154,6 +156,38 @@ def test_nmt_recording_ids_with_unordered_csv():
     # File 0000040.edf should have age 19 (not 55 from positional index 4 in reversed CSV)
     ages = nmt.description["age"].tolist()
     assert ages == [35, 62, 19], f"Expected [35, 62, 19] but got {ages}"
+
+
+@pytest.mark.parametrize("missing_on_disk", [False, True])
+def test_nmt_all_recordings_with_unordered_csv(tmp_path, monkeypatch, missing_on_disk):
+    """Without recording_ids, metadata also follows the record names."""
+    for path in ["normal/train/0000001.edf", "abnormal/train/0000002.edf"]:
+        (tmp_path / path).parent.mkdir(parents=True)
+        (tmp_path / path).touch()
+    rows = [
+        ["0000002.edf", "abnormal", 32, "female", "train"],
+        ["0000001.edf", "normal", 21, "male", "train"],
+    ]
+    if missing_on_disk:
+        rows.append(["0000003.edf", "normal", 43, "male", "eval"])
+    columns = ["recordname", "label", "age", "gender", "loc"]
+    pd.DataFrame(rows, columns=columns).to_csv(tmp_path / "Labels.csv", index=False)
+    info = mne.create_info(1, 100.0, "eeg")
+    monkeypatch.setattr(
+        mne.io,
+        "read_raw_edf",
+        lambda *args, **kwargs: mne.io.RawArray(np.zeros((1, 10)), info),
+    )
+
+    nmt = NMT(path=str(tmp_path))
+
+    assert [os.path.basename(p) for p in nmt.description["path"]] == [
+        "0000001.edf",
+        "0000002.edf",
+    ]
+    assert nmt.description["pathological"].tolist() == [False, True]
+    assert nmt.description["age"].tolist() == [21, 32]
+    assert nmt.description["gender"].tolist() == ["M", "F"]
 
 
 @pytest.fixture

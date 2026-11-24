@@ -43,7 +43,9 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- :class:`braindecode.datasets.NMT` matches ``Labels.csv`` by record name also without ``recording_ids``: labels, age and
+  gender change if the rows are not in the order of the files, and a partial download loads
+  (:gh:`1828` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
