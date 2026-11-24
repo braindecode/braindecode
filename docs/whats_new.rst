@@ -887,7 +887,7 @@ Bugs
 
 - :meth:`braindecode.models.SignalJEPA_Contextual.from_pretrained`, :class:`~braindecode.models.SignalJEPA_PostLocal` and
   :class:`~braindecode.models.SignalJEPA_PreLocal` take ``n_chans`` from ``chs_info``, so a transfer to fewer channels runs.
-  A ``'scratch'`` channel embedding raises a ``ValueError`` for a different count (:gh:`XXXX` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
+  A ``'scratch'`` channel embedding raises a ``ValueError`` for a different count (:gh:`1830` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 
 
 Current 2.0.0 (2026-11-02)
