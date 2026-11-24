@@ -50,7 +50,7 @@ Code health
 
 - Twelve model docstrings (BIOT, CBraMod, CodeBrain, EEGPT, SPARCNet and others) now document every
   constructor argument, and a test fails when a model adds one without documenting it
-  (:gh:`PLACEHOLDER` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
+  (:gh:`1829` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 
 
 Current 2.1.0 (2026-11-23)
