@@ -45,7 +45,7 @@ Bug fixes
 
 - :func:`braindecode.augmentation.functional.channels_shuffle` draws the channel mask and the permutation from one generator:
   direct calls with an int ``random_state`` may shuffle differently than in 2.1, and
-  :class:`braindecode.augmentation.ChannelsShuffle` outputs are unchanged (:gh:`XXXX` by `Axel Coiffard-Donaty`_).
+  :class:`braindecode.augmentation.ChannelsShuffle` outputs are unchanged (:gh:`1824` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
