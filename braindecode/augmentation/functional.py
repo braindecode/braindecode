@@ -338,8 +338,11 @@ def channels_shuffle(
     """
     if p_shuffle == 0:
         return X, y
-    mask = _pick_channels_randomly(X, 1 - p_shuffle, random_state)
-    perm = _make_channel_permutation(X, mask, random_state)
+    # One generator for both draws: an int seed would otherwise seed two
+    # generators in the same state.
+    rng = check_random_state(random_state)
+    mask = _pick_channels_randomly(X, 1 - p_shuffle, rng)
+    perm = _make_channel_permutation(X, mask, rng)
     # Gather channels (output[b, i] = X[b, perm[b, i]]) instead of building
     # one-hot permutation matrices and a (batch, C, C) @ (batch, C, T) matmul.
     perm = perm.unsqueeze(-1).expand(-1, -1, X.shape[-1])
