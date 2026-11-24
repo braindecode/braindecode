@@ -536,6 +536,26 @@ def test_filterbank_keeps_long_channel_names():
     ]
 
 
+@pytest.mark.parametrize("drop_original_signals", [True, False])
+def test_filterbank_keeps_bad_channels(drop_original_signals):
+    raw = mne.io.RawArray(
+        np.random.default_rng(0).standard_normal((3, 2560)) * 1e-6,
+        mne.create_info(["C3", "Cz", "C4"], 256.0, "eeg"),
+        verbose="error",
+    )
+    raw.info["bads"] = ["Cz"]
+    filterbank(
+        raw,
+        frequency_bands=[(4.0, 8.0), (8.0, 13.0)],
+        drop_original_signals=drop_original_signals,
+        verbose="error",
+    )
+    expected = {"Cz_4.0-8.0", "Cz_8.0-13.0"}
+    if not drop_original_signals:
+        expected.add("Cz")
+    assert set(raw.info["bads"]) == expected
+
+
 def test_filterbank_waveform_metadata_reference():
     raw = _synthetic_filterbank_raw()
     raw.set_montage(

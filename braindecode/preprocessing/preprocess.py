@@ -666,6 +666,8 @@ def filterbank(
             if value is not None:
                 info[field] = value
 
+        # rename_channels below adds the frequency band to these names too
+        info["bads"] = filtered.info["bads"]
         filtered.info = info
 
         # add frequency band annotation to channel names
