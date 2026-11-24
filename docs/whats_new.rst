@@ -43,7 +43,9 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- :class:`braindecode.EEGRegressor` squeezes a ``(batch, 1)`` target, the shape that ``fit`` gives to a 1-D ``y``, when the
+  module returns ``(batch,)``, so that each prediction meets its own target. Only such modules train differently than in
+  2.1, and a criterion used with them now gets ``(batch,)`` targets (by `Axel Coiffard-Donaty`_).
 
 Code health
 ============

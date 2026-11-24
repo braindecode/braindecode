@@ -278,9 +278,10 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
         """Return the loss for this batch.
 
         A one-dimensional target of shape ``(batch,)`` is reshaped to
-        ``(batch, 1)`` when the prediction has shape ``(batch, 1)``, so that
-        the criterion compares each prediction with its own target instead of
-        broadcasting to ``(batch, batch)``.
+        ``(batch, 1)`` when the prediction has shape ``(batch, 1)``, and a
+        target of shape ``(batch, 1)`` to ``(batch,)`` when the prediction has
+        shape ``(batch,)``, so that the criterion compares each prediction with
+        its own target instead of broadcasting to ``(batch, batch)``.
 
         Parameters
         ----------
@@ -302,6 +303,13 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             and y_true.ndim == 1
         ):
             y_true = y_true.reshape(-1, 1)
+        elif (
+            isinstance(y_pred, torch.Tensor)
+            and isinstance(y_true, torch.Tensor)
+            and y_pred.ndim == 1
+            and y_true.ndim == 2
+        ):
+            y_true = y_true.squeeze(1)  # unchanged unless (batch, 1)
         return super().get_loss(y_pred, y_true, *args, **kwargs)
 
     @property
