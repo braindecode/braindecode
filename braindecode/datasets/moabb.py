@@ -69,7 +69,10 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
 
     # get annotations from events
     event_desc = {k: v for v, k in event_id.items()}
-    annots = mne.annotations_from_events(events, raw.info["sfreq"], event_desc)
+    # event samples include first_samp, annotation onsets start at the first sample
+    annots = mne.annotations_from_events(
+        events, raw.info["sfreq"], event_desc, first_samp=raw.first_samp
+    )
 
     # set trial on and offset given by moabb
     onset, offset = dataset.interval
