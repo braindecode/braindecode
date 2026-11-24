@@ -41,6 +41,12 @@ class ContraWR(EEGModuleMixin, nn.Module):
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     drop_prob : float, default=0.5
         The dropout rate for regularization. Values should be between 0 and 1.
+    stride_res : int, default=2
+        Stride of the convolution in each residual block.
+    kernel_size_res : int, default=3
+        Kernel size of the convolution in each residual block.
+    padding_res : int, default=1
+        Padding of the convolution in each residual block.
 
     .. versionadded:: 0.9
 

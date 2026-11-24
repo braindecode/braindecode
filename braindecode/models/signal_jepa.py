@@ -208,10 +208,12 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         * ``k`` : temporal length of the layer's kernel;
         * ``stride`` : temporal stride of the layer's kernel.
 
-    drop_prob: float
+    drop_prob : float
+        Dropout probability of the feature encoder.
     feature_encoder__mode: str
         Normalisation mode. Either ``default`` or ``layer_norm``.
-    feature_encoder__conv_bias: bool
+    feature_encoder__conv_bias : bool
+        Whether the feature encoder convolutions have a bias.
     activation: nn.Module
         Activation layer for the feature encoder.
     pos_encoder__spat_dim: int

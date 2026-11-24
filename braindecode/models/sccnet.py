@@ -125,6 +125,8 @@ class SCCNet(EEGModuleMixin, nn.Module):
         layer. Default is 20.
     drop_prob : float, optional
         Dropout probability. Default is 0.5.
+    batch_norm_momentum : float, default=0.1
+        Momentum of the two batch normalization layers.
     activation : nn.Module, optional
         Activation function after the second convolutional layer. Default is
         logarithm activation.

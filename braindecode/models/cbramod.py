@@ -150,6 +150,11 @@ class CBraMod(EEGModuleMixin, nn.Module):
         Output dimension of ``proj_out``, the pretraining reconstruction layer.
         It is kept so the released weights load, but it is not applied: features
         and head use the encoder output, of size ``d_model``.
+    channels_kernel_stride_padding_norm : sequence of tuple, default=((25, 49, 25, 24, (5, 25)), (25, 3, 1, 1, (5, 25)), (25, 3, 1, 1, (5, 25)))
+        One tuple ``(channels, kernel, stride, padding, norm)`` per convolution
+        of the patch projection. ``channels``, ``kernel``, ``stride`` and
+        ``padding`` set the ``Conv2d`` along time, and ``norm`` is the
+        ``(num_groups, num_channels)`` pair of the ``GroupNorm`` that follows it.
     drop_prob : float, default=0.1
         Dropout probability.
     return_encoder_output : bool, default=False

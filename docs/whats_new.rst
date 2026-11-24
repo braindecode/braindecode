@@ -48,7 +48,14 @@ Bug fixes
 Code health
 ============
 
-- None yet
+- The docstrings of :class:`braindecode.models.AttentionBaseNet`, :class:`braindecode.models.BIOT`,
+  :class:`braindecode.models.CBraMod`, :class:`braindecode.models.CodeBrain`,
+  :class:`braindecode.models.ContraWR`, :class:`braindecode.models.EEGITNet`,
+  :class:`braindecode.models.EEGNeX`, :class:`braindecode.models.EEGPT`,
+  :class:`braindecode.models.LUNA`, :class:`braindecode.models.SCCNet`,
+  :class:`braindecode.models.SPARCNet` and :class:`braindecode.models.SignalJEPA`
+  now document every constructor argument, and a test fails when a model adds one without
+  documenting it (:gh:`PLACEHOLDER` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 
 
 Current 2.1.0 (2026-11-23)

@@ -158,6 +158,12 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         Dilation rate for block 5. Default is (1, 4).
     avg_pool_block5 : tuple[int, int], optional
         Pooling size for block 5. Default is (1, 8).
+    kernel_block_1_2 : int, default=64
+        Temporal kernel size of block 1 and block 2.
+    max_norm_conv : float, default=1.0
+        Maximum norm of the depthwise convolution weights in block 3.
+    max_norm_linear : float, default=0.25
+        Maximum norm of the weights of the final linear layer.
 
     References
     ----------

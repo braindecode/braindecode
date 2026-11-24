@@ -95,6 +95,7 @@ from braindecode.models import (
     TSception,
     USleep,
 )
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainbert import _STFTSpectrogram
 from braindecode.models.csbrain import (
     REGION_CENTRAL,
@@ -4561,6 +4562,36 @@ def test_documented_parameters_exist_in_signature(model_name):
 
     assert not unknown, (
         f"{model_name} documents parameters its constructor does not accept: {unknown}"
+    )
+
+
+@pytest.mark.parametrize("model_name", sorted(all_models_dict))
+def test_constructor_parameters_are_documented(model_name):
+    """Every public constructor parameter must appear in the model docstring.
+
+    Parameters documented once in a parent class (``EEGModuleMixin`` for the
+    signal arguments and ``channel_strategy``) are merged into each model by
+    the documentation build, so they count here too. Private ``_`` arguments
+    are exempt, and so are models that forward ``**kwargs``.
+    """
+    model_class = all_models_dict[model_name]
+    parameters = inspect.signature(model_class.__init__).parameters
+    if any(p.kind == p.VAR_KEYWORD for p in parameters.values()):
+        pytest.skip(f"{model_name} forwards **kwargs, its options live elsewhere")
+
+    documented = set()
+    for klass in model_class.__mro__:
+        if issubclass(klass, EEGModuleMixin):
+            documented.update(_documented_parameters(klass))
+    public = {
+        name
+        for name, p in parameters.items()
+        if name != "self" and name[0] != "_" and p.kind != p.VAR_POSITIONAL
+    }
+    missing = sorted(public - documented)
+
+    assert not missing, (
+        f"{model_name} has constructor parameters missing from its docstring: {missing}"
     )
 
 

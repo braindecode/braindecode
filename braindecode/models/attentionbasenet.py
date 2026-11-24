@@ -169,6 +169,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         Default is 40.
     temp_filter_length : int, default=15
         The length of the temporal filters in the convolutional layers.
+    temp_filter_length_inp : int, default=25
+        The length of the temporal filters in the input block, before the
+        channel attention.
     spatial_expansion : int, optional
         Multiplicative factor to expand the spatial dimensions. Used to increase
         the capacity of the model by expanding spatial features. Default is 1.

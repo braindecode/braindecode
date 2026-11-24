@@ -40,6 +40,9 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
     activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    n_filters_time : int, default=2
+        Number of temporal filters in the first inception branch. The second
+        and third branches use two and four times as many.
     kernel_length : int, optional
         Kernel length for inception branches. Determines the temporal receptive field.
         Default is 16.
