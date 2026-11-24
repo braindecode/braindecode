@@ -2,6 +2,7 @@
 #
 # License: BSD (3-clause)
 import mne
+import numpy as np
 import pytest
 from moabb.datasets import FakeDataset
 from pandas import DataFrame
@@ -71,6 +72,30 @@ def test_find_dataset_in_moabb(moabb_dataset):
 def test_not_found_dataset_in_moabb():
     with pytest.raises(ValueError):
         _find_dataset_in_moabb("NotExistingDataset")
+
+
+class _NonzeroFirstSampDataset(FakeDataset):
+    """Two trials, at samples 200 and 600 of recordings that start at sample 500."""
+
+    def _get_single_subject_data(self, subject):
+        data = np.zeros((2, 1000))
+        data[1, [200, 600]] = 1
+        info = mne.create_info(["C3", "STI"], 100.0, ["eeg", "stim"])
+        raw = mne.io.RawArray(data, info, first_samp=500, verbose="error")
+        if not self.stim:
+            raw.drop_channels(["STI"])
+            raw.set_annotations(mne.Annotations([2.0, 6.0], 0.0, "left"))
+        return {"0": {"0": raw}}
+
+
+@pytest.mark.parametrize("stim", [True, False])
+def test_moabb_annotations_with_nonzero_first_samp(stim):
+    dataset = _NonzeroFirstSampDataset(
+        event_list=("left",), n_subjects=1, n_sessions=1, n_runs=1, stim=stim
+    )
+    raw = MOABBDataset(dataset, subject_ids=[1]).datasets[0].raw
+    events, _ = mne.events_from_annotations(raw, verbose="error")
+    assert (events[:, 0] - raw.first_samp).tolist() == [200, 600]
 
 
 def test_BNCI2014_001():
