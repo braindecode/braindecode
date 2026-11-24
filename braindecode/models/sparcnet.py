@@ -55,6 +55,32 @@ class SPARCNet(EEGModuleMixin, nn.Module):
     activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    kernel_size_conv0 : int, default=7
+        Kernel size of the first convolution of the stem.
+    stride_conv0 : int, default=2
+        Stride of the first convolution of the stem.
+    padding_conv0 : int, default=3
+        Padding of the first convolution of the stem.
+    kernel_size_pool : int, default=3
+        Kernel size of the max pooling of the stem.
+    stride_pool : int, default=2
+        Stride of the max pooling of the stem.
+    padding_pool : int, default=1
+        Padding of the max pooling of the stem.
+    kernel_size_conv1 : int, default=1
+        Kernel size of the bottleneck convolution in each dense layer.
+    stride_conv1 : int, default=1
+        Stride of the bottleneck convolution in each dense layer.
+    kernel_size_conv2 : int, default=3
+        Kernel size of the second convolution in each dense layer.
+    stride_conv2 : int, default=1
+        Stride of the second convolution in each dense layer.
+    padding_conv2 : int, default=1
+        Padding of the second convolution in each dense layer.
+    kernel_size_trans : int, default=2
+        Kernel size of the pooling in each transition layer.
+    stride_trans : int, default=2
+        Stride of the pooling in each transition layer.
 
     References
     ----------

@@ -113,6 +113,31 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Number of groups for ``GroupNorm`` in the patch projection.
     activation : type[nn.Module], default=nn.ReLU
         Non-linear activation class used in ``init_conv`` and ``final_conv``.
+    proj_kernel_size : int, default=49
+        Kernel size of the first convolution of the patch projection.
+    proj_padding : int, default=24
+        Padding of the first convolution of the patch projection.
+    proj_refine_kernel : int, default=3
+        Kernel size of the two refinement convolutions of the patch projection.
+    pos_kernel : tuple of int, default=(19, 7)
+        Kernel size ``(height, width)`` of the depth-wise convolution that
+        adds the positional encoding.
+    spectral_dropout : float, default=0.1
+        Dropout probability in the spectral branch of the patch embedding.
+    mlp_hidden_multiplier : int, default=4
+        Width of the first hidden layer of the classification head, as a
+        multiple of ``out_channels``.
+    swa_window_size : int, default=1
+        Window size of the sliding-window attention in each residual block.
+    codebook_size_t : int, default=4096
+        Size of the temporal codebook predicted by ``lm_head_t`` in
+        ``pretrain_mode``.
+    codebook_size_f : int, default=4096
+        Size of the frequency codebook predicted by ``lm_head_f`` in
+        ``pretrain_mode``.
+    pretrain_mode : bool, default=False
+        If True, ``forward`` returns the two codebook predictions
+        ``(x_t, x_f)`` instead of the class logits.
 
     References
     ----------

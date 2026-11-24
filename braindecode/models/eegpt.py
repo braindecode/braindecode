@@ -210,6 +210,18 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Output channels of the learned channel projection. It must be 19, the
         electrodes of EEGPT's original linear probe (``EEGPT_19_CHANNELS``).
         Ignored with ``chan_proj_type="none"``.
+    patch_module : type, default=None
+        Patch embedding class, a subclass of ``_PatchEmbed``. If None, ``_PatchEmbed`` is used.
+    chan_proj_type : {"conv1d_constraint", "linear", "none"}, default="conv1d_constraint"
+        How the input channels are projected onto ``n_chans_target`` channels:
+        a kernel-size-1 convolution with a max-norm constraint, a linear
+        layer, or ``"none"`` to encode the input montage directly.
+    chan_conv_max_norm : float, default=1.0
+        Maximum norm of the ``"conv1d_constraint"`` projection weights.
+    final_layer : type of torch.nn.Module, default=None
+        Class of the head, built without arguments after a flatten. If None,
+        the linear probe of the original EEGPT is used. It cannot be set
+        together with ``return_encoder_output=True``.
 
     References
     ----------

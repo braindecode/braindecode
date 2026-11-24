@@ -118,6 +118,15 @@ class BIOT(EEGModuleMixin, nn.Module):
     activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    drop_prob : float, default=0.5
+        Dropout probability of the positional encoding in the encoder.
+    max_seq_len : int, default=1024
+        Accepted, but the encoder does not use it.
+    att_drop_prob : float, default=0.2
+        Accepted, but the encoder does not use it.
+    att_layer_drop_prob : float, default=0.2
+        Dropout probability applied right after the self-attention layer of
+        the encoder.
     hop_length : int, optional
         The hop length for the torch.stft transformation in the
         encoder. The default is 100.

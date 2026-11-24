@@ -124,6 +124,10 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Ratio of MLP hidden dimension to embedding dimension. Default: 4.0.
     norm_layer : nn.Module
         Normalization layer class. Default: nn.LayerNorm.
+    activation : type of torch.nn.Module, default=nn.GELU
+        Activation class of the MLP that embeds the channel locations.
+    drop_prob_chan : float, default=0.0
+        Dropout probability of the MLP that embeds the channel locations.
     drop_path : float
         Stochastic depth rate. Default: 0.0.
     attn_drop : float
