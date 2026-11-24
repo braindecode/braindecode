@@ -53,7 +53,7 @@ def _datasets():
         stop_offset_samples=None,
         window_size_samples=1000,
         window_stride_samples=1000,
-        drop_last_window=True,
+        on_last_window="drop",
         mapping=None,
         preload=True,
     )

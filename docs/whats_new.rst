@@ -33,7 +33,9 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- Remove ``drop_last_window`` from :func:`braindecode.preprocessing.create_windows_from_events`
+  and :func:`braindecode.preprocessing.create_fixed_length_windows`; passing it raises a ``TypeError``
+  that names ``on_last_window`` (:gh:`1831` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 
 Requirements
 ============

@@ -744,7 +744,7 @@ def test_EEGRegressor_predict_trials_scalar_targets():
         BaseConcatDataset(datasets),
         window_size_samples=200,
         window_stride_samples=200,
-        drop_last_window=True,
+        on_last_window="drop",
     )
     regressor = EEGRegressor(
         ShallowFBCSPNet,

@@ -43,7 +43,7 @@ def concat_windows_dataset(concat_ds_targets):
         trial_stop_offset_samples=0,
         window_size_samples=750,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
 
     return windows_ds

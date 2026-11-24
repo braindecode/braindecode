@@ -44,7 +44,7 @@ def fit_variable_length(seed=SEED, lr=1e-3):
         concat_ds=variable_tuh,
         window_size_samples=1000,
         window_stride_samples=1000,
-        drop_last_window=False,
+        on_last_window="overlap",
         mapping={True: 1, False: 0},
     )
 
