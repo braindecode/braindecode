@@ -11,8 +11,8 @@ import torch
 from einops import rearrange
 from mne.filter import create_filter, filter_data
 from mne.time_frequency import psd_array_welch
+from scipy.signal import butter, freqz
 from scipy.signal import fftconvolve as fftconvolve_scipy
-from scipy.signal import freqz
 from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
 from torch.nn.utils.parametrize import register_parametrization
@@ -714,6 +714,35 @@ def test_iir_params_output_sos_warning(sample_input):
     assert layer.a_list[0].dtype == torch.float64, (
         "Filter coefficients should be float64."
     )
+    assert iir_params == {"output": "sos"}, "The caller's dict should be unchanged."
+
+
+def test_iir_params_without_output():
+    """Without ``output``, the IIR design is ``"ba"`` and the caller's dict is kept."""
+    iir_params = dict(order=4, ftype="butter")
+    layer = FilterBankLayer(
+        n_chans=2,
+        sfreq=250,
+        band_filters=[(8.0, 30.0)],
+        method="iir",
+        iir_params=iir_params,
+    )
+
+    b, a = butter(4, (8.0, 30.0), btype="bandpass", fs=250)
+    np.testing.assert_allclose(layer.b_list[0], b, rtol=1e-12)
+    np.testing.assert_allclose(layer.a_list[0], a, rtol=1e-12)
+    assert iir_params == dict(order=4, ftype="butter")
+
+
+def test_iir_params_invalid_output():
+    """An ``output`` unknown to MNE raises instead of being replaced by ``"ba"``."""
+    with pytest.raises(ValueError, match="'output' parameter.*'zpk'"):
+        FilterBankLayer(
+            n_chans=2,
+            sfreq=250,
+            method="iir",
+            iir_params=dict(order=4, ftype="butter", output="zpk"),
+        )
 
 
 @pytest.mark.parametrize("method", ["iir", "fir"])
