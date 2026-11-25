@@ -45,7 +45,7 @@ Bug fixes
 
 - :class:`braindecode.modules.FilterBankLayer` with ``method="iir"`` designs the filters with ``output="ba"`` when
   ``iir_params`` has no ``output``, instead of raising ``KeyError: 'a'``, and no longer changes the caller's ``iir_params``
-  when ``output`` is ``"sos"`` (:gh:`XXXX` by `Axel Coiffard-Donaty`_).
+  when ``output`` is ``"sos"`` (:gh:`1832` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
