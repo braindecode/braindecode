@@ -43,7 +43,9 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- :func:`braindecode.preprocessing.create_fixed_length_windows` raises a ``ValueError`` if ``stop_offset_samples`` exceeds the length of any
+  recording (so one stop must fit all recordings), or if ``start_offset_samples`` is negative and :class:`mne.Epochs` is not used (it still
+  drops such windows). These calls could return empty, truncated or fewer windows (:gh:`1834` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============

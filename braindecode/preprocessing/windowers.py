@@ -1013,6 +1013,18 @@ def _create_fixed_length_windows(
         (create_fixed_length_windows.__name__, _get_windowing_kwargs(locals())),
     ]
     stop = ds.raw.n_times if stop_offset_samples is None else stop_offset_samples
+    # A window outside the recording would be empty or truncated; mne.Epochs
+    # instead drops the windows that start before the recording, as before.
+    if start_offset_samples < 0 and not use_mne_epochs:
+        raise ValueError(
+            f"start_offset_samples ({start_offset_samples}) must be at least 0 "
+            "with use_mne_epochs=False."
+        )
+    if stop > ds.raw.n_times:
+        raise ValueError(
+            f"stop_offset_samples ({stop}) must not exceed the length of the "
+            f"recording ({ds.raw.n_times} samples)."
+        )
 
     # assume window should be whole recording
     if window_size_samples is None:
