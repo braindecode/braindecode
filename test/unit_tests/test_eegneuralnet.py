@@ -902,6 +902,16 @@ def test_eegregressor_loss_is_per_trial_mse_for_dataset_targets():
     assert net.get_loss(y_pred, y_batch).item() == pytest.approx(expected.item())
 
 
+@pytest.mark.parametrize("target_shape", [(4,), (4, 1)])
+@pytest.mark.parametrize("pred_shape", [(4,), (4, 1)])
+def test_eegregressor_loss_is_per_trial_mse_for_each_shape_pair(pred_shape, target_shape):
+    net = EEGRegressor(torch.nn.Linear(1, 1)).initialize()
+    y_true = torch.tensor([0.0, 1.0, 2.0, 6.0])
+    y_pred = y_true + torch.tensor([1.0, 2.0, 3.0, 4.0])
+    loss = net.get_loss(y_pred.reshape(pred_shape), y_true.reshape(target_shape))
+    assert loss.item() == 7.5  # (1 + 4 + 9 + 16) / 4, and 22.625 over all pairs
+
+
 def test_eegregressor_fit_returns_self():
     net, _, fitted = _fit_regressor_on_dataset()
     assert fitted is net
