@@ -2266,6 +2266,55 @@ def test_fixed_length_window_larger_than_offset_interval(
         )
 
 
+def _two_recordings_fixed_length_windows(**kwargs):
+    info = mne.create_info(["C3", "C4"], sfreq=100.0, ch_types="eeg")
+    concat_ds = BaseConcatDataset(
+        [
+            RawDataset(mne.io.RawArray(np.zeros((2, n_times)), info, verbose=False))
+            for n_times in (1200, 1000)
+        ]
+    )
+    return create_fixed_length_windows(
+        concat_ds,
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        **kwargs,
+    )
+
+
+@pytest.mark.parametrize(
+    "start_offset_samples, stop_offset_samples, lazy_metadata, use_mne_epochs, match",
+    [
+        (-1, None, False, False, r"start_offset_samples \(-1\) .* at least 0 "),
+        (-1, None, True, False, r"start_offset_samples \(-1\) .* at least 0 "),
+        # inside the first recording (1200 samples), outside the second one
+        (0, 1001, False, False, r"stop_offset_samples \(1001\) .* \(1000 samples\)"),
+        (0, 1001, True, False, r"stop_offset_samples \(1001\) .* \(1000 samples\)"),
+        (0, 1001, False, True, r"stop_offset_samples \(1001\) .* \(1000 samples\)"),
+    ],
+)
+def test_fixed_length_offsets_outside_recording(
+    start_offset_samples, stop_offset_samples, lazy_metadata, use_mne_epochs, match
+):
+    with pytest.raises(ValueError, match=match):
+        _two_recordings_fixed_length_windows(
+            start_offset_samples=start_offset_samples,
+            stop_offset_samples=stop_offset_samples,
+            lazy_metadata=lazy_metadata,
+            use_mne_epochs=use_mne_epochs,
+        )
+
+
+def test_fixed_length_start_before_recording_mne_epochs():
+    # mne.Epochs keeps dropping the windows that start before the recording
+    windows = _two_recordings_fixed_length_windows(
+        start_offset_samples=-1, use_mne_epochs=True
+    )
+    starts = windows.get_metadata()["i_start_in_trial"].tolist()
+    assert starts == [*range(99, 1100, 100), *range(99, 900, 100)]
+
+
 def test_windows_from_events_infer_mapping_n_jobs(tmpdir_factory):
     # every recording sees a different subset of the event types
     descriptions = [5 * ["T0", "T1"], 5 * ["T1", "T2"], 10 * ["T2"]]
