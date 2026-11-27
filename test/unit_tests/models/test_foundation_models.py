@@ -2697,16 +2697,23 @@ def test_diver1_mup_attention_scale():
 
 
 @pytest.mark.parametrize(
-    "names, explicit, expected, warning",
+    "names, explicit, expected, warning, n_chans_pos",
     [
-        (["oz", "FP1", "Cz"], None, ["Oz", "Fp1", "Cz"], None),
-        (["E1", "fp1", "E2"], None, ["Oz", "Fp1", "T8"], "nearest 10-05 site"),
-        (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None),
+        (["oz", "FP1", "Cz"], None, ["Oz", "Fp1", "Cz"], None, 145),
+        (["E1", "fp1", "E2"], None, ["Oz", "Fp1", "T8"], "nearest 10-05 site", 145),
+        (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None, 145),
+        (["oz", "FP1", "Cz"], None, ["Oz", "Fp1", "Cz"], None, 256),
+        # Slots of HBN_MODEL_CHANIDX in the authors' largeV2 code.
+        (["E129", "e22", "E1"], None, [110, 6, 142], None, 256),
+        (["E1", "fp1", "X2"], None, [142, "Fp1", "T8"], "nearest 10-05 site", 256),
     ],
-    ids=["known-names", "mixed-positions", "explicit-override"],
-)
+    ids=[
+        "known-names", "mixed-positions", "explicit-override",
+        "largeV2-known-names", "largeV2-hbn-names", "largeV2-mixed-positions",
+    ],
+)  # fmt: skip
 @pytest.mark.filterwarnings("error")
-def test_steegformer_channel_mapping(names, explicit, expected, warning):
+def test_steegformer_channel_mapping(names, explicit, expected, warning, n_chans_pos):
     info = mne.create_info(["Oz", "Cz", "T8"], 250, "eeg")
     info.set_montage(
         mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
@@ -2722,6 +2729,7 @@ def test_steegformer_channel_mapping(names, explicit, expected, warning):
             n_times=64,
             chs_info=chs,
             chan_pos_idx=explicit,
+            n_chans_pos=n_chans_pos,
             embed_dim=32,
             depth=1,
             num_heads=2,
@@ -2771,8 +2779,8 @@ def test_steegformer_encoder_keeps_the_keys_of_v2_0_0_checkpoints():
         (256, "hydrocel", 145),
         (3, "absent", 145),
         (146, "absent", 145),
-        (3, "unpublished", 256),
-        (257, "unpublished", 256),
+        (3, "other-vocabulary", 200),
+        (201, "other-vocabulary", 200),
     ],
 )
 def test_steegformer_montage_fallback(n_chans, fallback, n_chans_pos):

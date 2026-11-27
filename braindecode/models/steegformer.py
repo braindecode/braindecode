@@ -154,7 +154,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
          - 145-slot channel vocabulary
        * - largeV2
          - ``braindecode/STEEGFormer-largeV2``
-         - 256-slot HBN channel vocabulary
+         - 256-slot channel vocabulary (the 142 names + HBN sensors)
 
     Use the regular Hub API to load a re-hosted checkpoint::
 
@@ -177,13 +177,16 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         implementation has been verified on the released checkpoints. The
         channel-to-vocabulary mapping is resolved from the electrode names
         in ``chs_info`` (looked up in :data:`STEEGFORMER_CHANNEL_ORDER`, the
-        BENDR/LaBraM convention). A channel whose name is not in the
-        vocabulary (for example the numbered ``E1`` ... ``E256`` sensors of an
-        EGI HydroCel net) is assigned the slot of the nearest 10-05 site,
-        using its head-frame 3D position from ``chs_info``; named channels always keep
-        their own slot. Only when positions are unavailable does it fall back
-        to the identity mapping (channel ``i`` -> slot ``i``), with a warning.
-        Pass ``chan_pos_idx`` to override explicitly.
+        BENDR/LaBraM convention). largeV2's 256 slots start with the same
+        142 names and also read ``E1`` ... ``E129`` as HBN's HydroCel-129
+        sensors (pass ``chan_pos_idx`` for another EGI net). A channel whose
+        name is not in the vocabulary (for example the numbered ``E1`` ...
+        ``E256`` sensors of an EGI HydroCel net) is assigned the slot of the
+        nearest 10-05 site, using its head-frame 3D position from
+        ``chs_info``; named channels always keep their own slot. Only when
+        positions are unavailable does it fall back to the identity mapping
+        (channel ``i`` -> slot ``i``), with a warning. Pass ``chan_pos_idx``
+        to override explicitly.
 
     Parameters
     ----------
@@ -408,14 +411,13 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
 
         Looks each electrode name up in :data:`STEEGFORMER_CHANNEL_ORDER`
-        (case-insensitive). Only valid for the 145-slot variants
-        (small/base/large); for other ``n_chans_pos`` (e.g. largeV2's 256-slot
-        HBN vocabulary, whose names are not published) pass ``chan_pos_idx``
-        explicitly. Unknown names use the nearest 10-05 site from valid
-        head-frame positions. Falls back to the identity mapping -- and warns --
-        when ``chs_info`` is absent, the vocabulary does not apply, or an
-        unknown channel lacks a valid position. Raises an actionable error if
-        the identity mapping exceeds the embedding capacity.
+        (case-insensitive), and for largeV2 (``n_chans_pos=256``) also the HBN
+        sensors ``E1`` ... ``E129``. For any other ``n_chans_pos`` pass
+        ``chan_pos_idx`` explicitly. Unknown names use the nearest 10-05 site
+        from valid head-frame positions. Falls back to the identity mapping --
+        and warns -- when ``chs_info`` is absent, the vocabulary does not apply,
+        or an unknown channel lacks a valid position. Raises an actionable error
+        if the identity mapping exceeds the embedding capacity.
         """
         chs_info = self._signal_param("chs_info")
         if not chs_info:
@@ -429,25 +431,28 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 stacklevel=2,
             )
             return identity
-        if self.n_chans_pos != _CHANNELS_VOCAB_SIZE:
+        vocabulary = _CHANNEL_INDEX_BY_N_CHANS_POS.get(self.n_chans_pos)
+        if vocabulary is None:
             identity = self._identity_channel_indices()
             warnings.warn(
-                f"STEEGFormer: name-based channel resolution uses the published "
-                f"{_CHANNELS_VOCAB_SIZE}-slot vocabulary (small/base/large), but "
-                f"this model has n_chans_pos={self.n_chans_pos} (e.g. largeV2's "
-                f"HBN vocabulary, whose electrode names are not published). Pass "
-                f"chan_pos_idx explicitly; using the identity mapping for now.",
+                f"STEEGFormer: name-based channel resolution knows the "
+                f"vocabularies of the released checkpoints (n_chans_pos="
+                f"{sorted(_CHANNEL_INDEX_BY_N_CHANS_POS)}), but this model has "
+                f"n_chans_pos={self.n_chans_pos}. Pass chan_pos_idx explicitly; "
+                f"using the identity mapping for now.",
                 UserWarning,
                 stacklevel=2,
             )
             return identity
         names = [ch.get("ch_name", "") for ch in chs_info]  # type: ignore[attr-defined]
-        idx = [_CHANNEL_INDEX.get(n.upper()) for n in names]
+        idx = [vocabulary.get(n.upper()) for n in names]
         missing = [n for n, j in zip(names, idx) if j is None]
         if missing:
             shown = ", ".join(missing[:8]) + ("..." if len(missing) > 8 else "")
+            # Only unnamed channels are placed by position; named ones keep their slot.
+            unknown = [ch for ch, j in zip(chs_info, idx) if j is None]
             by_position = resolve_channel_indices(
-                chs_info, STEEGFORMER_CHANNEL_ORDER, montage="standard_1005"
+                unknown, STEEGFORMER_CHANNEL_ORDER, montage="standard_1005"
             )
             if by_position is not None:
                 warnings.warn(
@@ -458,7 +463,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                     UserWarning,
                     stacklevel=2,
                 )
-                return torch.tensor(by_position, dtype=torch.long)
+                nearest = iter(by_position)
+                idx = [next(nearest) if j is None else j for j in idx]
+                return torch.tensor(idx, dtype=torch.long)
             identity = self._identity_channel_indices()
             warnings.warn(
                 f"STEEGFormer: {len(missing)} channel name(s) absent from the "
@@ -547,8 +554,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
 
 # Slot order of the official checkpoints' channel embedding (``channels_mapping``
 # of LiuyinYang1101/STEEGFormer, MIT): an electrode's slot is its index here.
-# small/base/large have 145 slots, the last three unnamed; the HBN ``largeV2``
-# model uses a different, unpublished vocabulary.
+# small/base/large have 145 slots, the last three unnamed; largeV2 has 256 slots,
+# the first 142 named as here (see ``_HBN_CHANNEL_SLOTS``).
 STEEGFORMER_CHANNEL_ORDER = """
     C1 Pz C4 F6 FTT8h Oz Fp1 FCC5h TPP8h CPP6h C2 F4 OI2h AF4 FCz CCP6h TP8 POO10h
     FC1 FC6 C5 P8 FT8 P6 P9 Fz AFF1 TPP10h AFF2 P10 CPP2h M1 FCC6h FTT7h FC2 PPO2
@@ -560,10 +567,28 @@ STEEGFORMER_CHANNEL_ORDER = """
     I1 TTP8h AFF6h CCP5h C6 PPO1 PO8 C3 POO4h TPP7h F7 T9 TP9 T10 TP10 POO1 POO2
     PPO1h PPO2h
 """.split()
-# Slots of the vocabulary above, the size of the embedding the names are valid for.
+# Slots of the small/base/large embedding, whose names are the vocabulary above.
 _CHANNELS_VOCAB_SIZE = 145
 # Upper-cased electrode name -> slot, for a case-insensitive lookup of ``chs_info`` names.
 _CHANNEL_INDEX = {name.upper(): i for i, name in enumerate(STEEGFORMER_CHANNEL_ORDER)}
+# largeV2's slot of HBN's HydroCel-129 sensor ``E{i + 1}``: ``HBN_MODEL_CHANIDX``
+# of LiuyinYang1101/STEEGFormer (MIT), eeg_foundation_2025/utils/models_vit_eeg.py
+# at 5dde2fc383e2d5fd3416d7edfbc6c315e1212de5 (release ST-EEGFormer-largeV2).
+_HBN_CHANNEL_SLOTS = [
+    142, 39, 13, 54, 143, 14, 144, 145, 60, 146, 25, 147, 18, 112, 148, 100, 149,
+    150, 42, 151, 152, 6, 86, 71, 153, 37, 72, 49, 70, 0, 154, 155, 133, 122, 156,
+    130, 85, 45, 157, 158, 20, 84, 159, 134, 65, 111, 51, 160, 161, 162, 90, 74,
+    163, 164, 119, 165, 135, 41, 166, 99, 167, 1, 168, 24, 114, 169, 102, 170, 171,
+    95, 172, 63, 173, 174, 5, 175, 58, 176, 177, 178, 179, 180, 103, 181, 117, 182,
+    46, 183, 184, 129, 185, 116, 62, 186, 29, 21, 23, 52, 187, 137, 188, 16, 127,
+    2, 10, 189, 190, 68, 191, 192, 75, 34, 193, 136, 194, 22, 19, 195, 196, 197, 87,
+    118, 3, 11, 198, 199, 200, 201, 110,
+]  # fmt: skip
+# Names resolved for each released ``n_chans_pos``: small/base/large and largeV2.
+_CHANNEL_INDEX_BY_N_CHANS_POS = {
+    _CHANNELS_VOCAB_SIZE: _CHANNEL_INDEX,
+    256: _CHANNEL_INDEX | {f"E{i + 1}": s for i, s in enumerate(_HBN_CHANNEL_SLOTS)},
+}
 
 
 class _TemporalPositionalEncoding(nn.Module):
