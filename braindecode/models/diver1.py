@@ -909,7 +909,7 @@ class _AnyVariateAttention(nn.Module):
         self.head_dim = d_model // num_heads
         # None lets SDPA use its default 1 / sqrt(head_dim).
         self.scale = 1.0 / self.head_dim if mup_attention else None
-        self.drop_prob = drop_prob
+        self.attn_drop = nn.Dropout(drop_prob)
         self.rotary = rotary
         self.q_proj = nn.Linear(d_model, d_model, bias=False)
         self.k_proj = nn.Linear(d_model, d_model, bias=False)
@@ -951,7 +951,7 @@ class _AnyVariateAttention(nn.Module):
             key,
             value,
             attn_mask=bias,
-            dropout_p=self.drop_prob if self.training else 0.0,
+            dropout_p=self.attn_drop.p if self.training else 0.0,
             scale=self.scale,
         )
         out = self.merge_heads(out)

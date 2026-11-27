@@ -744,7 +744,7 @@ class _RotarySelfAttentionBlock(nn.Module):
         self.scale = qk_scale or head_dim**-0.5
 
         self.qkv_proj = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = attn_drop
+        self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
@@ -775,7 +775,7 @@ class _RotarySelfAttentionBlock(nn.Module):
             q,
             k,
             v,
-            dropout_p=self.attn_drop if self.training else 0.0,
+            dropout_p=self.attn_drop.p if self.training else 0.0,
             scale=self.scale,
         )  # (B, H, N, D)
         attn = attn.transpose(1, 2).flatten(2)  # (B, N, H * D)

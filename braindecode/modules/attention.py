@@ -1066,7 +1066,7 @@ class MultiHeadAttention(nn.Module):
         self.values = nn.Linear(emb_size, inner_dim, bias=qkv_bias)
         self.q_norm = nn.LayerNorm(head_dim) if qk_norm else None
         self.k_norm = nn.LayerNorm(head_dim) if qk_norm else None
-        self.att_drop = dropout
+        self.att_drop = nn.Dropout(dropout)
         self.projection = nn.Linear(inner_dim, emb_size)
 
         self.rearrange_stack = Rearrange(
@@ -1101,7 +1101,7 @@ class MultiHeadAttention(nn.Module):
         if self.k_norm is not None:
             keys = self.k_norm(keys)
 
-        dp = self.att_drop if self.training else 0.0
+        dp = self.att_drop.p if self.training else 0.0
         if self.scale is not None:
             queries = queries * (self.scale * self.head_dim**0.5)
         out = scaled_dot_product_attention(

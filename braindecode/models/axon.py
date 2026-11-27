@@ -461,7 +461,7 @@ class _AxisAttention(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
-        self.att_drop_prob = att_drop_prob
+        self.att_drop = nn.Dropout(att_drop_prob)
 
         self.temporal_qkv = nn.Linear(embed_dim, 3 * embed_dim)
         self.temporal_out = nn.Linear(embed_dim, embed_dim)
@@ -487,7 +487,7 @@ class _AxisAttention(nn.Module):
             .permute(2, 0, 3, 1, 4)
             .unbind(0)
         )
-        drop = self.att_drop_prob if self.training else 0.0
+        drop = self.att_drop.p if self.training else 0.0
         attended = scaled_dot_product_attention(
             query, key, value, attn_mask=mask, dropout_p=drop
         )
@@ -524,7 +524,7 @@ class _AxisAttention(nn.Module):
         # the restricted branch is the full one; attend once unless the two
         # branches draw their own attention dropout.
         per_channel = self.temporal_qkv(x.reshape(batch * n_chans, n_patches, dim))
-        dropout = self.training and self.att_drop_prob > 0
+        dropout = self.training and self.att_drop.p > 0
         if band is not None and not dropout:
             # The scale-gate weights sum to one, so the two branches share the
             # scores, the product with the values and temporal_out.

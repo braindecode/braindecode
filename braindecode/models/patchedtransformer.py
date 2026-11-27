@@ -415,7 +415,6 @@ class _MHSA(nn.Module):
 
         self.n_head = n_head
         self.embed_dim = embed_dim
-        self.drop_prob = drop_prob
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass for MHSA.
@@ -442,7 +441,7 @@ class _MHSA(nn.Module):
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
 
         y = scaled_dot_product_attention(
-            q, k, v, dropout_p=self.drop_prob if self.training else 0.0
+            q, k, v, dropout_p=self.attn_drop_prob.p if self.training else 0.0
         )
 
         # re-assemble heads -> (B, T, C)

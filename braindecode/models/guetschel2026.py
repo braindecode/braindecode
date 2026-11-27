@@ -157,7 +157,8 @@ class _PositionalEncoder(nn.Module):
 class _MultiHeadAttention(nn.Module):
     def __init__(self, embed_dim, num_heads, drop_prob):
         super().__init__()
-        self.num_heads, self.drop_prob = num_heads, drop_prob
+        self.num_heads = num_heads
+        self.attn_drop = nn.Dropout(drop_prob)
         self.packed_proj = nn.Linear(embed_dim, 3 * embed_dim, bias=False)
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=False)
 
@@ -167,7 +168,7 @@ class _MultiHeadAttention(nn.Module):
             t.unflatten(-1, (self.num_heads, -1)).transpose(1, 2) for t in (q, k, v)
         )
         a = F.scaled_dot_product_attention(  # default scale, never a manual softmax
-            q, k, v, dropout_p=self.drop_prob if self.training else 0.0
+            q, k, v, dropout_p=self.attn_drop.p if self.training else 0.0
         )
         return self.out_proj(a.transpose(1, 2).flatten(-2))
 
