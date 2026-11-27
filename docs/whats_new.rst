@@ -43,7 +43,8 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- :class:`braindecode.models.STEEGFormer` largeV2 (``n_chans_pos=256``) resolves ``chs_info`` names, and HBN's ``E1`` ... ``E129``,
+  to their slots instead of the identity mapping (:gh:`XXXX` by `Hamza Abdelhedi`_).
 
 Code health
 ============
