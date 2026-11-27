@@ -96,7 +96,7 @@ def fetch_data_with_moabb(
     dataset_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
-    data_load_kwargs : dict, optional
+    dataset_load_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset's load_data method.
         Allows using the moabb cache_config=None and
