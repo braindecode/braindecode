@@ -619,13 +619,13 @@ class _ForwardSolution(nn.Module):
         super().__init__()
         self.n_dim = n_dim
         self.n_head = n_head
-        self.dropout = dropout
+        self.dropout = nn.Dropout(dropout)
         self.kv = nn.Linear(n_dim, 2 * n_dim)
         self.proj = nn.Linear(n_dim, n_dim)
 
     def forward(self, sensor_embedding, neurons):
         k, v = torch.split(self.kv(neurons), self.n_dim, dim=-1)
-        dropout_p = self.dropout if self.training else 0.0
+        dropout_p = self.dropout.p if self.training else 0.0
         return self.proj(_attend(sensor_embedding, k, v, self.n_head, dropout_p))
 
 
@@ -635,12 +635,12 @@ class _BackwardSolution(nn.Module):
     def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
         super().__init__()
         self.n_head = n_head
-        self.dropout = dropout
+        self.dropout = nn.Dropout(dropout)
         self.v = nn.Linear(n_dim, n_dim)
         self.proj = nn.Linear(n_dim, n_dim)
 
     def forward(self, neuros, k, x):
-        dropout_p = self.dropout if self.training else 0.0
+        dropout_p = self.dropout.p if self.training else 0.0
         return self.proj(_attend(neuros, k, self.v(x), self.n_head, dropout_p))
 
 

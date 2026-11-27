@@ -8,12 +8,14 @@ The old op order is re-implemented here per model and swapped in for the helper;
 forward (eval), loss and gradients (train, same seed) must be ``torch.equal``.
 """
 
+import copy
 import math
 import sys
 
 import pytest
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 import braindecode.functional.attention as functional_attention
 from braindecode.functional import scaled_dot_product_attention
@@ -44,11 +46,11 @@ OLD = {
 }
 
 
-def _build(name):
+def _build(name, **kwargs):
     req, sp = next((r, s) for n, r, s in models_mandatory_parameters if n == name)
     torch.manual_seed(0)
     params = _get_signal_params(sp)
-    model = models_dict[name](**_get_signal_params(sp, req))
+    model = models_dict[name](**_get_signal_params(sp, req), **kwargs)
     x = torch.randn(
         2, len(params["chs_info"]), params["n_times"],
         generator=torch.Generator().manual_seed(1),
@@ -114,3 +116,41 @@ def test_exact_default_differs_only_in_rounding():
         rtol=0,
         atol=1e-6,
     )
+
+
+# Arguments that turn on the attention dropout of each model.
+ATTENTION_DROPOUT = {
+    "AXON": {"att_drop_prob": 0.5},
+    "BrainOmni": {"drop_prob": 0.5},  # its tokenizer runs in eval mode
+    "BrainTokenizer": {"drop_prob": 0.5},
+    "DIVER1": {"drop_prob": 0.5},
+    "EEGConformer": {"att_drop_prob": 0.5},  # modules.MultiHeadAttention
+    "Guetschel2026": {"drop_prob": 0.5},
+    "LUNA": {"attn_drop": 0.5},
+    "PBT": {"drop_prob": 0.5},
+}
+
+
+@pytest.mark.parametrize("name", list(ATTENTION_DROPOUT))
+def test_attention_dropout_is_an_nn_dropout(name):
+    """Setting ``p`` on every ``nn.Dropout`` of ``model.modules()`` sets the
+    attention dropout too, as code that tunes dropout for fine-tuning does."""
+    model, x = _build(name, **ATTENTION_DROPOUT[name])
+    with torch.no_grad():
+        model.eval()(x)  # BrainOmni draws its codebooks on the first call
+
+    def run(p, train, seed=0):
+        # A fresh copy: train mode updates batch-norm statistics and codebooks.
+        trial = copy.deepcopy(model)
+        for module in trial.modules():
+            if isinstance(module, nn.Dropout):
+                module.p = p
+            elif isinstance(module, nn.MultiheadAttention):  # LUNA's cross-attention
+                module.dropout = p
+        torch.manual_seed(seed)
+        with torch.no_grad():
+            return trial.train(train)(x)
+
+    assert torch.equal(run(0.5, train=False), run(0.0, train=False))
+    assert not torch.equal(run(0.5, train=True), run(0.5, train=True, seed=1))
+    assert torch.equal(run(0.0, train=True), run(0.0, train=True, seed=1))

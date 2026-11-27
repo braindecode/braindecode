@@ -537,8 +537,8 @@ def test_brainomni_dropouts_and_default_head_init():
     """Tokenizer, transformer and head dropouts are separate, as released; the
     head keeps PyTorch's default init (non-zero biases), unlike the trunk."""
     model = _small_brainomni(drop_prob=0.0)
-    assert model.tokenizer.encoder.backwardsolution.dropout == 0.0
-    assert model.blocks[0].time_attn.dropout == 0.0
+    assert model.tokenizer.encoder.backwardsolution.dropout.p == 0.0
+    assert model.blocks[0].time_attn.dropout.p == 0.0
     assert model.final_layer[0].p == 0.1
     biases = [model.final_layer[i].bias for i in (1, 3)]
     model.reset_head(5)

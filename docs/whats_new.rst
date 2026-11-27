@@ -28,7 +28,9 @@ Current 2.2.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- Attention dropout is an ``nn.Dropout`` that ``model.modules()`` reaches in AXON, BrainOmni,
+  BrainTokenizer, DIVER1, Guetschel2026, LUNA, PBT, :class:`~braindecode.modules.MultiHeadAttention`
+  and :class:`~braindecode.modules.SpatialTemporalBlock`; outputs are unchanged (:gh:`XXXX` by `Hamza Abdelhedi`_).
 
 API and behavior changes
 ========================

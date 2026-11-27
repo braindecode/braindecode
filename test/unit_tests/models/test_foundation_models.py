@@ -3641,7 +3641,7 @@ def test_cbramod_head_is_concrete_when_geometry_is_derived(tmp_path):
 
 def test_luna_attn_drop_is_used():
     model = LUNA(n_chans=4, n_outputs=2, n_times=256, attn_drop=0.3)
-    assert all(block.attn.attn_drop == 0.3 for block in model.blocks)
+    assert all(block.attn.attn_drop.p == 0.3 for block in model.blocks)
 
 
 def test_labram_warns_when_tokenizer_overrides_embed_dim():
@@ -3689,7 +3689,7 @@ class _LunaRotaryBeforeReuse(_RotarySelfAttentionBlock):
         k = self._rotate_queries_or_keys(k)
         attn = torch.nn.functional.scaled_dot_product_attention(
             q, k, v,
-            dropout_p=self.attn_drop if self.training else 0.0,
+            dropout_p=self.attn_drop.p if self.training else 0.0,
             scale=self.scale,
         )
         return self.proj_drop(self.proj(attn.transpose(1, 2).flatten(2)))
@@ -3854,7 +3854,7 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
         current = layer.attn
         replacement = _LunaRotaryBeforeReuse(
             current.dim, current.num_heads, current.qkv_proj.bias is not None,
-            current.scale, current.attn_drop, current.proj_drop.p,
+            current.scale, current.attn_drop.p, current.proj_drop.p,
         )
         replacement.load_state_dict(current.state_dict(), strict=True)
         layer.attn = replacement.eval()

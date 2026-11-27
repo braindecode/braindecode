@@ -161,7 +161,7 @@ class _MultiHeadAttentionRoPE(nn.Module):
 
     def __init__(self, n_dim, n_head, dropout, rope, rope_positions=240):
         super().__init__()
-        self.dropout = dropout
+        self.dropout = nn.Dropout(dropout)
         self.n_dim = n_dim
         self.n_head = n_head
         self.qkv = nn.Linear(n_dim, 3 * n_dim)
@@ -174,7 +174,7 @@ class _MultiHeadAttentionRoPE(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         q, k, v = torch.split(self.qkv(x), self.n_dim, dim=-1)
-        dropout_p = self.dropout if self.training else 0.0
+        dropout_p = self.dropout.p if self.training else 0.0
         if self.rope_embedding_layer is not None:  # on (batch, seq, heads, head_dim)
             q, k = self.rope_embedding_layer(
                 q.unflatten(-1, (self.n_head, -1)), k.unflatten(-1, (self.n_head, -1))
